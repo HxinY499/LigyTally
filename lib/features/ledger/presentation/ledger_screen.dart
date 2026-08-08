@@ -84,14 +84,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
             child: Row(
               children: [
-                Expanded(
-                  child: Text(
-                    'Ligy Tally',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
+                const Spacer(),
                 IconButton(
                   onPressed: () {
                     setState(() {
