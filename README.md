@@ -42,6 +42,8 @@ flutter build apk --debug
 
 ## 构建 Android Release
 
+简要发布步骤见：[发布流程.md](发布流程.md)。
+
 正式 APK 必须使用长期发布签名。签名密码保存在本机 macOS Keychain，
 通过安全构建脚本注入 Gradle，不写入仓库。Release 构建会混淆 Dart
 代码并将调试符号保存到本机 `~/Documents/LigyTally-release-symbols/`：
