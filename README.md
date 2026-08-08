@@ -2,6 +2,14 @@
 
 Android-first 的本地轻量记账应用，使用 Flutter、Riverpod、Drift 和 SQLite 构建。
 
+## 下载 Android 安装包
+
+- [GitHub Releases](https://github.com/HxinY499/LigyTally-Releases/releases/latest)
+- [直接下载 Ligy Tally 1.0.0 APK](https://github.com/HxinY499/LigyTally-Releases/releases/download/v1.0.0/LigyTally-1.0.0.apk)
+
+在安卓系统中允许浏览器或文件管理器安装未知应用后，打开 APK 即可安装。
+覆盖安装新版本会保留数据；卸载应用会删除本地账单和图片。
+
 ## 当前能力
 
 - 收入、支出新增、编辑和删除
@@ -30,6 +38,23 @@ dart format lib test
 flutter analyze
 flutter test
 flutter build apk --debug
+```
+
+## 构建 Android Release
+
+正式 APK 必须使用长期发布签名。签名密码保存在本机 macOS Keychain，
+通过安全构建脚本注入 Gradle，不写入仓库。Release 构建会混淆 Dart
+代码并将调试符号保存到本机 `~/Documents/LigyTally-release-symbols/`：
+
+```bash
+./scripts/build_release.sh
+```
+
+输出位置：
+
+```text
+dist/LigyTally-<version>.apk
+dist/LigyTally-<version>.apk.sha256
 ```
 
 Debug APK 输出位置：
