@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 
 import '../features/ledger/presentation/ledger_screen.dart';
 import '../features/ledger/presentation/transaction_editor.dart';
@@ -23,6 +24,8 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // 用 Material Scaffold 承载 FAB 与 IndexedStack（forui 无 FAB 对应物），
+    // 底部导航栏换成 forui 的 FBottomNavigationBar。
     return Scaffold(
       body: IndexedStack(
         index: _index,
@@ -35,24 +38,21 @@ class _HomeShellState extends State<HomeShell> {
               child: const Icon(Icons.add_rounded),
             )
           : null,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long_rounded),
-            label: '明细',
+      bottomNavigationBar: FBottomNavigationBar(
+        index: _index,
+        onChange: (value) => setState(() => _index = value),
+        children: const [
+          FBottomNavigationBarItem(
+            icon: Icon(FLucideIcons.receiptText),
+            label: Text('明细'),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart_rounded),
-            label: '统计',
+          FBottomNavigationBarItem(
+            icon: Icon(FLucideIcons.chartColumn),
+            label: Text('统计'),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.tune_outlined),
-            selectedIcon: Icon(Icons.tune_rounded),
-            label: '设置',
+          FBottomNavigationBarItem(
+            icon: Icon(FLucideIcons.settings2),
+            label: Text('设置'),
           ),
         ],
       ),

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forui/forui.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/update/update_controller.dart';
 import '../../../core/utils/category_icons.dart';
+import '../../../shared/widgets/segmented_control.dart';
 import '../../ledger/application/providers.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -103,9 +105,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showFToast(
+      context: context,
+      title: Text(message),
+      duration: const Duration(seconds: 4),
+    );
   }
 
   @override
@@ -124,58 +128,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
           ),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.category_outlined),
-                  title: const Text('分类管理'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => const CategoryManagementScreen(),
-                    ),
+          FTileGroup(
+            children: [
+              FTile(
+                prefix: const Icon(FLucideIcons.layoutGrid),
+                title: const Text('分类管理'),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => const CategoryManagementScreen(),
                   ),
                 ),
-                const Divider(height: 1, indent: 56),
-                const ListTile(
-                  leading: Icon(Icons.currency_yen_rounded),
-                  title: Text('默认货币'),
-                  trailing: Text('人民币'),
-                ),
-              ],
-            ),
+              ),
+              FTile(
+                prefix: const Icon(FLucideIcons.japaneseYen),
+                title: const Text('默认货币'),
+                suffix: const Text('人民币'),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  enabled: !_busy,
-                  leading: const Icon(Icons.file_upload_outlined),
-                  title: const Text('导出完整备份'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: _exportBackup,
-                ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  enabled: !_busy,
-                  leading: const Icon(Icons.settings_backup_restore_rounded),
-                  title: const Text('从备份恢复'),
-                  trailing: _busy
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.chevron_right_rounded),
-                  onTap: _restoreBackup,
-                ),
-              ],
-            ),
+          FTileGroup(
+            children: [
+              FTile(
+                enabled: !_busy,
+                prefix: const Icon(FLucideIcons.upload),
+                title: const Text('导出完整备份'),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: _exportBackup,
+              ),
+              FTile(
+                enabled: !_busy,
+                prefix: const Icon(FLucideIcons.archiveRestore),
+                title: const Text('从备份恢复'),
+                suffix: _busy
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(FLucideIcons.chevronRight),
+                onPress: _restoreBackup,
+              ),
+            ],
           ),
           const SizedBox(height: 16),
-          const Card(child: _AboutTile()),
+          const _AboutTile(),
         ],
       ),
     );
@@ -217,9 +215,11 @@ class _AboutTileState extends ConsumerState<_AboutTile> {
     if (!mounted) return;
     setState(() => _checking = false);
     if (message.isEmpty) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showFToast(
+      context: context,
+      title: Text(message),
+      duration: const Duration(seconds: 4),
+    );
   }
 
   @override
@@ -229,35 +229,39 @@ class _AboutTileState extends ConsumerState<_AboutTile> {
         ? updateState.info
         : null;
 
-    return ListTile(
-      leading: const Icon(Icons.info_outline_rounded),
-      title: const Text('Ligy Tally'),
-      subtitle: Text(
-        _version == null
-            ? '正在读取版本…'
-            : pending != null
-            ? '版本 $_version · 可更新至 v${pending.version}'
-            : '版本 $_version',
-      ),
-      trailing: _checking || updateState.isBusy
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          // 已发现新版时按钮直接变成「立即更新」，
-          // 不必回到首页等 SnackBar 再出现一次。
-          : pending != null
-          ? FilledButton(
-              onPressed: () => ref
-                  .read(updateControllerProvider.notifier)
-                  .downloadAndInstall(),
-              child: const Text('立即更新'),
-            )
-          : TextButton(
-              onPressed: _checkUpdate,
-              child: const Text('检查更新'),
-            ),
+    return FTileGroup(
+      children: [
+        FTile(
+          prefix: const Icon(FLucideIcons.info),
+          title: const Text('Ligy Tally'),
+          subtitle: Text(
+            _version == null
+                ? '正在读取版本…'
+                : pending != null
+                ? '版本 $_version · 可更新至 v${pending.version}'
+                : '版本 $_version',
+          ),
+          suffix: _checking || updateState.isBusy
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              // 已发现新版时按钮直接变成「立即更新」，
+              : pending != null
+              ? FButton(
+                  onPress: () => ref
+                      .read(updateControllerProvider.notifier)
+                      .downloadAndInstall(),
+                  child: const Text('立即更新'),
+                )
+              : FButton(
+                  onPress: _checkUpdate,
+                  variant: FButtonVariant.outline,
+                  child: const Text('检查更新'),
+                ),
+        ),
+      ],
     );
   }
 }
@@ -366,9 +370,11 @@ class _CategoryManagementScreenState
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showFToast(
+      context: context,
+      title: Text(message),
+      duration: const Duration(seconds: 4),
+    );
   }
 
   Future<void> _addCategory() async {
@@ -472,19 +478,13 @@ class _CategoryManagementScreenState
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<int>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('支出分类')),
-                  ButtonSegment(value: 1, label: Text('收入分类')),
-                ],
-                selected: {_kind},
-                onSelectionChanged: (values) {
-                  setState(() => _kind = values.first);
-                },
-              ),
+            child: FSegmentedControl<int>(
+              selected: _kind,
+              onChanged: (value) => setState(() => _kind = value),
+              segments: const [
+                FSegment(value: 0, label: '支出分类'),
+                FSegment(value: 1, label: '收入分类'),
+              ],
             ),
           ),
           Expanded(
@@ -524,9 +524,9 @@ class _CategoryManagementScreenState
                     }
                     return Padding(
                       padding: EdgeInsets.only(left: isChild ? 24 : 0),
-                      child: Card(
-                        child: ListTile(
-                          leading: CircleAvatar(
+                child: FCard(
+                        child: FTile(
+                          prefix: CircleAvatar(
                             radius: isChild ? 17 : 20,
                             backgroundColor: category.isActive
                                 ? AppColors.primarySoft
@@ -545,18 +545,18 @@ class _CategoryManagementScreenState
                                 ? '${parent?.name ?? '二级分类'} · ${category.isActive ? '启用' : '停用'}'
                                 : '一级分类 · ${category.isActive ? '启用' : '停用'}',
                           ),
-                          trailing: Row(
+                          suffix: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Switch(
+                              FSwitch(
                                 value: category.isActive,
-                                onChanged: (value) => database
+                                onChange: (value) => database
                                     .setCategoryActive(category.id, value),
                               ),
-                              IconButton(
-                                onPressed: () => _deleteCategory(category),
-                                tooltip: '删除分类',
-                                icon: const Icon(Icons.delete_outline_rounded),
+                              const SizedBox(width: 4),
+                              FButton.icon(
+                                onPress: () => _deleteCategory(category),
+                                child: const Icon(FLucideIcons.trash2),
                               ),
                             ],
                           ),

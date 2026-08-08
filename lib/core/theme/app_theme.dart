@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 
 class AppColors {
   static const ink = Color(0xFF17211E);
@@ -114,3 +115,35 @@ ThemeData buildAppTheme() {
     ),
   );
 }
+
+/// forui 品牌主题：以 neutral(light/touch) 为底，套上LigyTally 的语义化配色。
+///
+/// - primary       → 品牌绿，用于选中态、强调按钮
+/// - destructive   → 支出红（记账语境里的"扣钱/删除"）
+/// - background→ 页面浅灰底
+/// - card / border  → 卡片白面 + 淡描边
+///
+/// 通过 [FThemeData.copyWith] + [FColors.copyWith] 只改颜色，其余间距/圆角/字体
+/// 沿用 forui 触屏预设，保证组件观感一致。
+FThemeData buildForuiTheme() {
+  final base = FTheme.neutral.light.touch;
+  return FThemeData(
+    touch: true,
+    debugLabel: 'LigyTally forui',
+    colors: base.colors.copyWith(
+      background: AppColors.canvas,
+      foreground: AppColors.ink,
+      primary: AppColors.primary,
+      primaryForeground: Colors.white,
+      secondary: AppColors.primarySoft,
+      secondaryForeground: AppColors.primary,
+      muted: AppColors.canvas,
+      mutedForeground: AppColors.muted,
+      destructive: AppColors.expense,
+      destructiveForeground: Colors.white,
+      card: AppColors.surface,
+      border: AppColors.line,
+    ),
+  );
+}
+

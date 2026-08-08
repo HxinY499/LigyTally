@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forui/forui.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/database/app_database.dart';
@@ -10,6 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/local_image.dart';
+import '../../../shared/widgets/segmented_control.dart';
 import '../application/providers.dart';
 
 class TransactionEditor extends ConsumerStatefulWidget {
@@ -169,9 +171,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showFToast(
+      context: context,
+      title: Text(message),
+      variant: FToastVariant.destructive,
+      duration: const Duration(seconds: 4),
+    );
   }
 
   @override
@@ -185,26 +190,22 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
           children: [
-            SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<int>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('支出')),
-                  ButtonSegment(value: 1, label: Text('收入')),
-                ],
-                selected: {_kind},
-                onSelectionChanged: (values) {
-                  setState(() {
-                    _kind = values.first;
-                    _categoryId = null;
-                  });
-                },
-              ),
+            FSegmentedControl<int>(
+              selected: _kind,
+              onChanged: (value) {
+                setState(() {
+                  _kind = value;
+                  _categoryId = null;
+                });
+              },
+              segments: const [
+                FSegment(value: 0, label: '支出'),
+                FSegment(value: 1, label: '收入'),
+              ],
             ),
             const SizedBox(height: 20),
-            TextField(
-              controller: _amountController,
+            FTextField(
+              control: FTextFieldControl.managed(controller: _amountController),
               autofocus: widget.existing == null,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
@@ -214,13 +215,11 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                   RegExp(r'^\d{0,9}(\.\d{0,2})?'),
                 ),
               ],
-              style: Theme.of(
-                context,
-              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
-              decoration: const InputDecoration(
-                labelText: '金额',
-                prefixText: '¥ ',
-                hintText: '0.00',
+              label: const Text('金额'),
+              hint: '0.00',
+              prefixBuilder: (context, style, variants) => const Padding(
+                padding: EdgeInsets.only(left: 12, right: 4),
+                child: Text('¥'),
               ),
             ),
             const SizedBox(height: 22),
@@ -249,34 +248,34 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _selectDate,
-                    icon: const Icon(Icons.calendar_today_outlined, size: 18),
-                    label: Text(
+                  child: FButton(
+                    onPress: _selectDate,
+                    variant: FButtonVariant.outline,
+                    prefix: const Icon(FLucideIcons.calendar, size: 18),
+                    child: Text(
                       '${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}',
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _selectTime,
-                    icon: const Icon(Icons.schedule_outlined, size: 19),
-                    label: Text(_time.format(context)),
+                  child: FButton(
+                    onPress: _selectTime,
+                    variant: FButtonVariant.outline,
+                    prefix: const Icon(FLucideIcons.clock, size: 18),
+                    child: Text(_time.format(context)),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 18),
-            TextField(
-              controller: _noteController,
+            FTextField.multiline(
+              control: FTextFieldControl.managed(controller: _noteController),
               maxLength: 200,
+              minLines: 1,
               maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '备注',
-                hintText: '可选',
-                alignLabelWithHint: true,
-              ),
+              label: const Text('备注'),
+              hint: '可选',
             ),
             const SizedBox(height: 10),
             Row(
@@ -318,31 +317,28 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                   if (_visibleImageCount < 3)
                     SizedBox(
                       width: 88,
-                      child: OutlinedButton(
-                        onPressed: _showImageSource,
-                        style: OutlinedButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Icon(Icons.add_a_photo_outlined),
+                      child: FButton.icon(
+                        onPress: _showImageSource,
+                        child: const Icon(FLucideIcons.camera),
                       ),
                     ),
                 ],
               ),
             ),
             const SizedBox(height: 28),
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: _saving
+            FButton(
+              onPress: _saving ? null : _save,
+              prefix: _saving
                   ? const SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
-                  : const Icon(Icons.check_rounded),
-              label: Text(_saving ? '保存中' : '保存'),
+                  : const Icon(FLucideIcons.check),
+              child: Text(_saving ? '保存中' : '保存'),
             ),
           ],
         ),

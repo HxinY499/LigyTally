@@ -3,12 +3,14 @@ import 'dart:math' as math;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../features/ledger/application/providers.dart';
+import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/summary_band.dart';
 
 enum StatisticsPeriod { day, week, month, year, custom }
@@ -120,20 +122,17 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
-            child: SegmentedButton<StatisticsPeriod>(
-              showSelectedIcon: false,
+            child: FSegmentedControl<StatisticsPeriod>(
+              expanded: false,
+              selected: _period,
+              onChanged: _selectPeriod,
               segments: const [
-                ButtonSegment(value: StatisticsPeriod.day, label: Text('日')),
-                ButtonSegment(value: StatisticsPeriod.week, label: Text('周')),
-                ButtonSegment(value: StatisticsPeriod.month, label: Text('月')),
-                ButtonSegment(value: StatisticsPeriod.year, label: Text('年')),
-                ButtonSegment(
-                  value: StatisticsPeriod.custom,
-                  label: Text('自定义'),
-                ),
+                FSegment(value: StatisticsPeriod.day, label: '日'),
+                FSegment(value: StatisticsPeriod.week, label: '周'),
+                FSegment(value: StatisticsPeriod.month, label: '月'),
+                FSegment(value: StatisticsPeriod.year, label: '年'),
+                FSegment(value: StatisticsPeriod.custom, label: '自定义'),
               ],
-              selected: {_period},
-              onSelectionChanged: (values) => _selectPeriod(values.first),
             ),
           ),
           Padding(
@@ -141,10 +140,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                IconButton(
-                  onPressed: () => _move(-1),
-                  tooltip: '上一个周期',
-                  icon: const Icon(Icons.chevron_left_rounded),
+                FButton.icon(
+                  onPress: () => _move(-1),
+                  child: const Icon(FLucideIcons.chevronLeft),
                 ),
                 SizedBox(
                   width: 210,
@@ -158,10 +156,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: () => _move(1),
-                  tooltip: '下一个周期',
-                  icon: const Icon(Icons.chevron_right_rounded),
+                FButton.icon(
+                  onPress: () => _move(1),
+                  child: const Icon(FLucideIcons.chevronRight),
                 ),
               ],
             ),
@@ -203,7 +200,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-            child: Card(
+            child: FCard(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 12, 12),
                 child: Column(
@@ -253,16 +250,14 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                     ),
                   ),
                 ),
-                SegmentedButton<int>(
-                  showSelectedIcon: false,
+                FSegmentedControl<int>(
+                  expanded: false,
+                  selected: _categoryKind,
+                  onChanged: (value) => setState(() => _categoryKind = value),
                   segments: const [
-                    ButtonSegment(value: 0, label: Text('支出')),
-                    ButtonSegment(value: 1, label: Text('收入')),
+                    FSegment(value: 0, label: '支出'),
+                    FSegment(value: 1, label: '收入'),
                   ],
-                  selected: {_categoryKind},
-                  onSelectionChanged: (value) {
-                    setState(() => _categoryKind = value.first);
-                  },
                 ),
               ],
             ),
@@ -274,7 +269,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               if (totals.isEmpty) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Card(
+                  child: FCard(
                     child: SizedBox(
                       height: 104,
                       child: Center(
@@ -294,7 +289,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               );
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Card(
+                child: FCard(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,

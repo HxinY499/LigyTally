@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
+import '../../../shared/widgets/segmented_control.dart';
 import '../../../shared/widgets/summary_band.dart';
 import '../application/providers.dart';
 import 'transaction_editor.dart';
@@ -40,6 +42,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     );
   }
 
+  // 删除确认：forui 没有 showDialog 的直接替代，保留 Material AlertDialog 兜底。
   Future<bool> _confirmDelete(LedgerItem item) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -64,9 +67,12 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
       return true;
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('删除失败：$error')));
+        showFToast(
+          context: context,
+          title: Text('删除失败：$error'),
+          variant: FToastVariant.destructive,
+          duration: const Duration(seconds: 4),
+        );
       }
       return false;
     }
@@ -80,30 +86,32 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
       bottom: false,
       child: Column(
         children: [
+          // 顶部月份切换栏 —— 用 forui 图标按钮
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+            padding: const EdgeInsets.fromLTRB(20, 14, 12, 10),
             child: Row(
               children: [
                 const Spacer(),
-                IconButton(
-                  onPressed: () {
+                FButton.icon(
+                  onPress: () {
                     setState(() {
                       _searching = !_searching;
                       if (!_searching) _query = '';
                     });
                   },
-                  tooltip: _searching ? '关闭搜索' : '搜索',
-                  icon: Icon(
-                    _searching ? Icons.close_rounded : Icons.search_rounded,
+                  child: Icon(
+                    _searching
+                        ? FLucideIcons.x
+                        : FLucideIcons.search,
                   ),
                 ),
-                IconButton(
-                  onPressed: () => _changeMonth(-1),
-                  tooltip: '上个月',
-                  icon: const Icon(Icons.chevron_left_rounded),
+                const SizedBox(width: 4),
+                FButton.icon(
+                  onPress: () => _changeMonth(-1),
+                  child: const Icon(FLucideIcons.chevronLeft),
                 ),
                 SizedBox(
-                  width: 112,
+                  width: 108,
                   child: Text(
                     formatMonth(_month),
                     textAlign: TextAlign.center,
@@ -112,10 +120,9 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: () => _changeMonth(1),
-                  tooltip: '下个月',
-                  icon: const Icon(Icons.chevron_right_rounded),
+                FButton.icon(
+                  onPress: () => _changeMonth(1),
+                  child: const Icon(FLucideIcons.chevronRight),
                 ),
               ],
             ),
@@ -137,31 +144,28 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
           if (_searching)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: TextField(
+              child: FTextField(
                 autofocus: true,
-                onChanged: (value) => setState(() => _query = value.trim()),
-                decoration: const InputDecoration(
-                  hintText: '搜索备注或分类',
-                  prefixIcon: Icon(Icons.search_rounded),
+                hint: '搜索备注或分类',
+                control: FTextFieldControl.managed(
+                  onChange: (value) =>
+                      setState(() => _query = value.text.trim()),
                 ),
+                prefixBuilder: (context, style, variants) =>
+                    const Icon(FLucideIcons.search),
               ),
             ),
+          // 全部 / 支出 / 收入 —— forui 分段选择器
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<LedgerFilter>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: LedgerFilter.all, label: Text('全部')),
-                  ButtonSegment(value: LedgerFilter.expense, label: Text('支出')),
-                  ButtonSegment(value: LedgerFilter.income, label: Text('收入')),
-                ],
-                selected: {_filter},
-                onSelectionChanged: (value) {
-                  setState(() => _filter = value.first);
-                },
-              ),
+            child: FSegmentedControl<LedgerFilter>(
+              selected: _filter,
+              onChanged: (value) => setState(() => _filter = value),
+              segments: const [
+                FSegment(value: LedgerFilter.all, label: '全部'),
+                FSegment(value: LedgerFilter.expense, label: '支出'),
+                FSegment(value: LedgerFilter.income, label: '收入'),
+              ],
             ),
           ),
           Expanded(
@@ -170,7 +174,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return _MessageState(
-                    icon: Icons.error_outline_rounded,
+                    icon: FLucideIcons.circleAlert,
                     title: '账单加载失败',
                     detail: '${snapshot.error}',
                   );
@@ -196,8 +200,8 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                 if (items.isEmpty) {
                   return _MessageState(
                     icon: keyword.isEmpty
-                        ? Icons.receipt_long_outlined
-                        : Icons.search_off_rounded,
+                        ? FLucideIcons.receipt
+                        : FLucideIcons.searchX,
                     title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
                     detail: keyword.isEmpty ? '点击右下角加号记下第一笔' : '换一个关键词再试',
                   );
@@ -217,7 +221,10 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                         day: dateFromKey(group.key),
                         items: group.value,
                       ),
-                      Card(
+                      // forui 卡片包裹当天账单。因为要给每条加Dismissible 滑删
+                      // （被包裹后不再是 FItemMixin，无法进 FItemGroup），
+                      // 这里用 Column 手动排列 FItem + 分隔线。
+                      FCard(
                         child: Column(
                           children: [
                             for (
@@ -225,12 +232,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                               index < group.value.length;
                               index++
                             ) ...[
-                              _LedgerTile(
-                                item: group.value[index],
-                                onTap: () => _edit(group.value[index]),
-                                confirmDismiss: () =>
-                                    _confirmDelete(group.value[index]),
-                              ),
+                              _ledgerItem(group.value[index]),
                               if (index < group.value.length - 1)
                                 const Divider(height: 1, indent: 66),
                             ],
@@ -245,6 +247,56 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // 单条账单：forui FItem，外面包 Dismissible 实现滑动删除（forui无对应物，Material 兜底）。
+  Widget _ledgerItem(LedgerItem item) {
+    final isExpense = item.transaction.kind == 0;
+    final color = isExpense ? AppColors.expense : AppColors.income;
+    final soft = isExpense ? AppColors.expenseSoft : AppColors.incomeSoft;
+    final occurredAt = DateTime.fromMillisecondsSinceEpoch(
+      item.transaction.occurredAt,
+    );
+    return Dismissible(
+      key: ValueKey(item.transaction.id),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => _confirmDelete(item),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 22),
+        color: AppColors.expense,
+        child: const Icon(FLucideIcons.trash2, color: Colors.white),
+      ),
+      child: FItem(
+        onPress: () => _edit(item),
+        prefix: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: soft, shape: BoxShape.circle),
+          child: Icon(categoryIcon(item.category.iconKey), color: color, size: 21),
+        ),
+        title: Text(
+          item.category.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          item.transaction.note.isEmpty
+              ? formatClock(occurredAt)
+              : '${item.transaction.note} · ${formatClock(occurredAt)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        suffix: Text(
+          '${isExpense ? '-' : '+'}${formatMoney(item.transaction.amountCents)}',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
     );
   }
@@ -282,95 +334,6 @@ class _DayHeader extends StatelessWidget {
             ).textTheme.labelMedium?.copyWith(color: AppColors.muted),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _LedgerTile extends StatelessWidget {
-  const _LedgerTile({
-    required this.item,
-    required this.onTap,
-    required this.confirmDismiss,
-  });
-
-  final LedgerItem item;
-  final VoidCallback onTap;
-  final Future<bool> Function() confirmDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final isExpense = item.transaction.kind == 0;
-    final color = isExpense ? AppColors.expense : AppColors.income;
-    final soft = isExpense ? AppColors.expenseSoft : AppColors.incomeSoft;
-    final occurredAt = DateTime.fromMillisecondsSinceEpoch(
-      item.transaction.occurredAt,
-    );
-    return Dismissible(
-      key: ValueKey(item.transaction.id),
-      direction: DismissDirection.endToStart,
-      confirmDismiss: (_) => confirmDismiss(),
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 22),
-        color: AppColors.expense,
-        child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: soft, shape: BoxShape.circle),
-                child: Icon(
-                  categoryIcon(item.category.iconKey),
-                  color: color,
-                  size: 21,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.category.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      item.transaction.note.isEmpty
-                          ? formatClock(occurredAt)
-                          : '${item.transaction.note} · ${formatClock(occurredAt)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                '${isExpense ? '-' : '+'}${formatMoney(item.transaction.amountCents)}',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

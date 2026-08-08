@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forui/forui.dart';
 
 import 'update_controller.dart';
 import 'update_service.dart';
@@ -7,7 +8,7 @@ import 'update_service.dart';
 /// 应用内更新的提示层。
 ///
 /// 包在页面外层，负责两件事：
-/// 1. 发现新版本时弹一条SnackBar（不是大弹窗，不打断记账）
+/// 1. 发现新版本时弹一条 forui toast（不是大弹窗，不打断记账）
 /// 2. 下载期间在底部显示一条常驻细进度条
 ///
 /// 刻意不用 AlertDialog：更新不是必须马上处理的事，
@@ -24,7 +25,7 @@ class UpdateNotificationLayer extends ConsumerStatefulWidget {
 
 class _UpdateNotificationLayerState
     extends ConsumerState<UpdateNotificationLayer> {
-  /// 记录已经为哪个版本弹过 SnackBar，避免重复打扰
+  /// 记录已经为哪个版本弹过 toast，避免重复打扰
   String? _promptedVersion;
 
   @override
@@ -37,63 +38,51 @@ class _UpdateNotificationLayerState
     });
   }
 
-  void _showAvailableSnackBar(UpdateInfo info) {
+  void _showAvailableToast(UpdateInfo info) {
     final version = info.version.toString();
     if (_promptedVersion == version) return;
     _promptedVersion = version;
-
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
 
     final controller = ref.read(updateControllerProvider.notifier);
     final sizeLabel = info.apkSize > 0
         ? ' · ${(info.apkSize / 1024 / 1024).toStringAsFixed(0)}MB'
         : '';
 
-    // SnackBar 只支持一个 action，而这里要「更新」和「忽略此版本」两个，
-    // 所以把按钮放进 content 自己排版。
-    messenger.showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 10),
-        behavior: SnackBarBehavior.floating,
-        padding: const EdgeInsets.only(left: 16, right: 8),
-        content: Row(
-          children: [
-            Expanded(
-              child: Text(
-                '发现新版本 v$version$sizeLabel',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                messenger.hideCurrentSnackBar();
-                controller.ignoreVersionAndDismiss();
-              },
-              child: const Text('忽略'),
-            ),
-            TextButton(
-              onPressed: () {
-                messenger.hideCurrentSnackBar();
-                controller.downloadAndInstall();
-              },
-              child: const Text('更新'),
-            ),
-          ],
-        ),
+    showFToast(
+      context: context,
+      title: const Text('发现新版本'),
+      description: Text('v$version$sizeLabel'),
+      suffixBuilder: (context, entry) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FButton(
+            variant: FButtonVariant.ghost,
+            onPress: () {
+              entry.dismiss();
+              controller.ignoreVersionAndDismiss();
+            },
+            child: const Text('忽略'),
+          ),
+          const SizedBox(width: 4),
+          FButton(
+            variant: FButtonVariant.ghost,
+            onPress: () {
+              entry.dismiss();
+              controller.downloadAndInstall();
+            },
+            child: const Text('更新'),
+          ),
+        ],
       ),
+      duration: null, // 不自动消失：等用户主动交互
     );
   }
 
-  void _showMessageSnackBar(String message) {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger?.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 4),
-      ),
+  void _showMessageToast(String message) {
+    showFToast(
+      context: context,
+      title: Text(message),
+      duration: const Duration(seconds: 4),
     );
   }
 
@@ -102,12 +91,12 @@ class _UpdateNotificationLayerState
     final state = ref.watch(updateControllerProvider);
 
     // 状态变化时触发提示。用 listen 而不是在 build 里直接调，
-    // 避免 build 期间操作 ScaffoldMessenger。
+    // 避免 build 期间操作 overlay。
     ref.listen<UpdateState>(updateControllerProvider, (previous, next) {
       if (next.phase == UpdatePhase.available && next.info != null) {
-        _showAvailableSnackBar(next.info!);
+        _showAvailableToast(next.info!);
       } else if (next.phase == UpdatePhase.failed && next.message != null) {
-        _showMessageSnackBar(next.message!);
+        _showMessageToast(next.message!);
       }
     });
 
