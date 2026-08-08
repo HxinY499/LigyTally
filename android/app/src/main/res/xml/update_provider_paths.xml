@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    仅暴露内部缓存目录下的 updates/ 子目录，用于把下载好的 APK
+    交给系统安装器。刻意不使用 root-path，把可被外部读取的范围
+    收到最小，避免账单数据库与图片附件被意外暴露。
+-->
+<paths>
+    <cache-path
+        name="update_apk"
+        path="updates/" />
+</paths>

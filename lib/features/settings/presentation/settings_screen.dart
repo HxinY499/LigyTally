@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/update/update_controller.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../ledger/application/providers.dart';
 
@@ -174,15 +175,89 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.info_outline_rounded),
-              title: Text('Ligy Tally'),
-              subtitle: Text('版本 1.0.0'),
-            ),
-          ),
+          const Card(child: _AboutTile()),
         ],
       ),
+    );
+  }
+}
+
+/// 关于卡片：显示当前版本并提供手动检查更新。
+///
+/// 版本号从原生 PackageInfo 读，不再硬编码——之前写死的
+/// 「版本 1.0.0」在发布 1.0.1 后就不准了。
+class _AboutTile extends ConsumerStatefulWidget {
+  const _AboutTile();
+
+  @override
+  ConsumerState<_AboutTile> createState() => _AboutTileState();
+}
+
+class _AboutTileState extends ConsumerState<_AboutTile> {
+  String? _version;
+  bool _checking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final version = await ref.read(updateServiceProvider).currentVersion();
+    if (!mounted) return;
+    setState(() => _version = version?.toString());
+  }
+
+  Future<void> _checkUpdate() async {
+    setState(() => _checking = true);
+    final message = await ref
+        .read(updateControllerProvider.notifier)
+        .checkManually();
+    if (!mounted) return;
+    setState(() => _checking = false);
+    if (message.isEmpty) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final updateState = ref.watch(updateControllerProvider);
+    final pending = updateState.phase == UpdatePhase.available
+        ? updateState.info
+        : null;
+
+    return ListTile(
+      leading: const Icon(Icons.info_outline_rounded),
+      title: const Text('Ligy Tally'),
+      subtitle: Text(
+        _version == null
+            ? '正在读取版本…'
+            : pending != null
+            ? '版本 $_version · 可更新至 v${pending.version}'
+            : '版本 $_version',
+      ),
+      trailing: _checking || updateState.isBusy
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          // 已发现新版时按钮直接变成「立即更新」，
+          // 不必回到首页等 SnackBar 再出现一次。
+          : pending != null
+          ? FilledButton(
+              onPressed: () => ref
+                  .read(updateControllerProvider.notifier)
+                  .downloadAndInstall(),
+              child: const Text('立即更新'),
+            )
+          : TextButton(
+              onPressed: _checkUpdate,
+              child: const Text('检查更新'),
+            ),
     );
   }
 }

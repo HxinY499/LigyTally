@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../core/theme/app_theme.dart';
+import '../core/update/update_banner.dart';
 import 'home_shell.dart';
 
 class LigyTallyApp extends StatelessWidget {
@@ -20,7 +21,7 @@ class LigyTallyApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const HomeShell(),
+      home: const UpdateNotificationLayer(child: HomeShell()),
     );
   }
 }

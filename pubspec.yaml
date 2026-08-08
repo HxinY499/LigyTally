@@ -49,6 +49,12 @@ dependencies:
   share_plus: ^12.0.2
   archive: ^4.0.9
   file_selector: ^1.1.0
+  # 应用内更新：请求 GitHub Release / 记录忽略的版本 / 校验 APK 完整性
+  # 当前版本号与安装动作走原生 MethodChannel，故不引入 package_info_plus
+  #（其 10.x 依赖 win32 ^6，与 share_plus 12的 win32 ^5 冲突）
+  http: ^1.6.0
+  shared_preferences: ^2.5.5
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:
