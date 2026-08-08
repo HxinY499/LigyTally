@@ -69,7 +69,7 @@ cp "$BUILD_DIR/build/app/outputs/flutter-apk/app-release.apk" "$APK_PATH"
 
 "$APKSIGNER" verify --verbose --print-certs "$APK_PATH"
 
-if rg -a -q 'file:///Users/|/Users/|lotsohe' "$APK_PATH"; then
+if LC_ALL=C grep -a -q -E 'file:///Users/|/Users/|lotsohe' "$APK_PATH"; then
   echo "Release APK contains an absolute user path; refusing to publish." >&2
   exit 1
 fi
