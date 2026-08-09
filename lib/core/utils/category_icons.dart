@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 const categoryIcons = <String, IconData>{
@@ -63,6 +64,7 @@ const categoryIcons = <String, IconData>{
   'living_expense': FLucideIcons.wallet,
   'allowance': FLucideIcons.heartHandshake,
   'family_income': FLucideIcons.usersRound,
+  'refund': FLucideIcons.undo2,
   'other': FLucideIcons.ellipsis,
 };
 
