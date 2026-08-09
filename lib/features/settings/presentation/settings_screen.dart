@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/update/update_controller.dart';
 import '../../../core/utils/category_icons.dart';
@@ -144,6 +145,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 prefix: const Icon(FLucideIcons.japaneseYen),
                 title: const Text('默认货币'),
                 suffix: const Text('人民币'),
+              ),
+              AppTile(
+                prefix: const Icon(FLucideIcons.list),
+                title: const Text('分类选择样式'),
+                subtitle: const Text('记账页分类的展示方式'),
+                suffix: AppSegmentedControl<CategoryPickerLayout>(
+                  expanded: false,
+                  selected: ref.watch(categoryPickerLayoutProvider),
+                  onChanged: (value) => ref
+                      .read(categoryPickerLayoutProvider.notifier)
+                      .setLayout(value),
+                  segments: const [
+                    AppSegment(
+                      value: CategoryPickerLayout.list,
+                      label: '列表',
+                    ),
+                    AppSegment(
+                      value: CategoryPickerLayout.grid,
+                      label: '网格',
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

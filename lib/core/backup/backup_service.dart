@@ -68,7 +68,8 @@ class BackupService {
   Future<String?> pickBackupFile() async {
     const typeGroup = XTypeGroup(
       label: 'Ligy Tally 备份',
-      mimeTypes: ['application/zip'],
+      mimeTypes: ['application/zip', 'application/octet-stream'],
+      extensions: ['ligytally', 'zip'],
     );
     final file = await openFile(acceptedTypeGroups: [typeGroup]);
     return file?.path;
