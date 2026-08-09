@@ -93,7 +93,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         child: Wrap(
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
+              leading: const Icon(FLucideIcons.camera),
               title: const Text('拍照'),
               onTap: () {
                 Navigator.pop(context);
@@ -101,7 +101,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
+              leading: const Icon(FLucideIcons.images),
               title: const Text('从相册选择'),
               onTap: () {
                 Navigator.pop(context);
@@ -524,7 +524,7 @@ class _ImageTile extends StatelessWidget {
                   width: 28,
                   height: 28,
                 ),
-                icon: const Icon(Icons.close_rounded),
+                icon: const Icon(FLucideIcons.x),
               ),
             ),
           ],

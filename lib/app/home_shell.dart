@@ -35,7 +35,7 @@ class _HomeShellState extends State<HomeShell> {
           ? FloatingActionButton(
               onPressed: _addTransaction,
               tooltip: '记一笔',
-              child: const Icon(Icons.add_rounded),
+              child: const Icon(FLucideIcons.plus),
             )
           : null,
       bottomNavigationBar: FBottomNavigationBar(

@@ -457,7 +457,7 @@ class _CategoryManagementScreenState
           PopupMenuButton<String>(
             enabled: !_busy,
             tooltip: '分类配置',
-            icon: const Icon(Icons.import_export_rounded),
+            icon: const Icon(FLucideIcons.arrowLeftRight),
             onSelected: (value) {
               if (value == 'export') _exportConfig();
               if (value == 'import') _importConfig();
@@ -470,7 +470,7 @@ class _CategoryManagementScreenState
           IconButton(
             onPressed: _busy ? null : _addCategory,
             tooltip: '新建分类',
-            icon: const Icon(Icons.add_rounded),
+            icon: const Icon(FLucideIcons.plus),
           ),
         ],
       ),

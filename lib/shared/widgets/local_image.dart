@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 
 import '../../core/media/image_storage.dart';
 
@@ -25,7 +25,7 @@ class LocalImage extends StatelessWidget {
         if (file == null) {
           return const ColoredBox(
             color: Color(0xFFE7ECE9),
-            child: Center(child: Icon(Icons.image_outlined)),
+            child: Center(child: Icon(FLucideIcons.image)),
           );
         }
         return Image.file(
@@ -34,7 +34,7 @@ class LocalImage extends StatelessWidget {
           errorBuilder: (_, _, _) {
             return const ColoredBox(
               color: Color(0xFFE7ECE9),
-              child: Center(child: Icon(Icons.broken_image_outlined)),
+              child: Center(child: Icon(FLucideIcons.imageOff)),
             );
           },
         );
