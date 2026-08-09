@@ -11,8 +11,8 @@ class AppColors {
   static const primarySoft = Color(0xFFDDF1EC);
   static const expense = Color(0xFFD55A46);
   static const expenseSoft = Color(0xFFF8E8E4);
-  static const income = Color(0xFF2879B8);
-  static const incomeSoft = Color(0xFFE2EFF9);
+  static const income = Color(0xFF2E7D32);
+  static const incomeSoft = Color(0xFFE8F5E9);
   static const accent = Color(0xFFE5A62E);
 }
 
@@ -53,12 +53,21 @@ ThemeData buildAppTheme() {
       labelMedium: _flat(text.labelMedium),
       labelSmall: _flat(text.labelSmall),
     ),
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       centerTitle: false,
       backgroundColor: AppColors.canvas,
       foregroundColor: AppColors.ink,
       surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
       elevation: 0,
+      toolbarHeight: 60,
+      titleSpacing: 4,
+      iconTheme: const IconThemeData(color: AppColors.ink, size: 22),
+      titleTextStyle: _flat(text.titleLarge).copyWith(
+        fontSize: 20,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.2,
+      ),
     ),
     cardTheme: const CardThemeData(
       elevation: 0,

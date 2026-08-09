@@ -30,7 +30,7 @@ class SummaryBand extends StatelessWidget {
           _SummaryValue(
             label: '收入',
             value: formatMoney(summary.incomeCents),
-            color: const Color(0xFF8DC9F3),
+            color: const Color(0xFF81C784),
           ),
           const _BandDivider(),
           _SummaryValue(

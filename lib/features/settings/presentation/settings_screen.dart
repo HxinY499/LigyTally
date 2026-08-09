@@ -474,8 +474,8 @@ class _CategoryManagementScreenState
   Widget build(BuildContext context) {
     final database = ref.watch(databaseProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('分类管理'),
+      appBar: AppTopBar(
+        title: '分类管理',
         actions: [
           PopupMenuButton<String>(
             enabled: !_busy,

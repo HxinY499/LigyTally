@@ -25,6 +25,7 @@ class AppTextField extends StatelessWidget {
     this.maxLength,
     this.minLines,
     this.maxLines = 1,
+    this.onTap,
   });
 
   final TextEditingController? controller;
@@ -47,6 +48,9 @@ class AppTextField extends StatelessWidget {
   final int? minLines;
   final int maxLines;
 
+  /// 输入框获得点击时的回调（如用于收起自定义键盘）。
+  final VoidCallback? onTap;
+
   FTextFieldControl get _control => FTextFieldControl.managed(
     controller: controller,
     onChange: onChange == null ? null : (value) => onChange!(value.text),
@@ -63,6 +67,7 @@ class AppTextField extends StatelessWidget {
         maxLength: maxLength,
         minLines: minLines ?? 1,
         maxLines: maxLines,
+        onTap: onTap,
       );
     }
     return FTextField(
@@ -76,6 +81,7 @@ class AppTextField extends StatelessWidget {
       maxLength: maxLength,
       minLines: minLines,
       maxLines: maxLines,
+      onTap: onTap,
     );
   }
 }
