@@ -10,8 +10,8 @@ import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/local_image.dart';
-import '../../../shared/widgets/segmented_control.dart';
 import '../application/providers.dart';
 
 class TransactionEditor extends ConsumerStatefulWidget {
@@ -190,7 +190,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
           children: [
-            FSegmentedControl<int>(
+            AppSegmentedControl<int>(
               selected: _kind,
               onChanged: (value) {
                 setState(() {
@@ -199,13 +199,13 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                 });
               },
               segments: const [
-                FSegment(value: 0, label: '支出'),
-                FSegment(value: 1, label: '收入'),
+                AppSegment(value: 0, label: '支出'),
+                AppSegment(value: 1, label: '收入'),
               ],
             ),
             const SizedBox(height: 20),
-            FTextField(
-              control: FTextFieldControl.managed(controller: _amountController),
+            AppTextField(
+              controller: _amountController,
               autofocus: widget.existing == null,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
@@ -248,9 +248,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             Row(
               children: [
                 Expanded(
-                  child: FButton(
+                  child: AppButton(
                     onPress: _selectDate,
-                    variant: FButtonVariant.outline,
+                    variant: AppButtonVariant.outline,
                     prefix: const Icon(FLucideIcons.calendar, size: 18),
                     child: Text(
                       '${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}',
@@ -259,9 +259,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: FButton(
+                  child: AppButton(
                     onPress: _selectTime,
-                    variant: FButtonVariant.outline,
+                    variant: AppButtonVariant.outline,
                     prefix: const Icon(FLucideIcons.clock, size: 18),
                     child: Text(_time.format(context)),
                   ),
@@ -269,8 +269,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               ],
             ),
             const SizedBox(height: 18),
-            FTextField.multiline(
-              control: FTextFieldControl.managed(controller: _noteController),
+            AppTextField(
+              multiline: true,
+              controller: _noteController,
               maxLength: 200,
               minLines: 1,
               maxLines: 3,
@@ -317,16 +318,16 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                   if (_visibleImageCount < 3)
                     SizedBox(
                       width: 88,
-                      child: FButton.icon(
+                      child: AppIconButton(
                         onPress: _showImageSource,
-                        child: const Icon(FLucideIcons.camera),
+                        icon: const Icon(FLucideIcons.camera),
                       ),
                     ),
                 ],
               ),
             ),
             const SizedBox(height: 28),
-            FButton(
+            AppButton(
               onPress: _saving ? null : _save,
               prefix: _saving
                   ? const SizedBox(

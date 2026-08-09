@@ -10,7 +10,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../features/ledger/application/providers.dart';
-import '../../../shared/widgets/segmented_control.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/summary_band.dart';
 
 enum StatisticsPeriod { day, week, month, year, custom }
@@ -122,16 +122,16 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
-            child: FSegmentedControl<StatisticsPeriod>(
+            child: AppSegmentedControl<StatisticsPeriod>(
               expanded: false,
               selected: _period,
               onChanged: _selectPeriod,
               segments: const [
-                FSegment(value: StatisticsPeriod.day, label: '日'),
-                FSegment(value: StatisticsPeriod.week, label: '周'),
-                FSegment(value: StatisticsPeriod.month, label: '月'),
-                FSegment(value: StatisticsPeriod.year, label: '年'),
-                FSegment(value: StatisticsPeriod.custom, label: '自定义'),
+                AppSegment(value: StatisticsPeriod.day, label: '日'),
+                AppSegment(value: StatisticsPeriod.week, label: '周'),
+                AppSegment(value: StatisticsPeriod.month, label: '月'),
+                AppSegment(value: StatisticsPeriod.year, label: '年'),
+                AppSegment(value: StatisticsPeriod.custom, label: '自定义'),
               ],
             ),
           ),
@@ -140,9 +140,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                FButton.icon(
+                AppIconButton(
                   onPress: () => _move(-1),
-                  child: const Icon(FLucideIcons.chevronLeft),
+                  icon: const Icon(FLucideIcons.chevronLeft),
                 ),
                 SizedBox(
                   width: 210,
@@ -156,9 +156,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                     ),
                   ),
                 ),
-                FButton.icon(
+                AppIconButton(
                   onPress: () => _move(1),
-                  child: const Icon(FLucideIcons.chevronRight),
+                  icon: const Icon(FLucideIcons.chevronRight),
                 ),
               ],
             ),
@@ -200,7 +200,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-            child: FCard(
+            child: AppCard(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 12, 12),
                 child: Column(
@@ -250,13 +250,13 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                     ),
                   ),
                 ),
-                FSegmentedControl<int>(
+                AppSegmentedControl<int>(
                   expanded: false,
                   selected: _categoryKind,
                   onChanged: (value) => setState(() => _categoryKind = value),
                   segments: const [
-                    FSegment(value: 0, label: '支出'),
-                    FSegment(value: 1, label: '收入'),
+                    AppSegment(value: 0, label: '支出'),
+                    AppSegment(value: 1, label: '收入'),
                   ],
                 ),
               ],
@@ -269,7 +269,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               if (totals.isEmpty) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: FCard(
+                  child: AppCard(
                     child: SizedBox(
                       height: 104,
                       child: Center(
@@ -289,7 +289,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               );
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: FCard(
+                child: AppCard(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,

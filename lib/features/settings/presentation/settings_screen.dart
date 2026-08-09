@@ -7,7 +7,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/update/update_controller.dart';
 import '../../../core/utils/category_icons.dart';
-import '../../../shared/widgets/segmented_control.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -128,9 +128,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
           ),
-          FTileGroup(
+          AppTileGroup(
             children: [
-              FTile(
+              AppTile(
                 prefix: const Icon(FLucideIcons.layoutGrid),
                 title: const Text('分类管理'),
                 suffix: const Icon(FLucideIcons.chevronRight),
@@ -140,7 +140,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
               ),
-              FTile(
+              AppTile(
                 prefix: const Icon(FLucideIcons.japaneseYen),
                 title: const Text('默认货币'),
                 suffix: const Text('人民币'),
@@ -148,16 +148,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          FTileGroup(
+          AppTileGroup(
             children: [
-              FTile(
+              AppTile(
                 enabled: !_busy,
                 prefix: const Icon(FLucideIcons.upload),
                 title: const Text('导出完整备份'),
                 suffix: const Icon(FLucideIcons.chevronRight),
                 onPress: _exportBackup,
               ),
-              FTile(
+              AppTile(
                 enabled: !_busy,
                 prefix: const Icon(FLucideIcons.archiveRestore),
                 title: const Text('从备份恢复'),
@@ -229,9 +229,9 @@ class _AboutTileState extends ConsumerState<_AboutTile> {
         ? updateState.info
         : null;
 
-    return FTileGroup(
+    return AppTileGroup(
       children: [
-        FTile(
+        AppTile(
           prefix: const Icon(FLucideIcons.info),
           title: const Text('Ligy Tally'),
           subtitle: Text(
@@ -249,15 +249,15 @@ class _AboutTileState extends ConsumerState<_AboutTile> {
                 )
               // 已发现新版时按钮直接变成「立即更新」，
               : pending != null
-              ? FButton(
+              ? AppButton(
                   onPress: () => ref
                       .read(updateControllerProvider.notifier)
                       .downloadAndInstall(),
                   child: const Text('立即更新'),
                 )
-              : FButton(
+              : AppButton(
                   onPress: _checkUpdate,
-                  variant: FButtonVariant.outline,
+                  variant: AppButtonVariant.outline,
                   child: const Text('检查更新'),
                 ),
         ),
@@ -478,12 +478,12 @@ class _CategoryManagementScreenState
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-            child: FSegmentedControl<int>(
+            child: AppSegmentedControl<int>(
               selected: _kind,
               onChanged: (value) => setState(() => _kind = value),
               segments: const [
-                FSegment(value: 0, label: '支出分类'),
-                FSegment(value: 1, label: '收入分类'),
+                AppSegment(value: 0, label: '支出分类'),
+                AppSegment(value: 1, label: '收入分类'),
               ],
             ),
           ),
@@ -524,8 +524,8 @@ class _CategoryManagementScreenState
                     }
                     return Padding(
                       padding: EdgeInsets.only(left: isChild ? 24 : 0),
-                child: FCard(
-                        child: FTile(
+                child: AppCard(
+                        child: AppTile(
                           prefix: CircleAvatar(
                             radius: isChild ? 17 : 20,
                             backgroundColor: category.isActive
@@ -548,15 +548,15 @@ class _CategoryManagementScreenState
                           suffix: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              FSwitch(
+                              AppSwitch(
                                 value: category.isActive,
                                 onChange: (value) => database
                                     .setCategoryActive(category.id, value),
                               ),
                               const SizedBox(width: 4),
-                              FButton.icon(
+                              AppIconButton(
                                 onPress: () => _deleteCategory(category),
-                                child: const Icon(FLucideIcons.trash2),
+                                icon: const Icon(FLucideIcons.trash2),
                               ),
                             ],
                           ),

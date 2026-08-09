@@ -6,7 +6,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
-import '../../../shared/widgets/segmented_control.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/summary_band.dart';
 import '../application/providers.dart';
 import 'transaction_editor.dart';
@@ -92,23 +92,23 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             child: Row(
               children: [
                 const Spacer(),
-                FButton.icon(
+                AppIconButton(
                   onPress: () {
                     setState(() {
                       _searching = !_searching;
                       if (!_searching) _query = '';
                     });
                   },
-                  child: Icon(
+                  icon: Icon(
                     _searching
                         ? FLucideIcons.x
                         : FLucideIcons.search,
                   ),
                 ),
                 const SizedBox(width: 4),
-                FButton.icon(
+                AppIconButton(
                   onPress: () => _changeMonth(-1),
-                  child: const Icon(FLucideIcons.chevronLeft),
+                  icon: const Icon(FLucideIcons.chevronLeft),
                 ),
                 SizedBox(
                   width: 108,
@@ -120,9 +120,9 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                     ),
                   ),
                 ),
-                FButton.icon(
+                AppIconButton(
                   onPress: () => _changeMonth(1),
-                  child: const Icon(FLucideIcons.chevronRight),
+                  icon: const Icon(FLucideIcons.chevronRight),
                 ),
               ],
             ),
@@ -144,13 +144,10 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
           if (_searching)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: FTextField(
+              child: AppTextField(
                 autofocus: true,
                 hint: '搜索备注或分类',
-                control: FTextFieldControl.managed(
-                  onChange: (value) =>
-                      setState(() => _query = value.text.trim()),
-                ),
+                onChange: (value) => setState(() => _query = value.trim()),
                 prefixBuilder: (context, style, variants) =>
                     const Icon(FLucideIcons.search),
               ),
@@ -158,13 +155,13 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
           // 全部 / 支出 / 收入 —— forui 分段选择器
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: FSegmentedControl<LedgerFilter>(
+            child: AppSegmentedControl<LedgerFilter>(
               selected: _filter,
               onChanged: (value) => setState(() => _filter = value),
               segments: const [
-                FSegment(value: LedgerFilter.all, label: '全部'),
-                FSegment(value: LedgerFilter.expense, label: '支出'),
-                FSegment(value: LedgerFilter.income, label: '收入'),
+                AppSegment(value: LedgerFilter.all, label: '全部'),
+                AppSegment(value: LedgerFilter.expense, label: '支出'),
+                AppSegment(value: LedgerFilter.income, label: '收入'),
               ],
             ),
           ),
@@ -224,7 +221,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                       // forui 卡片包裹当天账单。因为要给每条加Dismissible 滑删
                       // （被包裹后不再是 FItemMixin，无法进 FItemGroup），
                       // 这里用 Column 手动排列 FItem + 分隔线。
-                      FCard(
+                      AppCard(
                         child: Column(
                           children: [
                             for (

@@ -55,7 +55,8 @@ dependencies:
   http: ^1.6.0
   shared_preferences: ^2.5.5
   crypto: ^3.0.7
-  forui: ^0.25.0
+  # 锁定小版本：forui 仍是 0.x，minor 升级可能带破坏性变更，升级由人工主动决定
+  forui: 0.25.0
 
 dev_dependencies:
   flutter_test:

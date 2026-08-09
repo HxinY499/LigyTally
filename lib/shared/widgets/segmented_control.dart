@@ -1,13 +1,16 @@
 import 'package:flutter/widgets.dart';
-import 'package:forui/forui.dart';
 
-/// forui 风格的分段选择器：一排按钮，选中态用 primary，未选用 outline。
+import 'app_button.dart';
+
+/// forui 风格的分段选择器：一排按钮，选中态用primary，未选用 outline。
 ///
 /// 替代 Material 的 SegmentedButton，用在账单筛选、收支切换、统计周期等处。
+/// 内部走 [AppButton] 壳（不裸用 forui），保持全项目组件封装一致。
+///
 /// [expanded] 为 true 时按钮平分宽度（撑满一行）；为 false 时按内容宽度排列，
 /// 适合放进可横向滚动的场景（如统计页的"日/周/月/年/自定义"）。
-class FSegmentedControl<T> extends StatelessWidget {
-  const FSegmentedControl({
+class AppSegmentedControl<T> extends StatelessWidget {
+  const AppSegmentedControl({
     super.key,
     required this.segments,
     required this.selected,
@@ -16,7 +19,7 @@ class FSegmentedControl<T> extends StatelessWidget {
     this.spacing = 8,
   });
 
-  final List<FSegment<T>> segments;
+  final List<AppSegment<T>> segments;
   final T selected;
   final ValueChanged<T> onChanged;
   final bool expanded;
@@ -28,9 +31,11 @@ class FSegmentedControl<T> extends StatelessWidget {
     for (var i = 0; i < segments.length; i++) {
       final segment = segments[i];
       final isSelected = segment.value == selected;
-      final button = FButton(
+      final button = AppButton(
         onPress: () => onChanged(segment.value),
-        variant: isSelected ? FButtonVariant.primary : FButtonVariant.outline,
+        variant: isSelected
+            ? AppButtonVariant.primary
+            : AppButtonVariant.outline,
         child: Text(segment.label),
       );
       buttons.add(expanded ? Expanded(child: button) : button);
@@ -43,8 +48,8 @@ class FSegmentedControl<T> extends StatelessWidget {
   }
 }
 
-class FSegment<T> {
-  const FSegment({required this.value, required this.label});
+class AppSegment<T> {
+  const AppSegment({required this.value, required this.label});
 
   final T value;
   final String label;

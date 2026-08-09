@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
+import '../../shared/widgets/app_widgets.dart';
 import 'update_controller.dart';
 import 'update_service.dart';
 
@@ -55,8 +56,8 @@ class _UpdateNotificationLayerState
       suffixBuilder: (context, entry) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FButton(
-            variant: FButtonVariant.ghost,
+          AppButton(
+            variant: AppButtonVariant.ghost,
             onPress: () {
               entry.dismiss();
               controller.ignoreVersionAndDismiss();
@@ -64,8 +65,8 @@ class _UpdateNotificationLayerState
             child: const Text('忽略'),
           ),
           const SizedBox(width: 4),
-          FButton(
-            variant: FButtonVariant.ghost,
+          AppButton(
+            variant: AppButtonVariant.ghost,
             onPress: () {
               entry.dismiss();
               controller.downloadAndInstall();
