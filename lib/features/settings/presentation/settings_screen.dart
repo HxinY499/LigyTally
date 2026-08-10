@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/preferences/category_picker_layout.dart';
+import '../../../core/preferences/money_grouped.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/update/update_controller.dart';
 import '../../../core/utils/category_icons.dart';
@@ -154,6 +155,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onChanged: (value) => ref
                       .read(categoryPickerLayoutProvider.notifier)
                       .setLayout(value),
+                ),
+              ),
+              _SettingsItem(
+                title: '金额千分位',
+                trailing: AppSwitch(
+                  value: ref.watch(moneyGroupedProvider),
+                  onChange: (value) => ref
+                      .read(moneyGroupedProvider.notifier)
+                      .setGrouped(value),
                 ),
               ),
             ],

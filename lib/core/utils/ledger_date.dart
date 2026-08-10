@@ -49,10 +49,23 @@ String formatWeekday(DateTime value) {
 String formatClock(DateTime value) =>
     '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
-String formatMoney(int cents, {bool signed = false}) {
+String formatMoney(int cents, {bool signed = false, bool grouped = true}) {
   final sign = cents < 0 ? '-' : (signed && cents > 0 ? '+' : '');
   final absolute = cents.abs();
   final yuan = absolute ~/ 100;
   final fraction = absolute % 100;
-  return '$sign¥$yuan.${fraction.toString().padLeft(2, '0')}';
+  final yuanText = grouped ? _groupInt(yuan) : yuan.toString();
+  return '$sign¥$yuanText.${fraction.toString().padLeft(2, '0')}';
+}
+
+/// 千分位分组：`19042` → `19,042`。仅处理非负整数字符串。
+String _groupInt(int value) {
+  final raw = value.toString();
+  final buffer = StringBuffer();
+  final length = raw.length;
+  for (var i = 0; i < length; i++) {
+    if (i > 0 && (length - i) % 3 == 0) buffer.write(',');
+    buffer.write(raw[i]);
+  }
+  return buffer.toString();
 }

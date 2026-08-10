@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ligy_tally/core/category_config/category_config_service.dart';
 import 'package:ligy_tally/core/database/app_database.dart';
@@ -24,6 +25,12 @@ void main() {
     expect(formatMoney(1234), '¥12.34');
     expect(formatMoney(-505, signed: true), '-¥5.05');
     expect(formatMoney(505, signed: true), '+¥5.05');
+  });
+
+  test('money formatting groups thousands and can be disabled', () {
+    expect(formatMoney(1904260), '¥19,042.60');
+    expect(formatMoney(1904260, grouped: false), '¥19042.60');
+    expect(formatMoney(-1234567890, signed: true), '-¥12,345,678.90');
   });
 
   test('default category seed preserves a generic two-level tree', () {
@@ -140,22 +147,25 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
-        theme: buildAppTheme(),
-        home: const Scaffold(
-          body: SummaryBand(
-            summary: LedgerSummary(
-              incomeCents: 10000,
-              expenseCents: 3575,
-              entryCount: 2,
+      ProviderScope(
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: const Scaffold(
+            body: SummaryBand(
+              summary: LedgerSummary(
+                incomeCents: 10000,
+                expenseCents: 3575,
+                entryCount: 2,
+              ),
             ),
           ),
         ),
       ),
     );
 
-    expect(find.text('¥35.75'), findsOneWidget);
-    expect(find.text('¥100.00'), findsOneWidget);
-    expect(find.text('+¥64.25'), findsOneWidget);
+    // Hero 大数字不带 ¥ 前缀，收入/净收支才带
+    expect(find.text('35.75'), findsOneWidget);
+    expect(find.text('100.00'), findsOneWidget);
+    expect(find.text('+64.25'), findsOneWidget);
   });
 }

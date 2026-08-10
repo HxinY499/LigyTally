@@ -1,74 +1,98 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/app_database.dart';
+import '../../core/preferences/money_grouped.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/ledger_date.dart';
 
-/// 明细页顶部大卡：本月支出（大字）+ 本月收入+ 本月净收支。
+/// 明细页顶部大卡：本月支出（Hero 大数字）+ 本月收入 + 净收支。
 ///
-/// 参考现代记账 App，采用暖黄色渐变卡片，视觉上比黑色横条更轻。
-/// `compact=true` 时用于统计页——尺寸缩小、去掉主副结构，等分三列。
-class SummaryBand extends StatelessWidget {
+/// 视觉参照现代记账App：暖黄渐变、大圆角，本月支出用超大黑体数字撑起
+/// 视觉重心；底部两组「本月收入 / 净收支」用小字与主数字拉开层级——
+/// 之前所有金额字号相近，才显得「一堆数字堆在一起」。
+class SummaryBand extends ConsumerWidget {
   const SummaryBand({super.key, required this.summary, this.compact = false});
 
   final LedgerSummary summary;
   final bool compact;
 
-  static const _warmA = Color(0xFFFFF1CC);
-  static const _warmB = Color(0xFFFDE1A6);
+  static const _warmA = Color(0xFFFFF3D2);
+  static const _warmB = Color(0xFFF8D98A);
 
   @override
-  Widget build(BuildContext context) {
-    if (compact) return _CompactBand(summary: summary);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final grouped = ref.watch(moneyGroupedProvider);
+    if (compact) return _CompactBand(summary: summary, grouped: grouped);
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [_warmA, _warmB],
         ),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '本月支出(元)',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: AppColors.ink.withValues(alpha: 0.65),
-            ),
+          Row(
+            children: [
+              Text(
+                '本月支出',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.ink.withValues(alpha: 0.65),
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '(元)',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AppColors.ink.withValues(alpha: 0.45),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              formatMoney(summary.expenseCents),
+              _rawMoney(summary.expenseCents, grouped: grouped),
               maxLines: 1,
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                color: AppColors.ink,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.3,
+              style: const TextStyle(
+                fontSize: 40,
                 height: 1.1,
+                fontWeight: FontWeight.w800,
+                color: AppColors.ink,
+                letterSpacing: 0.4,
               ),
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
                 child: _MiniStat(
-                  label: '本月收入(元)',
-                  value: formatMoney(summary.incomeCents),
+                  label: '本月收入',
+                  value: _rawMoney(summary.incomeCents, grouped: grouped),
                 ),
               ),
               Expanded(
                 child: _MiniStat(
-                  label: '净收支(元)',
-                  value: formatMoney(summary.netCents, signed: true),
+                  label: '净收支',
+                  value: _rawMoney(
+                    summary.netCents,
+                    grouped: grouped,
+                    signed: true,
+                  ),
                 ),
               ),
             ],
@@ -77,6 +101,28 @@ class SummaryBand extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 摘要卡内的裸金额：不带 `¥` 前缀，让大数字更干净；
+/// 卡片外的普通场景仍走 `formatMoney`。
+String _rawMoney(int cents, {required bool grouped, bool signed = false}) {
+  final sign = cents < 0 ? '-' : (signed && cents > 0 ? '+' : '');
+  final absolute = cents.abs();
+  final yuan = absolute ~/ 100;
+  final fraction = absolute % 100;
+  final yuanText = grouped ? _groupInt(yuan) : yuan.toString();
+  return '$sign$yuanText.${fraction.toString().padLeft(2, '0')}';
+}
+
+String _groupInt(int value) {
+  final raw = value.toString();
+  final buffer = StringBuffer();
+  final length = raw.length;
+  for (var i = 0; i < length; i++) {
+    if (i > 0 && (length - i) % 3 == 0) buffer.write(',');
+    buffer.write(raw[i]);
+  }
+  return buffer.toString();
 }
 
 class _MiniStat extends StatelessWidget {
@@ -90,22 +136,38 @@ class _MiniStat extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: AppColors.ink.withValues(alpha: 0.6),
-          ),
+        Row(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.ink.withValues(alpha: 0.6),
+                letterSpacing: 0.2,
+              ),
+            ),
+            const SizedBox(width: 3),
+            Text(
+              '(元)',
+              style: TextStyle(
+                fontSize: 10,
+                color: AppColors.ink.withValues(alpha: 0.42),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 4),
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
           child: Text(
             value,
             maxLines: 1,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: AppColors.ink,
+            style: const TextStyle(
+              fontSize: 20,
               fontWeight: FontWeight.w800,
+              color: AppColors.ink,
+              letterSpacing: 0.2,
             ),
           ),
         ),
@@ -114,11 +176,12 @@ class _MiniStat extends StatelessWidget {
   }
 }
 
-/// 统计页专用的紧凑版：三等分小卡，保持原有信息结构。
+/// 统计页专用的紧凑版：三等分小卡（保留原黑底样式，不影响统计页视觉）。
 class _CompactBand extends StatelessWidget {
-  const _CompactBand({required this.summary});
+  const _CompactBand({required this.summary, required this.grouped});
 
   final LedgerSummary summary;
+  final bool grouped;
 
   @override
   Widget build(BuildContext context) {
@@ -130,19 +193,23 @@ class _CompactBand extends StatelessWidget {
         children: [
           _CompactValue(
             label: '支出',
-            value: formatMoney(summary.expenseCents),
+            value: formatMoney(summary.expenseCents, grouped: grouped),
             color: const Color(0xFFFFA897),
           ),
           const _BandDivider(),
           _CompactValue(
             label: '收入',
-            value: formatMoney(summary.incomeCents),
+            value: formatMoney(summary.incomeCents, grouped: grouped),
             color: const Color(0xFF81C784),
           ),
           const _BandDivider(),
           _CompactValue(
             label: '净收支',
-            value: formatMoney(summary.netCents, signed: true),
+            value: formatMoney(
+              summary.netCents,
+              signed: true,
+              grouped: grouped,
+            ),
             color: const Color(0xFFF4D07B),
           ),
         ],
