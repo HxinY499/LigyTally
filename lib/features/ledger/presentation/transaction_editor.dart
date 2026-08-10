@@ -63,7 +63,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         : DateTime.fromMillisecondsSinceEpoch(transaction.occurredAt);
     _time = TimeOfDay.fromDateTime(occurred);
     _amountExpr = transaction == null
-        ?''
+        ? ''
         : (transaction.amountCents / 100).toStringAsFixed(2);
     _noteController = TextEditingController(text: transaction?.note ?? '');
     if (transaction != null) {
@@ -121,7 +121,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           if (_amountExpr.isEmpty) return;
           final last = _amountExpr[_amountExpr.length - 1];
           if (last == '+' || last == '-') {
-            _amountExpr = _amountExpr.substring(0, _amountExpr.length - 1) + key;
+            _amountExpr =
+                _amountExpr.substring(0, _amountExpr.length - 1) + key;
           } else {
             _amountExpr += key;
           }
@@ -362,7 +363,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             removedImageIds: _removedImageIds,
           );
       // 记住这次用的分类，下次新建同类账单预选。
-      await ref.read(lastCategoryProvider.notifier).remember(_kind, _categoryId!);
+      await ref
+          .read(lastCategoryProvider.notifier)
+          .remember(_kind, _categoryId!);
       if (!mounted) return;
       if (continueAfter) {
         HapticFeedback.mediumImpact();
@@ -374,10 +377,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           _existingImages.clear();
           _removedImageIds.clear();
         });
-        showFToast(
-          context: context,
-          title: const Text('已保存，继续记下一笔'),
-          duration: const Duration(seconds: 2),
+        showAppToast(
+          context,
+          message: '已保存，继续记下一笔',
+          level: AppToastLevel.success,
         );
       } else {
         Navigator.pop(context);
@@ -391,12 +394,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   }
 
   void _showError(String message) {
-    showFToast(
-      context: context,
-      title: Text(message),
-      variant: FToastVariant.destructive,
-      duration: const Duration(seconds: 4),
-    );
+    showAppToast(context, message: message, level: AppToastLevel.error);
   }
 
   @override
@@ -472,6 +470,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                       return _CategoryPicker(
                         categories: categories,
                         selectedId: _categoryId,
+                        accent: accent,
                         onSelected: _onCategorySelected,
                       );
                     },
@@ -522,11 +521,15 @@ class _CategoryPicker extends ConsumerStatefulWidget {
   const _CategoryPicker({
     required this.categories,
     required this.selectedId,
+    required this.accent,
     required this.onSelected,
   });
 
   final List<CategoryEntry> categories;
   final String? selectedId;
+
+  /// 收支语义色：选中态的图标/文字用它，和金额卡、键盘保持一致。
+  final Color accent;
   final ValueChanged<String> onSelected;
 
   @override
@@ -534,13 +537,20 @@ class _CategoryPicker extends ConsumerStatefulWidget {
 }
 
 class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
+  static const _columns = 5;
+
   /// 手风琴模式：同一时间只允许一个一级分类展开。
   String? _expandedId;
+
+  /// 最近一次展开过的一级分类。收起时 [_expandedId] 变null，但面板要留在树上
+  /// 才能播收起动画，所以用它记住"该给哪一行挂面板"。
+  String? _panelOwnerId;
 
   @override
   void initState() {
     super.initState();
     _expandedId = _parentIdOf(widget.selectedId);
+    _panelOwnerId = _expandedId;
   }
 
   @override
@@ -575,25 +585,14 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
     if (!hasChildren) return;
     setState(() {
       _expandedId = _expandedId == parent.id ? null : parent.id;
+      if (_expandedId != null) _panelOwnerId = _expandedId;
     });
-  }
-
-  Widget _expandedPanel(CategoryEntry parent, {double indent = 18}) {
-    return _ExpandableChildren(
-      visible: _expandedId == parent.id,
-      children: _childrenOf(parent.id),
-      selectedId: widget.selectedId,
-      onSelected: widget.onSelected,
-      indent: indent,
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final layout = ref.watch(categoryPickerLayoutProvider);
-    final parents = widget.categories
-        .where((item) => item.level == 1)
-        .toList();
+    final parents = widget.categories.where((item) => item.level == 1).toList();
     final selectedParentId = _parentIdOf(widget.selectedId);
 
     if (layout == CategoryPickerLayout.grid) {
@@ -610,11 +609,21 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
           _ParentCategoryTile(
             category: parent,
             selected: parent.id == selectedParentId,
+            expanded: _expandedId == parent.id,
+            hasChildren: _childrenOf(parent.id).isNotEmpty,
+            accent: widget.accent,
             onTap: () =>
                 _onParentTap(parent, _childrenOf(parent.id).isNotEmpty),
           ),
-          _expandedPanel(parent),
-          const SizedBox(height: 8),
+          _ChildrenPanel(
+            visible: _expandedId == parent.id,
+            children: _childrenOf(parent.id),
+            selectedId: widget.selectedId,
+            accent: widget.accent,
+            columns: _columns,
+            indent: 16,
+            onSelected: widget.onSelected,
+          ),
         ],
       ],
     );
@@ -622,110 +631,113 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
 
   /// 网格模式：一级分类 5 列网格，二级分类面板插入在被展开项所在行的下方。
   Widget _buildGrid(List<CategoryEntry> parents, String? selectedParentId) {
-    const columns = 5;
     final rows = <Widget>[];
-    for (var start = 0; start < parents.length; start += columns) {
+    for (var start = 0; start < parents.length; start += _columns) {
       final rowParents = parents.sublist(
         start,
-        start + columns > parents.length ? parents.length : start + columns,
+        start + _columns > parents.length ? parents.length : start + _columns,
       );
-      CategoryEntry? expandedInRow;
+      // 该行需要挂面板的一级分类：优先当前展开项，否则是刚被收起、正在播动画的那个。
+      CategoryEntry? panelOwner;
       for (final parent in rowParents) {
-        if (parent.id == _expandedId) expandedInRow = parent;
+        if (parent.id == _expandedId) panelOwner = parent;
+      }
+      if (panelOwner == null) {
+        for (final parent in rowParents) {
+          if (parent.id == _panelOwnerId) panelOwner = parent;
+        }
       }
       rows.add(
         Row(
           children: [
-            for (var i = 0; i < rowParents.length; i++) ...[
-              if (i > 0) const SizedBox(width: 6),
+            for (var i = 0; i < _columns; i++)
               Expanded(
-                child: _ParentGridCell(
-                  category: rowParents[i],
-                  selected: rowParents[i].id == selectedParentId,
-                  onTap: () => _onParentTap(
-                    rowParents[i],
-                    _childrenOf(rowParents[i].id).isNotEmpty,
-                  ),
-                ),
+                child: i < rowParents.length
+                    ? _ParentGridCell(
+                        category: rowParents[i],
+                        selected: rowParents[i].id == selectedParentId,
+                        expanded: _expandedId == rowParents[i].id,
+                        hasChildren: _childrenOf(rowParents[i].id).isNotEmpty,
+                        accent: widget.accent,
+                        onTap: () => _onParentTap(
+                          rowParents[i],
+                          _childrenOf(rowParents[i].id).isNotEmpty,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
-            ],
-            // 补足空位，保证每行 5 格等宽。
-            for (var i = rowParents.length; i < columns; i++) ...[
-              if (rowParents.isNotEmpty) const SizedBox(width: 6),
-              const Spacer(),
-            ],
           ],
         ),
       );
-      if (expandedInRow != null) {
+      if (panelOwner != null) {
         rows.add(
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: _expandedPanel(expandedInRow, indent: 0),
+          _ChildrenPanel(
+            visible: _expandedId == panelOwner.id,
+            children: _childrenOf(panelOwner.id),
+            selectedId: widget.selectedId,
+            accent: widget.accent,
+            columns: _columns,
+            onSelected: widget.onSelected,
           ),
         );
       }
-      rows.add(const SizedBox(height: 8));
     }
     return Column(children: rows);
   }
 }
 
+/// 列表模式的一级分类行：无卡片，扁平的图标 + 名称，右侧箭头随展开旋转。
 class _ParentCategoryTile extends StatelessWidget {
   const _ParentCategoryTile({
     required this.category,
     required this.selected,
+    required this.expanded,
+    required this.hasChildren,
+    required this.accent,
     required this.onTap,
   });
 
   final CategoryEntry category;
   final bool selected;
+  final bool expanded;
+  final bool hasChildren;
+  final Color accent;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final color = selected ? accent : AppColors.muted;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primarySoft : AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? AppColors.primary : Colors.transparent,
-            width: 1.5,
-          ),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
         child: Row(
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: selected ? AppColors.primary : AppColors.canvas,
-              ),
-              child: Icon(
-                categoryIcon(category.iconKey),
-                color: selected ? Colors.white : AppColors.muted,
-                size: 15,
-              ),
-            ),
-            const SizedBox(width: 10),
+            Icon(categoryIcon(category.iconKey), color: color, size: 24),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 category.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: selected ? AppColors.ink : AppColors.muted,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
             ),
+            if (hasChildren)
+              AnimatedRotation(
+                turns: expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                child: Icon(
+                  Icons.expand_more_rounded,
+                  size: 18,
+                  color: selected ? accent : AppColors.line,
+                ),
+              ),
           ],
         ),
       ),
@@ -733,65 +745,79 @@ class _ParentCategoryTile extends StatelessWidget {
   }
 }
 
-/// 网格模式下的一级分类单元格：大图标 + 下方小文字，选中为高亮态。
+/// 网格模式下的一级分类单元格：扁平图标 + 下方文字，无卡片；
+/// 有二级分类时，图标右下角挂一个展开/收起的小角标。
 class _ParentGridCell extends StatelessWidget {
   const _ParentGridCell({
     required this.category,
     required this.selected,
+    required this.expanded,
+    required this.hasChildren,
+    required this.accent,
     required this.onTap,
   });
 
   final CategoryEntry category;
   final bool selected;
+  final bool expanded;
+  final bool hasChildren;
+  final Color accent;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final color = selected ? accent : AppColors.muted;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOut,
-        height: 72,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primarySoft : AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? AppColors.primary : Colors.transparent,
-            width: 1.5,
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              width: 30,
+            SizedBox(
               height: 30,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: selected ? AppColors.primary : AppColors.canvas,
-              ),
-              child: Icon(
-                categoryIcon(category.iconKey),
-                color: selected ? Colors.white : AppColors.muted,
-                size: 15,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Icon(categoryIcon(category.iconKey), color: color, size: 26),
+                  if (hasChildren)
+                    Positioned(
+                      right: -2,
+                      bottom: 0,
+                      child: AnimatedRotation(
+                        turns: expanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 240),
+                        curve: Curves.easeOutCubic,
+                        child: Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: selected ? accent : AppColors.line,
+                          ),
+                          child: const Icon(
+                            Icons.expand_more_rounded,
+                            size: 11,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 6),
             Text(
               category.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 11,
                 height: 1.1,
-                color: AppColors.ink,
+                color: selected ? AppColors.ink : AppColors.muted,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
@@ -802,112 +828,136 @@ class _ParentGridCell extends StatelessWidget {
   }
 }
 
-class _ExpandableChildren extends StatefulWidget {
-  const _ExpandableChildren({
+/// 二级分类面板：白色圆角底+ 顶部指向所属一级分类的小尖角，
+/// 展开/收起走高度 + 淡入的组合动画。
+/// 二级分类面板：白色圆角底，展开/收起走高度 + 淡入的组合动画。
+class _ChildrenPanel extends StatefulWidget {
+  const _ChildrenPanel({
     required this.visible,
     required this.children,
     required this.selectedId,
+    required this.accent,
+    required this.columns,
     required this.onSelected,
-    this.indent = 18,
+    this.indent = 0,
   });
 
   final bool visible;
   final List<CategoryEntry> children;
   final String? selectedId;
+  final Color accent;
+  final int columns;
   final ValueChanged<String> onSelected;
 
-  /// 左侧缩进：列表模式用缩进体现层级；网格模式面板整行宽，不需要缩进。
+  /// 左侧缩进：列表模式用缩进体现层级。
   final double indent;
 
   @override
-  State<_ExpandableChildren> createState() => _ExpandableChildrenState();
+  State<_ChildrenPanel> createState() => _ChildrenPanelState();
 }
 
-class _ExpandableChildrenState extends State<_ExpandableChildren> {
-  static const _columns = 5;
+class _ChildrenPanelState extends State<_ChildrenPanel>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    duration: const Duration(milliseconds: 260),
+    reverseDuration: const Duration(milliseconds: 200),
+    vsync: this,
+    value: widget.visible ? 1 : 0,
+  );
+
+  late final Animation<double> _expand = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+
+  late final Animation<double> _fade = CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0.15, 1, curve: Curves.easeOut),
+    reverseCurve: const Interval(0.4, 1, curve: Curves.easeIn),
+  );
 
   @override
-  void didUpdateWidget(covariant _ExpandableChildren oldWidget) {
+  void didUpdateWidget(covariant _ChildrenPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 从收起变为展开时，把展开区滚入可见区域，避免被键盘/底栏遮挡。
-    if (widget.visible &&
-        !oldWidget.visible &&
-        widget.children.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Scrollable.ensureVisible(
-          context,
-          alignment: 0.5,
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeInOut,
-        );
-      });
+    if (widget.visible == oldWidget.visible) return;
+    if (widget.visible) {
+      _controller.forward();
+      // 展开时把面板滚入可见区域，避免被键盘/底栏遮挡。
+      if (widget.children.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Scrollable.ensureVisible(
+            context,
+            alignment: 0.5,
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeInOut,
+          );
+        });
+      }
+    } else {
+      _controller.reverse();
     }
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeInOut,
+    if (widget.children.isEmpty) {
+      return const SizedBox(width: double.infinity);
+    }
+    return SizeTransition(
+      sizeFactor: _expand,
       alignment: Alignment.topCenter,
-      child: !widget.visible || widget.children.isEmpty
-          ? const SizedBox(width: double.infinity, height: 0)
-          : Container(
-              width: double.infinity,
-              margin: EdgeInsets.only(top: 6, left: widget.indent),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.canvas,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              // 每行固定 5 个等宽格子，大小不受文字长短影响。
-              child: Column(
-                children: [
-                  for (
-                    var start = 0;
-                    start < widget.children.length;
-                    start += _columns
-                  )
-                    Padding(
-                      padding: EdgeInsets.only(top: start == 0 ? 0 : 6),
-                      child: Row(
-                        children: [
-                          for (
-                            var i = start;
-                            i < start + _columns && i < widget.children.length;
-                            i++
-                          ) ...[
-                            if (i > start) const SizedBox(width: 6),
-                            Expanded(
-                              child: _CategoryChip(
-                                iconKey: widget.children[i].iconKey,
-                                name: widget.children[i].name,
-                                selected:
-                                    widget.selectedId == widget.children[i].id,
-                                onTap: () =>
-                                    widget.onSelected(widget.children[i].id),
-                              ),
-                            ),
-                          ],
-                          // 不足 5 个补空位，保持等宽。
-                          for (
-                            var i = (widget.children.length - start) > _columns
-                                ? _columns
-                                : (widget.children.length - start);
-                            i < _columns;
-                            i++
-                          ) ...[
-                            const SizedBox(width: 6),
-                            const Spacer(),
-                          ],
-                        ],
-                      ),
-                    ),
-                ],
-              ),
+      child: FadeTransition(
+        opacity: _fade,
+        child: Padding(
+          padding: EdgeInsets.only(left: widget.indent, bottom: 4),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(18),
             ),
+            child: Column(children: _childRows()),
+          ),
+        ),
+      ),
     );
+  }
+
+  List<Widget> _childRows() {
+    final rows = <Widget>[];
+    for (
+      var start = 0;
+      start < widget.children.length;
+      start += widget.columns
+    ) {
+      rows.add(
+        Row(
+          children: [
+            for (var i = start; i < start + widget.columns; i++)
+              Expanded(
+                child: i < widget.children.length
+                    ? _CategoryCell(
+                        iconKey: widget.children[i].iconKey,
+                        name: widget.children[i].name,
+                        selected: widget.selectedId == widget.children[i].id,
+                        accent: widget.accent,
+                        onTap: () => widget.onSelected(widget.children[i].id),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+          ],
+        ),
+      );
+    }
+    return rows;
   }
 }
 
@@ -1065,7 +1115,7 @@ class _AmountCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.headlineMedium
                             ?.copyWith(
-                              color: hasExpr? amountColor : AppColors.line,
+                              color: hasExpr ? amountColor : AppColors.line,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
                             ),
@@ -1086,8 +1136,9 @@ class _AmountCard extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       '= ¥${amountValue.toStringAsFixed(2)}',
-                      style: Theme.of(context).textTheme.labelMedium
-                          ?.copyWith(color: AppColors.muted),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelMedium?.copyWith(color: AppColors.muted),
                     ),
                   ),
               ],
@@ -1139,11 +1190,7 @@ class _DateQuickRow extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: _DateChip(
-                label: '今天',
-                selected: _isToday,
-                onTap: onToday,
-              ),
+              child: _DateChip(label: '今天', selected: _isToday, onTap: onToday),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -1253,66 +1300,44 @@ class _DateChip extends StatelessWidget {
 }
 
 /// 二级分类选项：与一级网格一致的「大图标 + 下方小文字」竖向小格子。
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({
+/// 二级分类单元格：扁平图标 + 文字，选中用语义色，不用卡片/描边。
+class _CategoryCell extends StatelessWidget {
+  const _CategoryCell({
     required this.iconKey,
     required this.name,
     required this.selected,
+    required this.accent,
     required this.onTap,
   });
 
   final String iconKey;
   final String name;
   final bool selected;
+  final Color accent;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final color = selected ? accent : AppColors.muted;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOut,
-        height: 64,
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primarySoft : AppColors.surface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? AppColors.primary : Colors.transparent,
-            width: 1.2,
-          ),
-        ),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: selected ? AppColors.primary : AppColors.canvas,
-              ),
-              child: Icon(
-                categoryIcon(iconKey),
-                size: 13,
-                color: selected ? Colors.white : AppColors.muted,
-              ),
-            ),
-            const SizedBox(height: 4),
+            Icon(categoryIcon(iconKey), size: 24, color: color),
+            const SizedBox(height: 6),
             Text(
               name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 11,
                 height: 1.1,
-                color: selected ? AppColors.primary : AppColors.ink,
+                color: selected ? AppColors.ink : AppColors.muted,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
@@ -1357,7 +1382,11 @@ class _SheetImageTile extends StatelessWidget {
                   color: AppColors.ink,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(FLucideIcons.x, size: 14, color: Colors.white),
+                child: const Icon(
+                  FLucideIcons.x,
+                  size: 14,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
@@ -1581,20 +1610,14 @@ class _NumericKeypad extends StatelessWidget {
                     Expanded(
                       child: SizedBox(
                         height: _keyHeight,
-                        child: _NumKey(
-                          value: '0',
-                          onTap: () => onInput('0'),
-                        ),
+                        child: _NumKey(value: '0', onTap: () => onInput('0')),
                       ),
                     ),
                     const SizedBox(width: _gap),
                     Expanded(
                       child: SizedBox(
                         height: _keyHeight,
-                        child: _NumKey(
-                          value: '.',
-                          onTap: () => onInput('.'),
-                        ),
+                        child: _NumKey(value: '.', onTap: () => onInput('.')),
                       ),
                     ),
                     const SizedBox(width: _gap),

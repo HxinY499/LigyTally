@@ -121,11 +121,10 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
       await ref.read(ledgerServiceProvider).delete(item);
     } catch (error) {
       if (mounted) {
-        showFToast(
-          context: context,
-          title: Text('删除失败：$error'),
-          variant: FToastVariant.destructive,
-          duration: const Duration(seconds: 4),
+        showAppToast(
+          context,
+          message: '删除失败：$error',
+          level: AppToastLevel.error,
         );
       }
     }
@@ -150,17 +149,22 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                       onChanged: (value) =>
                           setState(() => _query = value.trim()),
                     )
-                  : Text(
+                  : const Text(
                       '记账',
-                      key: const ValueKey('title'),
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                      key: ValueKey('title'),
+                      style: kAppHeaderTitleStyle,
                     ),
             ),
             actions: [
-              AppIconButton(
-                onPress: _toggleSearch,
-                icon: Icon(_searching ? FLucideIcons.x : FLucideIcons.search),
+              IconButton(
+                onPressed: _toggleSearch,
+                tooltip: '搜索',
+                splashRadius: 22,
+                icon: Icon(
+                  _searching ? FLucideIcons.x : FLucideIcons.search,
+                  size: 22,
+                  color: AppColors.ink,
+                ),
               ),
             ],
           ),

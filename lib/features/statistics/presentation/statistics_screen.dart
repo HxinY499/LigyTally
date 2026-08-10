@@ -38,8 +38,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   /// 上一周期区间，用于环比（本期 vs 上期）。
   LedgerDateRange get _previousRange => switch (_period) {
     StatisticsPeriod.day => dayRange(_anchor.subtract(const Duration(days: 1))),
-    StatisticsPeriod.week =>
-      weekRange(_anchor.subtract(const Duration(days: 7))),
+    StatisticsPeriod.week => weekRange(
+      _anchor.subtract(const Duration(days: 7)),
+    ),
     StatisticsPeriod.month => monthRange(
       DateTime(_anchor.year, _anchor.month - 1, 1),
     ),
@@ -238,7 +239,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           _SectionCard(
             title: _trendTitle,
             child: SizedBox(
-              height: 200,
+              height: 168,
               child: StreamBuilder<List<TrendPoint>>(
                 stream: database.watchTrend(range, groupByMonth: _groupByMonth),
                 builder: (context, snapshot) =>
@@ -279,7 +280,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                     ),
                     const SizedBox(height: 8),
                     StreamBuilder<List<CategoryTotal>>(
-                      stream: database.watchCategoryTotals(range, _categoryKind),
+                      stream: database.watchCategoryTotals(
+                        range,
+                        _categoryKind,
+                      ),
                       builder: (context, snapshot) => _CategoryComposition(
                         totals: snapshot.data ?? const <CategoryTotal>[],
                         kind: _categoryKind,
@@ -357,7 +361,7 @@ class _OverviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: AppCard(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
@@ -388,51 +392,28 @@ class _OverviewCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
-                            child: _BigStat(
+                            child: _StatColumn(
                               label: '本期支出',
                               cents: current.expenseCents,
                               accent: AppColors.expense,
-                            ),
-                          ),
-                          Container(
-                            width: 1,
-                            height: 40,
-                            margin: const EdgeInsets.symmetric(horizontal: 8),
-                            color: AppColors.line,
-                          ),
-                          Expanded(
-                            child: _BigStat(
-                              label: '本期收入',
-                              cents: current.incomeCents,
-                              accent: AppColors.income,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      const Divider(height: 1),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _DeltaStat(
-                              label: '较上期支出',
-                              current: current.expenseCents,
-                              previous: previous.expenseCents,
+                              deltaCurrent: current.expenseCents,
+                              deltaPrevious: previous.expenseCents,
                               upIsBad: true,
                             ),
                           ),
                           Expanded(
-                            child: _DeltaStat(
-                              label: '较上期收入',
-                              current: current.incomeCents,
-                              previous: previous.incomeCents,
+                            child: _StatColumn(
+                              label: '本期收入',
+                              cents: current.incomeCents,
+                              accent: AppColors.income,
+                              deltaCurrent: current.incomeCents,
+                              deltaPrevious: previous.incomeCents,
                               upIsBad: false,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 14),
                       Text(
                         '${current.entryCount} 笔记录 · 日均支出 ${formatMoney(current.expenseCents ~/ math.max(1, dayCount))}',
                         style: Theme.of(context).textTheme.labelMedium
@@ -450,19 +431,52 @@ class _OverviewCard extends StatelessWidget {
   }
 }
 
-class _BigStat extends StatelessWidget {
-  const _BigStat({
+/// 概览卡的一列：标题 + 大金额+ 环比（相对上一周期）。
+class _StatColumn extends StatelessWidget {
+  const _StatColumn({
     required this.label,
     required this.cents,
     required this.accent,
+    required this.deltaCurrent,
+    required this.deltaPrevious,
+    required this.upIsBad,
   });
 
   final String label;
   final int cents;
   final Color accent;
+  final int deltaCurrent;
+  final int deltaPrevious;
+
+  /// 支出上涨=偏负面（红），收入上涨=偏正面（绿）。
+  final bool upIsBad;
 
   @override
   Widget build(BuildContext context) {
+    final hasBase = deltaPrevious != 0;
+    final diff = deltaCurrent - deltaPrevious;
+    final up = diff > 0;
+    final flat = diff == 0;
+    final percent = hasBase ? (diff.abs() / deltaPrevious * 100) : null;
+
+    final Color deltaColor;
+    if (flat) {
+      deltaColor = AppColors.muted;
+    } else if (up) {
+      deltaColor = upIsBad ? AppColors.expense : AppColors.income;
+    } else {
+      deltaColor = upIsBad ? AppColors.income : AppColors.expense;
+    }
+
+    final String deltaText;
+    if (!hasBase) {
+      deltaText = deltaCurrent == 0 ? '较上期 —' : '较上期新增';
+    } else if (flat) {
+      deltaText = '较上期持平';
+    } else {
+      deltaText = '较上期 ${up ? '↑' : '↓'} ${percent!.toStringAsFixed(1)}%';
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -480,7 +494,7 @@ class _BigStat extends StatelessWidget {
             formatMoney(cents),
             maxLines: 1,
             style: TextStyle(
-              fontSize: 26,
+              fontSize: 24,
               height: 1.05,
               fontWeight: FontWeight.w800,
               color: accent,
@@ -488,68 +502,12 @@ class _BigStat extends StatelessWidget {
             ),
           ),
         ),
-      ],
-    );
-  }
-}
-
-/// 环比小指标：显示相对上一周期的涨跌百分比与箭头。
-class _DeltaStat extends StatelessWidget {
-  const _DeltaStat({
-    required this.label,
-    required this.current,
-    required this.previous,
-    required this.upIsBad,
-  });
-
-  final String label;
-  final int current;
-  final int previous;
-
-  /// 支出上涨=偏负面（红），收入上涨=偏正面（绿）。
-  final bool upIsBad;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasBase = previous != 0;
-    final diff = current - previous;
-    final up = diff > 0;
-    final flat = diff == 0;
-    final percent = hasBase ? (diff.abs() / previous * 100) : null;
-
-    final Color color;
-    if (flat) {
-      color = AppColors.muted;
-    } else if (up) {
-      color = upIsBad ? AppColors.expense : AppColors.income;
-    } else {
-      color = upIsBad ? AppColors.income : AppColors.expense;
-    }
-
-    final String text;
-    if (!hasBase) {
-      text = current == 0 ? '—' : '新增';
-    } else if (flat) {
-      text = '持平';
-    } else {
-      text = '${up ? '↑' : '↓'} ${percent!.toStringAsFixed(1)}%';
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+        const SizedBox(height: 6),
         Text(
-          label,
-          style: Theme.of(
-            context,
-          ).textTheme.labelSmall?.copyWith(color: AppColors.muted),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          text,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: color,
+          deltaText,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: deltaColor,
           ),
         ),
       ],
@@ -557,7 +515,7 @@ class _DeltaStat extends StatelessWidget {
   }
 }
 
-/// 支出趋势折线图：支出用红线填充，收入用绿线，峰值标注气泡。
+/// 支出趋势折线图：单条平滑曲线，无填充无标点，贴合参考图的极简观感。
 class _TrendLineChart extends StatelessWidget {
   const _TrendLineChart({required this.points});
 
@@ -578,48 +536,15 @@ class _TrendLineChart extends StatelessWidget {
 
     final maxCents = points.fold<int>(
       0,
-      (value, point) =>
-          math.max(value, math.max(point.expenseCents, point.incomeCents)),
+      (value, point) => math.max(value, point.expenseCents),
     );
-    final maxY = math.max(10.0, maxCents / 100 * 1.28);
+    final maxY = math.max(10.0, maxCents / 100 * 1.30);
     final labelEvery = math.max(1, (points.length / 6).ceil());
 
-    // 峰值气泡：定位到支出最大的那个点。
-    var peakIndex = 0;
-    for (var i = 1; i < points.length; i++) {
-      if (points[i].expenseCents > points[peakIndex].expenseCents) {
-        peakIndex = i;
-      }
-    }
-    final showPeak = points[peakIndex].expenseCents > 0;
-
-    List<FlSpot> spots(int Function(TrendPoint) selector) => [
+    final spots = [
       for (var i = 0; i < points.length; i++)
-        FlSpot(i.toDouble(), selector(points[i]) / 100),
+        FlSpot(i.toDouble(), points[i].expenseCents / 100),
     ];
-
-    LineChartBarData barData(Color color, List<FlSpot> data, bool fill) {
-      return LineChartBarData(
-        spots: data,
-        isCurved: true,
-        curveSmoothness: 0.28,
-        color: color,
-        barWidth: 2.4,
-        isStrokeCapRound: true,
-        dotData: FlDotData(
-          show: points.length <= 16,
-          getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
-            radius: 2.6,
-            color: color,
-            strokeWidth: 0,
-          ),
-        ),
-        belowBarData: BarAreaData(
-          show: fill,
-          color: color.withValues(alpha: 0.10),
-        ),
-      );
-    }
 
     return LineChart(
       LineChartData(
@@ -628,8 +553,10 @@ class _TrendLineChart extends StatelessWidget {
         gridData: FlGridData(
           drawVerticalLine: false,
           horizontalInterval: maxY / 4,
-          getDrawingHorizontalLine: (_) =>
-              const FlLine(color: AppColors.line, strokeWidth: 1),
+          getDrawingHorizontalLine: (_) => FlLine(
+            color: AppColors.line.withValues(alpha: 0.6),
+            strokeWidth: 1,
+          ),
         ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
@@ -659,8 +586,14 @@ class _TrendLineChart extends StatelessWidget {
                     ? '${int.parse(bucket.substring(5))}月'
                     : bucket.substring(5).replaceFirst('-', '/');
                 return Padding(
-                  padding: const EdgeInsets.only(top: 7),
-                  child: Text(label, style: const TextStyle(fontSize: 10)),
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.muted,
+                    ),
+                  ),
                 );
               },
             ),
@@ -669,7 +602,7 @@ class _TrendLineChart extends StatelessWidget {
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
             getTooltipColor: (_) => AppColors.ink,
-            getTooltipItems: (spots) => spots
+            getTooltipItems: (touched) => touched
                 .map(
                   (s) => LineTooltipItem(
                     formatMoney((s.y * 100).round()),
@@ -683,27 +616,18 @@ class _TrendLineChart extends StatelessWidget {
                 .toList(),
           ),
         ),
-        showingTooltipIndicators: showPeak
-            ? [
-                ShowingTooltipIndicators([
-                  LineBarSpot(
-                    barData(
-                      AppColors.expense,
-                      spots((p) => p.expenseCents),
-                      true,
-                    ),
-                    1,
-                    FlSpot(
-                      peakIndex.toDouble(),
-                      points[peakIndex].expenseCents / 100,
-                    ),
-                  ),
-                ]),
-              ]
-            : const [],
         lineBarsData: [
-          barData(AppColors.income, spots((p) => p.incomeCents), false),
-          barData(AppColors.expense, spots((p) => p.expenseCents), true),
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            curveSmoothness: 0.32,
+            preventCurveOverShooting: true,
+            color: AppColors.income,
+            barWidth: 2,
+            isStrokeCapRound: true,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
         ],
       ),
     );
@@ -772,9 +696,7 @@ class _CategoryComposition extends StatelessWidget {
       final rest = totals
           .skip(maxSlices)
           .fold<int>(0, (sum, item) => sum + item.totalCents);
-      slices.add(
-        _Slice(label: '其他', cents: rest, color: _colorAt(maxSlices)),
-      );
+      slices.add(_Slice(label: '其他', cents: rest, color: _colorAt(maxSlices)));
     }
 
     return Column(
@@ -891,11 +813,7 @@ class _CategoryComposition extends StatelessWidget {
 }
 
 class _Slice {
-  const _Slice({
-    required this.label,
-    required this.cents,
-    required this.color,
-  });
+  const _Slice({required this.label, required this.cents, required this.color});
 
   final String label;
   final int cents;
@@ -941,14 +859,15 @@ class _PeriodBarChart extends StatelessWidget {
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
             getTooltipColor: (_) => AppColors.ink,
-            getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
-              formatMoney((rod.toY * 100).round()),
-              const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            getTooltipItem: (group, groupIndex, rod, rodIndex) =>
+                BarTooltipItem(
+                  formatMoney((rod.toY * 100).round()),
+                  const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
           ),
         ),
         titlesData: FlTitlesData(

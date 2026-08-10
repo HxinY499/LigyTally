@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:forui/forui.dart';
 
 import '../../shared/widgets/app_widgets.dart';
 import 'update_controller.dart';
@@ -49,10 +48,10 @@ class _UpdateNotificationLayerState
         ? ' · ${(info.apkSize / 1024 / 1024).toStringAsFixed(0)}MB'
         : '';
 
-    showFToast(
-      context: context,
-      title: const Text('发现新版本'),
-      description: Text('v$version$sizeLabel'),
+    showAppToast(
+      context,
+      message: '发现新版本',
+      description: 'v$version$sizeLabel',
       suffixBuilder: (context, entry) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -80,11 +79,7 @@ class _UpdateNotificationLayerState
   }
 
   void _showMessageToast(String message) {
-    showFToast(
-      context: context,
-      title: Text(message),
-      duration: const Duration(seconds: 4),
-    );
+    showAppToast(context, message: message, level: AppToastLevel.error);
   }
 
   @override

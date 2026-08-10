@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
 import '../../core/theme/app_theme.dart';
+import 'app_page_header.dart';
 
 /// 应用统一页头（二级页面用）。
 ///
-/// 统一了返回按钮（chevronLeft 细箭头 + 主色）、标题样式（走全局 appBarTheme）、
-/// 高度与留白。所有带返回的二级页面都用它，想统一调整页头只改这一处。
+/// 与主页 `AppPageHeader` 同高（56）、同一标题样式（[kAppHeaderTitleStyle]）；
+/// 返回按钮为墨色细箭头。所有带返回的二级页面都用它，想统一调整页头只改这一处。
 ///
 /// 用法：`appBar: AppTopBar(title: '记一笔', actions: [...])`
 class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
@@ -16,14 +17,14 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget>? actions;
 
   @override
-  Size get preferredSize => const Size.fromHeight(60);
+  Size get preferredSize => const Size.fromHeight(56);
 
   @override
   Widget build(BuildContext context) {
     final canPop = Navigator.of(context).canPop();
     return AppBar(
       automaticallyImplyLeading: false,
-      leadingWidth: 52,
+      leadingWidth: 48,
       leading: canPop
           ? IconButton(
               onPressed: () => Navigator.of(context).maybePop(),
@@ -36,7 +37,7 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
               ),
             )
           : null,
-      title: Text(title),
+      title: Text(title, style: kAppHeaderTitleStyle),
       actions: actions,
     );
   }

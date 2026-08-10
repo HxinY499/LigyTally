@@ -20,5 +20,6 @@ export 'app_page_header.dart';
 export 'app_switch.dart';
 export 'app_text_field.dart';
 export 'app_tile.dart';
+export 'app_toast.dart';
 export 'app_top_bar.dart';
 export 'segmented_control.dart';

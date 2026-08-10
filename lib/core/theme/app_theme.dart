@@ -60,14 +60,12 @@ ThemeData buildAppTheme() {
       surfaceTintColor: Colors.transparent,
       scrolledUnderElevation: 0,
       elevation: 0,
-      toolbarHeight: 60,
+      toolbarHeight: 56,
       titleSpacing: 4,
       iconTheme: const IconThemeData(color: AppColors.ink, size: 22),
-      titleTextStyle: _flat(text.titleLarge).copyWith(
-        fontSize: 20,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 0.2,
-      ),
+      titleTextStyle: _flat(
+        text.titleLarge,
+      ).copyWith(fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: 0.2),
     ),
     cardTheme: const CardThemeData(
       elevation: 0,
@@ -136,7 +134,7 @@ ThemeData buildAppTheme() {
 /// 沿用 forui 触屏预设，保证组件观感一致。
 FThemeData buildForuiTheme() {
   final base = FTheme.neutral.light.touch;
-  return FThemeData(
+  final theme = FThemeData(
     touch: true,
     debugLabel: 'LigyTally forui',
     colors: base.colors.copyWith(
@@ -154,5 +152,96 @@ FThemeData buildForuiTheme() {
       border: AppColors.line,
     ),
   );
+  return theme.copyWith(toasterStyle: _toasterStyle);
 }
 
+/// toast 的浮起阴影：两层叠加（近距离描边阴影 + 远距离柔光），
+/// 比单层阴影更接近真实浮层，也不会糊成一团灰。
+const _toastShadow = [
+  BoxShadow(color: Color(0x14000000), offset: Offset(0, 2), blurRadius: 6),
+  BoxShadow(color: Color(0x1F000000), offset: Offset(0, 10), blurRadius: 28),
+];
+
+/// toast 全局样式：卡片式浮层+ 语义色。
+///
+/// 只调样式不动交互——位置（触屏顶部居中）、滑动消失、堆叠展开
+/// 全部沿用 forui 预设。
+///
+/// -圆角用超椭圆 18px，比默认 md(10) 更圆润，符合浮层调性
+/// - 白面+ 极淡描边 + 双层阴影，从页面浅灰底上「浮」起来
+/// - 标题 15/w600、描述 13，比默认更紧凑，一行提示不显得空旷
+/// - destructive 变体改成淡红底 + 红描边，比纯白底红字更有警示感
+final _toasterStyle = FToasterStyleDelta.delta(
+  padding: const EdgeInsetsGeometryDelta.value(
+    EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+  ),
+  expandSpacing: 8,
+  collapsedProtrusion: 10,
+  collapsedScale: 0.94,
+  toastStyles:
+      FVariantsDelta<
+        FToastVariantConstraint,
+        FToastVariant,
+        FToastStyle,
+        FToastStyleDelta
+      >.delta([
+        // 先把公共外观打到 base 和所有变体上
+        FVariantOperation.all(
+          FToastStyleDelta.delta(
+            decoration: DecorationDelta.shapeDelta(
+              color: AppColors.surface,
+              shape: const RoundedSuperellipseBorder(
+                side: BorderSide(color: AppColors.line),
+                borderRadius: BorderRadius.all(Radius.circular(18)),
+              ),
+              shadows: _toastShadow,
+            ),
+            padding: const EdgeInsetsGeometryDelta.value(
+              EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            ),
+            iconStyle: const IconThemeDataDelta.delta(
+              size: 18,
+              color: AppColors.primary,
+            ),
+            iconSpacing: 12,
+            titleTextStyle: const TextStyleDelta.delta(
+              fontSize: 15,
+              height: 1.3,
+              fontWeight: FontWeight.w600,
+              color: AppColors.ink,
+            ),
+            titleSpacing: 3,
+            descriptionTextStyle: const TextStyleDelta.delta(
+              fontSize: 13,
+              height: 1.35,
+              fontWeight: FontWeight.w400,
+              color: AppColors.muted,
+            ),
+            suffixSpacing: 8,
+          ),
+        ),
+        // 再单独覆盖 destructive：淡红底、红描边、红字
+        FVariantOperation.exact(
+          <FToastVariantConstraint>{FToastVariant.destructive},
+          FToastStyleDelta.delta(
+            decoration: DecorationDelta.shapeDelta(
+              color: AppColors.expenseSoft,
+              shape: RoundedSuperellipseBorder(
+                side: BorderSide(
+                  color: AppColors.expense.withValues(alpha: 0.28),
+                ),
+                borderRadius: const BorderRadius.all(Radius.circular(18)),
+              ),
+              shadows: _toastShadow,
+            ),
+            iconStyle: const IconThemeDataDelta.delta(color: AppColors.expense),
+            titleTextStyle: const TextStyleDelta.delta(
+              color: AppColors.expense,
+            ),
+            descriptionTextStyle: TextStyleDelta.delta(
+              color: AppColors.expense.withValues(alpha: 0.8),
+            ),
+          ),
+        ),
+      ]),
+);

@@ -59,7 +59,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       await ref.read(backupServiceProvider).exportAndShare(password: password);
     } catch (error) {
-      if (mounted) _showMessage('备份失败：$error');
+      if (mounted) _showMessage('备份失败：$error', level: AppToastLevel.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -97,21 +97,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
       if (confirmed == true) {
         await service.restore(file, password: password);
-        if (mounted) _showMessage('数据恢复完成');
+        if (mounted) _showMessage('数据恢复完成', level: AppToastLevel.success);
       }
     } catch (error) {
-      if (mounted) _showMessage('恢复失败，请检查文件和密码：$error');
+      if (mounted) {
+        _showMessage('恢复失败，请检查文件和密码：$error', level: AppToastLevel.error);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  void _showMessage(String message) {
-    showFToast(
-      context: context,
-      title: Text(message),
-      duration: const Duration(seconds: 4),
-    );
+  void _showMessage(
+    String message, {
+    AppToastLevel level = AppToastLevel.info,
+  }) {
+    showAppToast(context, message: message, level: level);
   }
 
   @override
@@ -231,11 +232,7 @@ class _AboutCardState extends ConsumerState<_AboutCard> {
     if (!mounted) return;
     setState(() => _checking = false);
     if (message.isEmpty) return;
-    showFToast(
-      context: context,
-      title: Text(message),
-      duration: const Duration(seconds: 4),
-    );
+    showAppToast(context, message: message);
   }
 
   @override
@@ -499,7 +496,7 @@ class _CategoryManagementScreenState
     try {
       await ref.read(categoryConfigServiceProvider).exportAndShare();
     } catch (error) {
-      if (mounted) _showMessage('导出分类配置失败：$error');
+      if (mounted) _showMessage('导出分类配置失败：$error', level: AppToastLevel.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -536,10 +533,10 @@ class _CategoryManagementScreenState
       );
       if (confirmed == true) {
         await service.importAndReplace(path);
-        if (mounted) _showMessage('分类配置已导入');
+        if (mounted) _showMessage('分类配置已导入', level: AppToastLevel.success);
       }
     } catch (error) {
-      if (mounted) _showMessage('导入分类配置失败：$error');
+      if (mounted) _showMessage('导入分类配置失败：$error', level: AppToastLevel.error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -572,23 +569,22 @@ class _CategoryManagementScreenState
     if (!mounted) return;
     switch (result) {
       case CategoryDeleteResult.deleted:
-        _showMessage('分类已删除');
+        _showMessage('分类已删除', level: AppToastLevel.success);
         return;
       case CategoryDeleteResult.inUse:
-        _showMessage('该分类已被历史账单使用，不能删除，可以将它停用');
+        _showMessage('该分类已被历史账单使用，不能删除，可以将它停用', level: AppToastLevel.error);
         return;
       case CategoryDeleteResult.lastRoot:
-        _showMessage('收入和支出至少各保留一个可用的一级分类');
+        _showMessage('收入和支出至少各保留一个可用的一级分类', level: AppToastLevel.error);
         return;
     }
   }
 
-  void _showMessage(String message) {
-    showFToast(
-      context: context,
-      title: Text(message),
-      duration: const Duration(seconds: 4),
-    );
+  void _showMessage(
+    String message, {
+    AppToastLevel level = AppToastLevel.info,
+  }) {
+    showAppToast(context, message: message, level: level);
   }
 
   Future<void> _addCategory() async {
