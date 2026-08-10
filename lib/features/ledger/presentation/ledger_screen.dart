@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
@@ -42,29 +43,67 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     );
   }
 
-  // 删除确认：forui 没有 showDialog 的直接替代，保留 Material AlertDialog 兜底。
-  Future<bool> _confirmDelete(LedgerItem item) async {
+  // 删除确认：长按账单弹出强确认框（圆角白卡 + 红色描边「确定」+「取消」）。
+  Future<void> _confirmDelete(LedgerItem item) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除账单'),
-        content: Text('确定删除“${item.category.name}”这笔账单吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+      builder: (context) => Dialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '确定要删除该条账单吗？删除后不可恢复',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.ink,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.expense,
+                    side: const BorderSide(
+                      color: AppColors.expense,
+                      width: 1.5,
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                  ),
+                  child: const Text(
+                    '确定',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text(
+                  '取消',
+                  style: TextStyle(fontSize: 15, color: AppColors.ink),
+                ),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
-          ),
-        ],
+        ),
       ),
     );
-    if (confirmed != true || !mounted) return false;
+    if (confirmed != true || !mounted) return;
     try {
       await ref.read(ledgerServiceProvider).delete(item);
-      return true;
     } catch (error) {
       if (mounted) {
         showFToast(
@@ -74,7 +113,6 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
           duration: const Duration(seconds: 4),
         );
       }
-      return false;
     }
   }
 
@@ -218,9 +256,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                         day: dateFromKey(group.key),
                         items: group.value,
                       ),
-                      // forui 卡片包裹当天账单。因为要给每条加Dismissible 滑删
-                      // （被包裹后不再是 FItemMixin，无法进 FItemGroup），
-                      // 这里用 Column 手动排列 FItem + 分隔线。
+                      // forui 卡片包裹当天账单，Column 手动排列 FItem + 分隔线。
                       AppCard(
                         child: Column(
                           children: [
@@ -248,7 +284,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     );
   }
 
-  // 单条账单：forui FItem，外面包 Dismissible 实现滑动删除（forui无对应物，Material 兜底）。
+  // 单条账单：forui FItem，长按触发删除确认（去掉滑动删除，避免误触）。
   Widget _ledgerItem(LedgerItem item) {
     final isExpense = item.transaction.kind == 0;
     final color = isExpense ? AppColors.expense : AppColors.income;
@@ -256,16 +292,12 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     final occurredAt = DateTime.fromMillisecondsSinceEpoch(
       item.transaction.occurredAt,
     );
-    return Dismissible(
-      key: ValueKey(item.transaction.id),
-      direction: DismissDirection.endToStart,
-      confirmDismiss: (_) => _confirmDelete(item),
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 22),
-        color: AppColors.expense,
-        child: const Icon(FLucideIcons.trash2, color: Colors.white),
-      ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: () {
+        HapticFeedback.mediumImpact();
+        _confirmDelete(item);
+      },
       child: FItem(
         onPress: () => _edit(item),
         prefix: Container(

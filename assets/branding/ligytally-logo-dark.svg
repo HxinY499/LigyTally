@@ -1,0 +1,28 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="320" fill="#111111"/>
+  <path
+    d="M238 80H82V240H238V175H173"
+    stroke="white"
+    stroke-width="28.5"
+    stroke-linecap="square"
+    stroke-linejoin="miter"
+  />
+  <text
+    x="316"
+    y="205"
+    fill="white"
+    font-family="Arial, Helvetica, sans-serif"
+    font-size="128"
+    font-weight="700"
+    letter-spacing="0"
+  >Ligy</text>
+  <text
+    x="578"
+    y="205"
+    fill="#B5B7BC"
+    font-family="Arial, Helvetica, sans-serif"
+    font-size="128"
+    font-weight="400"
+    letter-spacing="0"
+  >Tally</text>
+</svg>

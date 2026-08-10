@@ -41,7 +41,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   late DateTime _date;
   late TimeOfDay _time;
   bool _saving = false;
-  bool _keypadVisible = false;
   bool _prefilledCategory = false;
 
   bool get _isEditing => widget.existing != null;
@@ -75,8 +74,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         if (mounted) setState(() => _existingImages.addAll(images));
       });
     }
-    // 新建账单：默认弹出自定义键盘，直接开始输入金额。
-    if (transaction == null) _keypadVisible = true;
   }
 
   @override
@@ -160,28 +157,19 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     return _amountExpr.substring(idx + 1);
   }
 
-  /// 键盘「完成」：若含运算符先结算成最终金额。
-  void _onKeypadDone() {
-    if (AmountExpression.hasOperator(_amountExpr)) {
-      setState(() {
-        final value = _amountValue;
-        _amountExpr = value <= 0 ? '' : value.toStringAsFixed(2);
-      });
-    }
-    setState(() => _keypadVisible = false);
-  }
-
+  /// 选图并加入待上传列表。不触发 setState——调用方决定刷新
+  /// 编辑器整体还是图片面板的局部状态。
   Future<void> _pickImage(ImageSource source) async {
     if (_visibleImageCount >= 3) return;
     final image = await _picker.pickImage(source: source, imageQuality: 100);
     if (image != null && mounted) {
-      setState(() => _pendingImages.add(image));
+      _pendingImages.add(image);
     }
   }
 
-  Future<void> _showImageSource() async {
-    setState(() => _keypadVisible = false);
-    await showModalBottomSheet<void>(
+  /// 图片面板里点「添加」：先选来源（拍照/相册），选完刷新面板。
+  Future<void> _addImageFromSheet(StateSetter refreshSheet) async {
+    final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (context) => SafeArea(
         child: Wrap(
@@ -189,27 +177,143 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             ListTile(
               leading: const Icon(FLucideIcons.camera),
               title: const Text('拍照'),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.camera);
-              },
+              onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
             ListTile(
               leading: const Icon(FLucideIcons.images),
               title: const Text('从相册选择'),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.gallery);
-              },
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
           ],
         ),
       ),
     );
+    if (source == null) return;
+    await _pickImage(source);
+    refreshSheet(() {});
+  }
+
+  /// 键盘顶栏的图片入口：底部弹出图片管理面板（增删图片）。
+  /// 面板直接操作共享的 [_pendingImages] / [_removedImageIds]，
+  /// 关闭后再刷新编辑器，更新顶栏缩略图与角标。
+  Future<void> _showImageSheet() async {
+    final storage = ref.read(imageStorageProvider);
+    final accent = _kind == 0 ? AppColors.expense : AppColors.income;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final visibleExisting = [
+            for (final image in _existingImages)
+              if (!_removedImageIds.contains(image.id)) image,
+          ];
+          final count = visibleExisting.length + _pendingImages.length;
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 标题栏：居中标题 + 右侧关闭。
+                  SizedBox(
+                    height: 32,
+                    child: Stack(
+                      children: [
+                        const Center(
+                          child: Text(
+                            '添加图片',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          bottom: 0,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => Navigator.pop(context),
+                            child: const Icon(
+                              FLucideIcons.x,
+                              size: 22,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (final image in visibleExisting)
+                        _SheetImageTile(
+                          child: LocalImage(
+                            storage: storage,
+                            relativePath: image.thumbnailPath,
+                          ),
+                          onRemove: () => setSheetState(
+                            () => _removedImageIds.add(image.id),
+                          ),
+                        ),
+                      for (var i = 0; i < _pendingImages.length; i++)
+                        _SheetImageTile(
+                          child: Image.file(
+                            File(_pendingImages[i].path),
+                            fit: BoxFit.cover,
+                          ),
+                          onRemove: () =>
+                              setSheetState(() => _pendingImages.removeAt(i)),
+                        ),
+                      if (count < 3)
+                        _SheetAddTile(
+                          onTap: () => _addImageFromSheet(setSheetState),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: accent,
+                        side: BorderSide(color: accent, width: 1.5),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                      ),
+                      child: Text(
+                        '确认（$count/3）',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _selectDate() async {
-    setState(() => _keypadVisible = false);
     final value = await showDatePicker(
       context: context,
       initialDate: _date,
@@ -220,7 +324,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   }
 
   Future<void> _selectTime() async {
-    setState(() => _keypadVisible = false);
     final value = await showTimePicker(context: context, initialTime: _time);
     if (value != null) setState(() => _time = value);
   }
@@ -270,7 +373,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           _pendingImages.clear();
           _existingImages.clear();
           _removedImageIds.clear();
-          _keypadVisible = true;
         });
         showFToast(
           context: context,
@@ -301,6 +403,29 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   Widget build(BuildContext context) {
     final database = ref.watch(databaseProvider);
     final storage = ref.watch(imageStorageProvider);
+    // 收支语义色：支出红 / 收入绿，贯穿金额卡与键盘按键。
+    final accent = _kind == 0 ? AppColors.expense : AppColors.income;
+
+    // 顶栏图片入口的缩略图：优先最新待上传，其次已有图片。
+    Widget? imagePreview;
+    if (_pendingImages.isNotEmpty) {
+      imagePreview = Image.file(
+        File(_pendingImages.last.path),
+        fit: BoxFit.cover,
+      );
+    } else {
+      TransactionImageEntry? lastExisting;
+      for (final image in _existingImages) {
+        if (!_removedImageIds.contains(image.id)) lastExisting = image;
+      }
+      if (lastExisting != null) {
+        imagePreview = LocalImage(
+          storage: storage,
+          relativePath: lastExisting.thumbnailPath,
+        );
+      }
+    }
+
     return Scaffold(
       appBar: AppTopBar(title: _isEditing ? '编辑账单' : '记一笔'),
       body: SafeArea(
@@ -308,155 +433,83 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         child: Column(
           children: [
             Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  if (_keypadVisible) setState(() => _keypadVisible = false);
-                },
-                child: ListView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  children: [
-                    _KindSwitch(
-                      kind: _kind,
-                      onChanged: (value) {
-                        HapticFeedback.selectionClick();
-                        setState(() {
-                          _kind = value;
-                          _categoryId = null;
-                          _prefilledCategory = false;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    _AmountCard(
-                      expression: _amountExpr,
-                      amountValue: _amountValue,
-                      kind: _kind,
-                      focused: _keypadVisible,
-                      onTap: () => setState(() => _keypadVisible = true),
-                    ),
-                    const SizedBox(height: 22),
-                    const _SectionTitle(title: '分类'),
-                    const SizedBox(height: 10),
-                    StreamBuilder<List<CategoryEntry>>(
-                      stream: database.watchCategories(_kind),
-                      builder: (context, snapshot) {
-                        final categories =
-                            snapshot.data ?? const <CategoryEntry>[];
-                        if (categories.isEmpty) {
-                          return const SizedBox(
-                            height: 72,
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-                        _prefillLastCategory(categories);
-                        return _CategoryPicker(
-                          categories: categories,
-                          selectedId: _categoryId,
-                          onSelected: _onCategorySelected,
+              child: ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                children: [
+                  _KindSwitch(
+                    kind: _kind,
+                    onChanged: (value) {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _kind = value;
+                        _categoryId = null;
+                        _prefilledCategory = false;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  _AmountCard(
+                    expression: _amountExpr,
+                    amountValue: _amountValue,
+                    kind: _kind,
+                  ),
+                  const SizedBox(height: 22),
+                  const _SectionTitle(title: '分类'),
+                  const SizedBox(height: 10),
+                  StreamBuilder<List<CategoryEntry>>(
+                    stream: database.watchCategories(_kind),
+                    builder: (context, snapshot) {
+                      final categories =
+                          snapshot.data ?? const <CategoryEntry>[];
+                      if (categories.isEmpty) {
+                        return const SizedBox(
+                          height: 72,
+                          child: Center(child: CircularProgressIndicator()),
                         );
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    const _SectionTitle(title: '时间'),
-                    const SizedBox(height: 10),
-                    _DateQuickRow(
-                      date: _date,
-                      time: _time,
-                      onToday: () =>
-                          setState(() => _date = dateOnly(DateTime.now())),
-                      onYesterday: () => setState(
-                        () => _date = dateOnly(
-                          DateTime.now().subtract(const Duration(days: 1)),
-                        ),
-                      ),
-                      onPickDate: _selectDate,
-                      onPickTime: _selectTime,
-                    ),
-                    const SizedBox(height: 18),
-                    AppTextField(
-                      multiline: true,
-                      controller: _noteController,
-                      maxLength: 200,
-                      minLines: 1,
-                      maxLines: 3,
-                      label: const Text('备注'),
-                      hint: '可选',
-                      onTap: () => setState(() => _keypadVisible = false),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        const Expanded(child: _SectionTitle(title: '图片')),
-                        Text(
-                          '$_visibleImageCount / 3',
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(color: AppColors.muted),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 88,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          for (final image in _existingImages)
-                            if (!_removedImageIds.contains(image.id))
-                              _ImageTile(
-                                child: LocalImage(
-                                  storage: storage,
-                                  relativePath: image.thumbnailPath,
-                                ),
-                                onRemove: () => setState(
-                                  () => _removedImageIds.add(image.id),
-                                ),
-                              ),
-                          for (
-                            var index = 0;
-                            index < _pendingImages.length;
-                            index++
-                          )
-                            _ImageTile(
-                              child: Image.file(
-                                File(_pendingImages[index].path),
-                                fit: BoxFit.cover,
-                              ),
-                              onRemove: () =>
-                                  setState(() => _pendingImages.removeAt(index)),
-                            ),
-                          if (_visibleImageCount < 3)
-                            _AddImageTile(onTap: _showImageSource),
-                        ],
+                      }
+                      _prefillLastCategory(categories);
+                      return _CategoryPicker(
+                        categories: categories,
+                        selectedId: _categoryId,
+                        onSelected: _onCategorySelected,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  const _SectionTitle(title: '时间'),
+                  const SizedBox(height: 10),
+                  _DateQuickRow(
+                    date: _date,
+                    time: _time,
+                    onToday: () =>
+                        setState(() => _date = dateOnly(DateTime.now())),
+                    onYesterday: () => setState(
+                      () => _date = dateOnly(
+                        DateTime.now().subtract(const Duration(days: 1)),
                       ),
                     ),
-                  ],
-                ),
+                    onPickDate: _selectDate,
+                    onPickTime: _selectTime,
+                  ),
+                ],
               ),
             ),
-            // 键盘可见时显示自定义数字键盘，否则显示吸底保存栏。
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              child: _keypadVisible
-                ? _NumericKeypad(
-                      key: const ValueKey('keypad'),
-                      canSave: _canSave,
-                      saving: _saving,
-                      onInput: _onKeypadInput,
-                      onDone: _onKeypadDone,
-                      onSave: _canSave && !_saving ? () => _save() : null,
-                    )
-                  : _BottomSaveBar(
-                      key: const ValueKey('savebar'),
-                      canSave: _canSave,
-                      saving: _saving,
-                      isEditing: _isEditing,
-                      onSave: _canSave && !_saving ? () => _save() : null,
-                      onSaveContinue: _canSave && !_saving
-                          ? () => _save(continueAfter: true)
-                          : null,
-                    ),
+            // 备注/图片条 + 自定义键盘常驻底部，不随焦点消失；
+            // 备注框聚焦时系统键盘会把整个面板顶上去。
+            _NumericKeypad(
+              accent: accent,
+              canSave: _canSave,
+              saving: _saving,
+              noteController: _noteController,
+              imageCount: _visibleImageCount,
+              imagePreview: imagePreview,
+              onImageTap: _showImageSheet,
+              onInput: _onKeypadInput,
+              onSave: _canSave && !_saving ? () => _save() : null,
+              onSaveContinue: _canSave && !_saving && !_isEditing
+                  ? () => _save(continueAfter: true)
+                  : null,
             ),
           ],
         ),
@@ -961,98 +1014,86 @@ class _KindSegment extends StatelessWidget {
   }
 }
 
-/// hero 金额卡片：只读展示，点击唤起自定义数字键盘。
+/// hero 金额卡片：只读展示，输入通过底部常驻的自定义数字键盘。
 ///
-/// 展示当前表达式（含 + −）；聚焦时描主色边并显示光标条。
+/// 展示当前表达式（含 + −）；键盘常驻，故描边与光标条常显。
 class _AmountCard extends StatelessWidget {
   const _AmountCard({
     required this.expression,
     required this.amountValue,
     required this.kind,
-    required this.focused,
-    required this.onTap,
   });
 
   final String expression;
   final double amountValue;
   final int kind;
-  final bool focused;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final amountColor = kind == 0 ? AppColors.expense : AppColors.income;
     final hasExpr = expression.isNotEmpty;
     final showEquals = AmountExpression.hasOperator(expression);
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: focused ? amountColor : Colors.transparent,
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              '¥',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: AppColors.muted,
-                fontWeight: FontWeight.w700,
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: amountColor, width: 1.5),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            '¥',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: AppColors.muted,
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          hasExpr ? expression : '0.00',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.headlineMedium
-                              ?.copyWith(
-                                color: hasExpr? amountColor : AppColors.line,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.5,
-                              ),
-                        ),
-                      ),
-                      // 聚焦时的闪烁光标条（用细竖条模拟）。
-                      if (focused)
-                        Container(
-                          margin: const EdgeInsets.only(left: 2),
-                          width: 2,
-                          height: 26,
-                          color: amountColor,
-                        ),
-                    ],
-                  ),
-                  // 含运算符时下方显示实时合计。
-                  if (showEquals)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
                       child: Text(
-                        '= ¥${amountValue.toStringAsFixed(2)}',
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(color: AppColors.muted),
+                        hasExpr ? expression : '0.00',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              color: hasExpr? amountColor : AppColors.line,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
                       ),
                     ),
-                ],
-              ),
+                    // 光标条（用细竖条模拟）。
+                    Container(
+                      margin: const EdgeInsets.only(left: 2),
+                      width: 2,
+                      height: 26,
+                      color: amountColor,
+                    ),
+                  ],
+                ),
+                // 含运算符时下方显示实时合计。
+                if (showEquals)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      '= ¥${amountValue.toStringAsFixed(2)}',
+                      style: Theme.of(context).textTheme.labelMedium
+                          ?.copyWith(color: AppColors.muted),
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1282,9 +1323,53 @@ class _CategoryChip extends StatelessWidget {
   }
 }
 
-/// 添加图片占位瓷贴。
-class _AddImageTile extends StatelessWidget {
-  const _AddImageTile({required this.onTap});
+/// 图片面板里的已选图片瓷贴：88x88 圆角图 + 右上角黑色删除钮。
+class _SheetImageTile extends StatelessWidget {
+  const _SheetImageTile({required this.child, required this.onRemove});
+
+  final Widget child;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 88,
+      height: 88,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: child,
+            ),
+          ),
+          Positioned(
+            top: -6,
+            right: -6,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onRemove,
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: const BoxDecoration(
+                  color: AppColors.ink,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(FLucideIcons.x, size: 14, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 图片面板里的「添加」占位瓷贴。
+class _SheetAddTile extends StatelessWidget {
+  const _SheetAddTile({required this.onTap});
 
   final VoidCallback onTap;
 
@@ -1295,139 +1380,155 @@ class _AddImageTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: Container(
         width: 88,
+        height: 88,
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: AppColors.canvas,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.line),
         ),
         child: const Center(
-          child: Icon(FLucideIcons.camera, size: 22, color: AppColors.muted),
+          child: Icon(FLucideIcons.camera, size: 26, color: AppColors.muted),
         ),
       ),
     );
   }
 }
 
-class _ImageTile extends StatelessWidget {
-  const _ImageTile({required this.child, required this.onRemove});
+/// 键盘顶栏的备注输入框：唤起系统键盘，面板整体被顶上去。
+class _NoteField extends StatelessWidget {
+  const _NoteField({required this.controller});
 
-  final Widget child;
-  final VoidCallback onRemove;
+  final TextEditingController controller;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: SizedBox(
-        width: 88,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            ClipRRect(borderRadius: BorderRadius.circular(12), child: child),
-            Positioned(
-              top: 2,
-              right: 2,
-              child: IconButton.filled(
-                onPressed: onRemove,
-                tooltip: '移除图片',
-                iconSize: 16,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 28,
-                  height: 28,
-                ),
-                icon: const Icon(FLucideIcons.x),
-              ),
-            ),
-          ],
-        ),
+    const border = OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(12)),
+      borderSide: BorderSide.none,
+    );
+    return TextField(
+      controller: controller,
+      maxLength: 200,
+      maxLines: 1,
+      style: const TextStyle(fontSize: 14, color: AppColors.ink),
+      decoration: const InputDecoration(
+        hintText: '点击填写备注',
+        hintStyle: TextStyle(fontSize: 14, color: AppColors.muted),
+        filled: true,
+        fillColor: AppColors.surface,
+        counterText: '',
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        border: border,
+        enabledBorder: border,
+        focusedBorder: border,
       ),
     );
   }
 }
 
-/// 吸底保存栏：常驻底部，含「保存」与「保存并继续」。
+/// 键盘顶栏的图片入口：无图显示相机图标，有图显示最新缩略图 + 张数角标。
+class _ImageEntry extends StatelessWidget {
+  const _ImageEntry({
+    required this.count,
+    required this.preview,
+    required this.onTap,
+  });
+
+  final int count;
+  final Widget? preview;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 46,
+        height: 46,
+        child: preview == null
+            ? Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  FLucideIcons.camera,
+                  size: 20,
+                  color: AppColors.muted,
+                ),
+              )
+            : Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: preview,
+                    ),
+                  ),
+                  Positioned(
+                    top: -5,
+                    right: -5,
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          height: 1,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+/// 底部常驻面板：备注/图片条 + 自定义数字键盘。
 ///
-/// 金额/分类未就绪时按钮置灰（[canSave]为 false）。编辑模式不显示
-/// 「保存并继续」（编辑是针对单笔，连续记账无意义）。
-class _BottomSaveBar extends StatelessWidget {
-  const _BottomSaveBar({
-    super.key,
+/// 固定高度布局（不用纵向 Expanded）——它被放在 Column 里、高度约束无界，
+/// 用 Expanded 会因无法确定高度而崩溃。每行固定 [_keyHeight]。
+/// 键盘始终显示、不会消失；记账场景常见「多笔相加」，加减直接在键盘算，
+/// 金额卡实时显示合计。按键强调色跟随收支类型（支出红 / 收入绿）。
+class _NumericKeypad extends StatelessWidget {
+  const _NumericKeypad({
+    required this.accent,
     required this.canSave,
     required this.saving,
-    required this.isEditing,
+    required this.noteController,
+    required this.imageCount,
+    required this.imagePreview,
+    required this.onImageTap,
+    required this.onInput,
     required this.onSave,
     required this.onSaveContinue,
   });
 
+  /// 收支语义色：支出红 / 收入绿，用于符号键与保存键。
+  final Color accent;
   final bool canSave;
   final bool saving;
-  final bool isEditing;
+  final TextEditingController noteController;
+  final int imageCount;
+
+  /// 顶栏图片入口的缩略图（无图时为 null，显示相机图标）。
+  final Widget? imagePreview;
+  final VoidCallback onImageTap;
+  final ValueChanged<String> onInput;
   final VoidCallback? onSave;
   final VoidCallback? onSaveContinue;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.line)),
-      ),
-      child: Row(
-        children: [
-          if (!isEditing) ...[
-            Expanded(
-              child: AppButton(
-                onPress: onSaveContinue,
-                variant: AppButtonVariant.outline,
-                child: const Text('保存并继续'),
-              ),
-            ),
-            const SizedBox(width: 10),
-          ],
-          Expanded(
-            child: AppButton(
-              onPress: onSave,
-              prefix: saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(FLucideIcons.check, size: 18),
-              child: Text(saving ? '保存中' : '保存'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 自定义数字键盘：数字 + 小数点 + 加减 + 退格 + 完成/保存。
-///
-/// 固定高度布局（不用纵向 Expanded）——它被放在 Column 里、高度约束无界，
-/// 用 Expanded 会因无法确定高度而崩溃。每行固定 [_keyHeight]。
-/// 记账场景常见「多笔相加」，加减直接在键盘算，金额卡实时显示合计。
-class _NumericKeypad extends StatelessWidget {
-  const _NumericKeypad({
-    super.key,
-    required this.canSave,
-    required this.saving,
-    required this.onInput,
-    required this.onDone,
-    required this.onSave,
-  });
-
-  final bool canSave;
-  final bool saving;
-  final ValueChanged<String> onInput;
-  final VoidCallback onDone;
-  final VoidCallback? onSave;
 
   static const double _keyHeight = 52;
   static const double _gap = 6;
@@ -1435,56 +1536,80 @@ class _NumericKeypad extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
       decoration: const BoxDecoration(
         color: AppColors.canvas,
         border: Border(top: BorderSide(color: AppColors.line)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // 左侧 3 列数字区。
-          Expanded(
-            flex: 3,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+          // 备注输入 + 图片入口。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: Row(
               children: [
-                _keyRow(context, const ['7', '8', '9']),
-                const SizedBox(height: _gap),
-                _keyRow(context, const ['4', '5', '6']),
-                const SizedBox(height: _gap),
-                _keyRow(context, const ['1', '2', '3']),
-                const SizedBox(height: _gap),
-                _keyRow(context, const ['.', '0', 'back']),
+                Expanded(child: _NoteField(controller: noteController)),
+                const SizedBox(width: 10),
+                _ImageEntry(
+                  count: imageCount,
+                  preview: imagePreview,
+                  onTap: onImageTap,
+                ),
               ],
             ),
           ),
-          const SizedBox(width: _gap),
-          // 右侧功能列：+ − 与 完成/保存。
-          Expanded(
-            flex: 1,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
-                  height: _keyHeight,
-                  child: _NumKey.symbol(label: '+', onTap: () => onInput('+')),
-                ),
+                _keyRow(const ['7', '8', '9', 'back']),
                 const SizedBox(height: _gap),
-                SizedBox(
-                  height: _keyHeight,
-                  child: _NumKey.symbol(label: '−', onTap: () => onInput('-')),
-                ),
+                _keyRow(const ['4', '5', '6', '-']),
                 const SizedBox(height: _gap),
-                // 完成/保存合并键：跨两行高度，可保存时主色「保存」，否则「完成」。
-                SizedBox(
-                  height: _keyHeight * 2 + _gap,
-                  child: _PrimaryKey(
-                    label: canSave ? '保存' : '完成',
-                    loading: saving,
-                    highlight: canSave,
-                    onTap: saving ? null : (canSave ? onSave : onDone),
-                  ),
+                _keyRow(const ['1', '2', '3', '+']),
+                const SizedBox(height: _gap),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: _keyHeight,
+                        child: _AgainKey(onTap: onSaveContinue),
+                      ),
+                    ),
+                    const SizedBox(width: _gap),
+                    Expanded(
+                      child: SizedBox(
+                        height: _keyHeight,
+                        child: _NumKey(
+                          value: '0',
+                          onTap: () => onInput('0'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: _gap),
+                    Expanded(
+                      child: SizedBox(
+                        height: _keyHeight,
+                        child: _NumKey(
+                          value: '.',
+                          onTap: () => onInput('.'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: _gap),
+                    Expanded(
+                      child: SizedBox(
+                        height: _keyHeight,
+                        child: _SaveKey(
+                          accent: accent,
+                          enabled: canSave,
+                          loading: saving,
+                          onTap: onSave,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1494,7 +1619,7 @@ class _NumericKeypad extends StatelessWidget {
     );
   }
 
-  Widget _keyRow(BuildContext context, List<String> keys) {
+  Widget _keyRow(List<String> keys) {
     return Row(
       children: [
         for (var i = 0; i < keys.length; i++) ...[
@@ -1502,7 +1627,11 @@ class _NumericKeypad extends StatelessWidget {
           Expanded(
             child: SizedBox(
               height: _keyHeight,
-              child: _NumKey(value: keys[i], onTap: () => onInput(keys[i])),
+              child: _NumKey(
+                value: keys[i],
+                symbolColor: accent,
+                onTap: () => onInput(keys[i]),
+              ),
             ),
           ),
         ],
@@ -1511,20 +1640,20 @@ class _NumericKeypad extends StatelessWidget {
   }
 }
 
-/// 单个数字/符号键（白底瓷键）。填满父级给定的固定高度。
+/// 单个数字/符号/退格键（白底瓷键）。填满父级给定的固定高度。
 class _NumKey extends StatelessWidget {
-  const _NumKey({required this.value, required this.onTap}) : symbolLabel = null;
-  const _NumKey.symbol({required String label, required this.onTap})
-    : value = '',
-      symbolLabel = label;
+  const _NumKey({required this.value, required this.onTap, this.symbolColor});
 
   final String value;
-  final String? symbolLabel;
   final VoidCallback onTap;
+
+  /// 符号键（+ −）文字色：跟随收支语义色。
+  final Color? symbolColor;
 
   @override
   Widget build(BuildContext context) {
     final isBack = value == 'back';
+    final isSymbol = value == '+' || value == '-';
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(12),
@@ -1535,11 +1664,11 @@ class _NumKey extends StatelessWidget {
           child: isBack
               ? const Icon(FLucideIcons.delete, size: 22, color: AppColors.ink)
               : Text(
-                  symbolLabel ?? value,
+                  value == '-' ? '−' : value,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: symbolLabel != null
-                        ? AppColors.primary
+                    color: isSymbol
+                        ? (symbolColor ?? AppColors.primary)
                         : AppColors.ink,
                   ),
                 ),
@@ -1549,24 +1678,54 @@ class _NumKey extends StatelessWidget {
   }
 }
 
-/// 键盘右下角的主键（完成 / 保存）。填满父级给定的固定高度。
-class _PrimaryKey extends StatelessWidget {
-  const _PrimaryKey({
-    required this.label,
+/// 左下「再记一笔」键：保存后不关页面，清空继续记。不可用时置灰。
+class _AgainKey extends StatelessWidget {
+  const _AgainKey({required this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Center(
+          child: Text(
+            '再记一笔',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: enabled ? AppColors.muted : AppColors.line,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 右下「保存」键：可用时收支语义色填充，不可用置灰。填满父级固定高度。
+class _SaveKey extends StatelessWidget {
+  const _SaveKey({
+    required this.accent,
+    required this.enabled,
     required this.loading,
-    required this.highlight,
     required this.onTap,
   });
 
-  final String label;
+  final Color accent;
+  final bool enabled;
   final bool loading;
-  final bool highlight;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: highlight ? AppColors.primary : AppColors.surface,
+      color: enabled ? accent : AppColors.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -1582,10 +1741,10 @@ class _PrimaryKey extends StatelessWidget {
                   ),
                 )
               : Text(
-                  label,
+                  '保存',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: highlight ? Colors.white : AppColors.muted,
+                    color: enabled ? Colors.white : AppColors.muted,
                   ),
                 ),
         ),

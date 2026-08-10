@@ -1,0 +1,33 @@
+<svg width="1400" height="1200" viewBox="0 0 1400 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="1200" fill="#E9EBEE"/>
+
+  <rect width="1400" height="400" fill="white"/>
+  <text x="72" y="70" fill="#7A7D83" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" letter-spacing="0">PRIMARY BRAND</text>
+  <g transform="translate(72 95)">
+    <path d="M238 80H82V240H238V175H173" stroke="#111111" stroke-width="30" stroke-linecap="square" stroke-linejoin="miter"/>
+    <text x="316" y="205" fill="#111111" font-family="Arial, Helvetica, sans-serif" font-size="128" font-weight="700" letter-spacing="0">Ligy</text>
+    <text x="578" y="205" fill="#65686E" font-family="Arial, Helvetica, sans-serif" font-size="128" font-weight="400" letter-spacing="0">Tally</text>
+  </g>
+
+  <rect y="400" width="1400" height="400" fill="#111111"/>
+  <text x="72" y="470" fill="#93969C" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" letter-spacing="0">DARK INTERFACE</text>
+  <g transform="translate(72 495)">
+    <path d="M238 80H82V240H238V175H173" stroke="white" stroke-width="28.5" stroke-linecap="square" stroke-linejoin="miter"/>
+    <text x="316" y="205" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="128" font-weight="700" letter-spacing="0">Ligy</text>
+    <text x="578" y="205" fill="#B5B7BC" font-family="Arial, Helvetica, sans-serif" font-size="128" font-weight="400" letter-spacing="0">Tally</text>
+  </g>
+
+  <text x="72" y="870" fill="#7A7D83" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" letter-spacing="0">APP ICON</text>
+  <g transform="translate(72 910)">
+    <rect width="218" height="218" fill="#111111"/>
+    <path d="M159.2 55.4H58.8V162.6H159.2V117.9H117.9" stroke="white" stroke-width="19.6" stroke-linecap="square" stroke-linejoin="miter"/>
+  </g>
+  <g transform="translate(338 958)">
+    <rect width="122" height="122" fill="#111111"/>
+    <path d="M89 33H33V89H89V65.7H65.7" stroke="white" stroke-width="11" stroke-linecap="square" stroke-linejoin="miter"/>
+  </g>
+  <g transform="translate(504 988)">
+    <rect width="64" height="64" fill="#111111"/>
+    <path d="M47 17H17V47H47V34.5H34.5" stroke="white" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+  </g>
+</svg>

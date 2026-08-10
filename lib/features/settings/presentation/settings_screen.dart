@@ -118,10 +118,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return SafeArea(
       bottom: false,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 4, 18),
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 20),
             child: Text(
               '设置',
               style: Theme.of(
@@ -129,28 +129,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
           ),
-          AppTileGroup(
+          _SettingsCard(
             children: [
-              AppTile(
-                prefix: const Icon(FLucideIcons.layoutGrid),
-                title: const Text('分类管理'),
-                suffix: const Icon(FLucideIcons.chevronRight),
-                onPress: () => Navigator.of(context).push<void>(
+              _SettingsItem(
+                title: '分类管理',
+                showChevron: true,
+                onTap: () => Navigator.of(context).push<void>(
                   MaterialPageRoute(
                     builder: (_) => const CategoryManagementScreen(),
                   ),
                 ),
               ),
-              AppTile(
-                prefix: const Icon(FLucideIcons.japaneseYen),
-                title: const Text('默认货币'),
-                suffix: const Text('人民币'),
+              const _SettingsItem(
+                title: '默认货币',
+                trailing: Text(
+                  '人民币',
+                  style: TextStyle(fontSize: 14, color: AppColors.muted),
+                ),
               ),
-              AppTile(
-                prefix: const Icon(FLucideIcons.list),
-                title: const Text('分类选择样式'),
-                subtitle: const Text('记账页分类的展示方式'),
-                suffix: AppSegmentedControl<CategoryPickerLayout>(
+              _SettingsItem(
+                title: '分类选择样式',
+                subtitle: '记账页分类的展示方式',
+                trailing: AppSegmentedControl<CategoryPickerLayout>(
                   expanded: false,
                   selected: ref.watch(categoryPickerLayoutProvider),
                   onChanged: (value) => ref
@@ -171,32 +171,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          AppTileGroup(
+          _SettingsCard(
             children: [
-              AppTile(
-                enabled: !_busy,
-                prefix: const Icon(FLucideIcons.upload),
-                title: const Text('导出完整备份'),
-                suffix: const Icon(FLucideIcons.chevronRight),
-                onPress: _exportBackup,
+              _SettingsItem(
+                title: '导出数据',
+                subtitle: '加密备份全部账单与图片',
+                showChevron: true,
+                onTap: _busy ? null : _exportBackup,
               ),
-              AppTile(
-                enabled: !_busy,
-                prefix: const Icon(FLucideIcons.archiveRestore),
-                title: const Text('从备份恢复'),
-                suffix: _busy
+              _SettingsItem(
+                title: '导入数据',
+                subtitle: '从备份文件恢复，将覆盖当前数据',
+                showChevron: !_busy,
+                trailing: _busy
                     ? const SizedBox(
-                        width: 20,
-                        height: 20,
+                        width: 18,
+                        height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(FLucideIcons.chevronRight),
-                onPress: _restoreBackup,
+                    : null,
+                onTap: _busy ? null : _restoreBackup,
               ),
             ],
           ),
           const SizedBox(height: 16),
-          const _AboutTile(),
+          const _AboutCard(),
         ],
       ),
     );
@@ -207,14 +206,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 ///
 /// 版本号从原生 PackageInfo 读，不再硬编码——之前写死的
 /// 「版本 1.0.0」在发布 1.0.1 后就不准了。
-class _AboutTile extends ConsumerStatefulWidget {
-  const _AboutTile();
+class _AboutCard extends ConsumerStatefulWidget {
+  const _AboutCard();
 
   @override
-  ConsumerState<_AboutTile> createState() => _AboutTileState();
+  ConsumerState<_AboutCard> createState() => _AboutCardState();
 }
 
-class _AboutTileState extends ConsumerState<_AboutTile> {
+class _AboutCardState extends ConsumerState<_AboutCard> {
   String? _version;
   bool _checking = false;
 
@@ -251,40 +250,179 @@ class _AboutTileState extends ConsumerState<_AboutTile> {
     final pending = updateState.phase == UpdatePhase.available
         ? updateState.info
         : null;
+    final busy = _checking || updateState.isBusy;
 
-    return AppTileGroup(
+    return _SettingsCard(
       children: [
-        AppTile(
-          prefix: const Icon(FLucideIcons.info),
-          title: const Text('Ligy Tally'),
-          subtitle: Text(
-            _version == null
-                ? '正在读取版本…'
-                : pending != null
-                ? '版本 $_version · 可更新至 v${pending.version}'
-                : '版本 $_version',
-          ),
-          suffix: _checking || updateState.isBusy
+        _SettingsItem(
+          title: 'Ligy Tally',
+          subtitle: _version == null
+              ? '正在读取版本…'
+              : pending != null
+              ? '版本 $_version · 可更新至 v${pending.version}'
+              : '版本 $_version',
+          trailing: busy
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              // 已发现新版时按钮直接变成「立即更新」，
-              : pending != null
-              ? AppButton(
-                  onPress: () => ref
-                      .read(updateControllerProvider.notifier)
-                      .downloadAndInstall(),
-                  child: const Text('立即更新'),
-                )
-              : AppButton(
-                  onPress: _checkUpdate,
-                  variant: AppButtonVariant.outline,
-                  child: const Text('检查更新'),
+              // 已发现新版时按钮直接变成「立即更新」
+              : _OutlineChip(
+                  label: pending != null ? '立即更新' : '检查更新',
+                  filled: pending != null,
+                  onTap: pending != null
+                      ? () => ref
+                            .read(updateControllerProvider.notifier)
+                            .downloadAndInstall()
+                      : _checkUpdate,
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// 设置页卡片容器：白底、大圆角、组内发丝分割线。
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0)
+              const Divider(
+                height: 1,
+                thickness: 1,
+                indent: 16,
+                color: Color(0xFFEEF2F0),
+              ),
+            children[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 设置页列表行：左侧标题（可带副标题），右侧 trailing / chevron。
+class _SettingsItem extends StatelessWidget {
+  const _SettingsItem({
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    this.showChevron = false,
+    this.onTap,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final bool showChevron;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle!,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (trailing != null) ...[
+              const SizedBox(width: 12),
+              trailing!,
+            ],
+            if (showChevron) ...[
+              const SizedBox(width: 8),
+              const Icon(
+                FLucideIcons.chevronRight,
+                size: 18,
+                color: Color(0xFFC2CBC6),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 胶囊小按钮：参考图里「已添加」式的轻量操作按钮。
+class _OutlineChip extends StatelessWidget {
+  const _OutlineChip({
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  /// true 时实心填充（用于「立即更新」这类强引导），false 为描边样式。
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: filled ? AppColors.primary : Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.primary),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: filled ? Colors.white : AppColors.primary,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,0 +1,10 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" fill="#111111"/>
+  <path
+    d="M748 260H276V764H748V554H554"
+    stroke="white"
+    stroke-width="92"
+    stroke-linecap="square"
+    stroke-linejoin="miter"
+  />
+</svg>
