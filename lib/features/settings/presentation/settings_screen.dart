@@ -149,23 +149,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               _SettingsItem(
                 title: '分类选择样式',
-                subtitle: '记账页分类的展示方式',
-                trailing: AppSegmentedControl<CategoryPickerLayout>(
-                  expanded: false,
-                  selected: ref.watch(categoryPickerLayoutProvider),
+                trailing: _LayoutToggle(
+                  value: ref.watch(categoryPickerLayoutProvider),
                   onChanged: (value) => ref
                       .read(categoryPickerLayoutProvider.notifier)
                       .setLayout(value),
-                  segments: const [
-                    AppSegment(
-                      value: CategoryPickerLayout.list,
-                      label: '列表',
-                    ),
-                    AppSegment(
-                      value: CategoryPickerLayout.grid,
-                      label: '网格',
-                    ),
-                  ],
                 ),
               ),
             ],
@@ -175,13 +163,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             children: [
               _SettingsItem(
                 title: '导出数据',
-                subtitle: '加密备份全部账单与图片',
                 showChevron: true,
                 onTap: _busy ? null : _exportBackup,
               ),
               _SettingsItem(
                 title: '导入数据',
-                subtitle: '从备份文件恢复，将覆盖当前数据',
                 showChevron: !_busy,
                 trailing: _busy
                     ? const SizedBox(
@@ -384,7 +370,70 @@ class _SettingsItem extends StatelessWidget {
   }
 }
 
-/// 胶囊小按钮：参考图里「已添加」式的轻量操作按钮。
+/// 分类选择样式的紧凑二态切换器：两枚小图标按钮（列表 / 网格）。
+///
+/// 视觉比分段控件轻，尺寸和右侧 chevron 平齐，不抢标题的层级。
+class _LayoutToggle extends StatelessWidget {
+  const _LayoutToggle({required this.value, required this.onChanged});
+
+  final CategoryPickerLayout value;
+  final ValueChanged<CategoryPickerLayout> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _LayoutIcon(
+          icon: FLucideIcons.list,
+          selected: value == CategoryPickerLayout.list,
+          onTap: () => onChanged(CategoryPickerLayout.list),
+        ),
+        const SizedBox(width: 6),
+        _LayoutIcon(
+          icon: FLucideIcons.layoutGrid,
+          selected: value == CategoryPickerLayout.grid,
+          onTap: () => onChanged(CategoryPickerLayout.grid),
+        ),
+      ],
+    );
+  }
+}
+
+class _LayoutIcon extends StatelessWidget {
+  const _LayoutIcon({
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.primarySoft : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: Icon(
+            icon,
+            size: 17,
+            color: selected ? AppColors.primary : AppColors.muted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
 class _OutlineChip extends StatelessWidget {
   const _OutlineChip({
     required this.label,

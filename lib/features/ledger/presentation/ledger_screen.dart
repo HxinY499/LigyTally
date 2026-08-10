@@ -192,7 +192,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             ),
           // 全部 / 支出 / 收入 —— forui 分段选择器
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
             child: AppSegmentedControl<LedgerFilter>(
               selected: _filter,
               onChanged: (value) => setState(() => _filter = value),
@@ -256,8 +256,13 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                         day: dateFromKey(group.key),
                         items: group.value,
                       ),
-                      // forui 卡片包裹当天账单，Column 手动排列 FItem + 分隔线。
-                      AppCard(
+                      // 当天账单卡：白底16 圆角、无描边，内部 FItem + 发丝分割线。
+                      Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        clipBehavior: Clip.antiAlias,
                         child: Column(
                           children: [
                             for (
@@ -267,12 +272,17 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                             ) ...[
                               _ledgerItem(group.value[index]),
                               if (index < group.value.length - 1)
-                                const Divider(height: 1, indent: 66),
+                                const Divider(
+                                  height: 1,
+                                  thickness: 1,
+                                  indent: 66,
+                                  color: Color(0xFFEEF2F0),
+                                ),
                             ],
                           ],
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
                     ],
                   ],
                 );
@@ -345,22 +355,40 @@ class _DayHeader extends StatelessWidget {
     final income = items
         .where((item) => item.transaction.kind == 1)
         .fold<int>(0, (sum, item) => sum + item.transaction.amountCents);
+    final today = dateOnly(DateTime.now());
+    final yesterday = dateOnly(today.subtract(const Duration(days: 1)));
+    String suffix;
+    if (day == today) {
+      suffix = '今日';
+    } else if (day == yesterday) {
+      suffix = '昨日';
+    } else {
+      suffix = formatWeekday(day);
+    }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 4, 2, 8),
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
       child: Row(
         children: [
           Text(
-            '${formatDay(day)} ${formatWeekday(day)}',
+            formatDay(day),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: AppColors.ink,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            suffix,
             style: Theme.of(
               context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ).textTheme.labelMedium?.copyWith(color: AppColors.muted),
           ),
           const Spacer(),
           Text(
             '支 ${formatMoney(expense)}  收 ${formatMoney(income)}',
             style: Theme.of(
               context,
-            ).textTheme.labelMedium?.copyWith(color: AppColors.muted),
+            ).textTheme.labelSmall?.copyWith(color: AppColors.muted),
           ),
         ],
       ),
