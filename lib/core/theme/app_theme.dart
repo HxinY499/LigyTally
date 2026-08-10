@@ -7,6 +7,14 @@ class AppColors {
   static const canvas = Color(0xFFF5F5F5);
   static const surface = Color(0xFFFFFFFF);
   static const line = Color(0xFFDCDCDC);
+
+  /// 更淡的分割线：用于大面积贴边描边（底部导航栏顶线等）。
+  /// [line] 在长直线上会压出一道明显的灰边，显脏。
+  static const lineSoft = Color(0xFFEDEDED);
+
+  /// 未选中态图标/ 文字：比 [muted] 更低饱和。
+  /// [muted]偏绿灰，用在小字上会发脏。
+  static const inactive = Color(0xFF9AA3A0);
   static const primary = Color(0xFF5190F2);
   static const primarySoft = Color(0xFFE3EDFD);
   static const expense = Color(0xFFD55A46);

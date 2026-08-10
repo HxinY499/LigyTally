@@ -257,7 +257,10 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                         }
                         final entries = groups.entries.toList();
                         return SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                          // 底部留白只需避开居中悬浮的「记一笔」FAB
+                          // （56 直径 + 16 浮起边距+ 余量）；
+                          // 导航栏已贴底固定，不再覆盖列表。
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 84),
                           sliver: SliverList.builder(
                             itemCount: entries.length,
                             itemBuilder: (context, index) {

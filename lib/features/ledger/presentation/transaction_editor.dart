@@ -315,17 +315,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   }
 
   Future<void> _selectDate() async {
-    final value = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
+    final value = await showAppDatePicker(context, initial: _date);
     if (value != null) setState(() => _date = dateOnly(value));
   }
 
   Future<void> _selectTime() async {
-    final value = await showTimePicker(context: context, initialTime: _time);
+    final value = await showAppTimePicker(context, initial: _time);
     if (value != null) setState(() => _time = value);
   }
 
@@ -542,15 +537,16 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
   /// 手风琴模式：同一时间只允许一个一级分类展开。
   String? _expandedId;
 
-  /// 最近一次展开过的一级分类。收起时 [_expandedId] 变null，但面板要留在树上
-  /// 才能播收起动画，所以用它记住"该给哪一行挂面板"。
-  String? _panelOwnerId;
+  /// 每行最近一次展开过的一级分类 id（网格模式，key 为行号）。
+  ///
+  /// 收起后 [_expandedId] 变 null，但该行的面板必须继续留在树上、拿着原来的
+  /// 二级分类数据，才能把收起动画播完，所以要单独记住"这行该给谁挂面板"。
+  final Map<int, String> _rowPanelOwner = {};
 
   @override
   void initState() {
     super.initState();
     _expandedId = _parentIdOf(widget.selectedId);
-    _panelOwnerId = _expandedId;
   }
 
   @override
@@ -559,6 +555,7 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
     // 切换收支类型后选中项被清空，同时收起展开的一级分类。
     if (widget.selectedId == null && _expandedId != null) {
       _expandedId = null;
+      _rowPanelOwner.clear();
     }
   }
 
@@ -578,14 +575,15 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
         .toList();
   }
 
-  void _onParentTap(CategoryEntry parent, bool hasChildren) {
+  void _onParentTap(CategoryEntry parent, bool hasChildren, {int? rowIndex}) {
     // 一级分类本身就是可选中的：点击即选中；
     // 有二级分类时同时展开/收起，二级只是进一步的细选，可以不选。
     widget.onSelected(parent.id);
     if (!hasChildren) return;
     setState(() {
       _expandedId = _expandedId == parent.id ? null : parent.id;
-      if (_expandedId != null) _panelOwnerId = _expandedId;
+      // 收起时也要记下来，面板才有数据播收起动画。
+      if (rowIndex != null) _rowPanelOwner[rowIndex] = parent.id;
     });
   }
 
@@ -607,6 +605,7 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
       children: [
         for (final parent in parents) ...[
           _ParentCategoryTile(
+            key: ValueKey('cat-tile-${parent.id}'),
             category: parent,
             selected: parent.id == selectedParentId,
             expanded: _expandedId == parent.id,
@@ -616,6 +615,8 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
                 _onParentTap(parent, _childrenOf(parent.id).isNotEmpty),
           ),
           _ChildrenPanel(
+            key: ValueKey('cat-panel-${parent.id}'),
+            ownerId: parent.id,
             visible: _expandedId == parent.id,
             children: _childrenOf(parent.id),
             selectedId: widget.selectedId,
@@ -630,25 +631,32 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
   }
 
   /// 网格模式：一级分类 5 列网格，二级分类面板插入在被展开项所在行的下方。
+  ///
+  /// 每行都固定挂一个面板槽（没有展开项时高度为 0），这样 [Column] 的孩子结构
+  /// 不会随展开状态增删——否则后续孩子的位置整体偏移，Flutter 按下标复用
+  /// Element 时会给面板重建State，展开动画会被跳过（直接就是展开态）。
   Widget _buildGrid(List<CategoryEntry> parents, String? selectedParentId) {
     final rows = <Widget>[];
-    for (var start = 0; start < parents.length; start += _columns) {
+    for (var rowIndex = 0; rowIndex * _columns < parents.length; rowIndex++) {
+      final start = rowIndex * _columns;
       final rowParents = parents.sublist(
         start,
         start + _columns > parents.length ? parents.length : start + _columns,
       );
-      // 该行需要挂面板的一级分类：优先当前展开项，否则是刚被收起、正在播动画的那个。
+      // 该行要挂面板的一级分类：优先当前展开项，否则是刚被收起、正在播动画的那个。
       CategoryEntry? panelOwner;
       for (final parent in rowParents) {
         if (parent.id == _expandedId) panelOwner = parent;
       }
       if (panelOwner == null) {
+        final remembered = _rowPanelOwner[rowIndex];
         for (final parent in rowParents) {
-          if (parent.id == _panelOwnerId) panelOwner = parent;
+          if (parent.id == remembered) panelOwner = parent;
         }
       }
       rows.add(
         Row(
+          key: ValueKey('cat-row-$rowIndex'),
           children: [
             for (var i = 0; i < _columns; i++)
               Expanded(
@@ -662,6 +670,7 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
                         onTap: () => _onParentTap(
                           rowParents[i],
                           _childrenOf(rowParents[i].id).isNotEmpty,
+                          rowIndex: rowIndex,
                         ),
                       )
                     : const SizedBox.shrink(),
@@ -669,18 +678,20 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
           ],
         ),
       );
-      if (panelOwner != null) {
-        rows.add(
-          _ChildrenPanel(
-            visible: _expandedId == panelOwner.id,
-            children: _childrenOf(panelOwner.id),
-            selectedId: widget.selectedId,
-            accent: widget.accent,
-            columns: _columns,
-            onSelected: widget.onSelected,
-          ),
-        );
-      }
+      rows.add(
+        _ChildrenPanel(
+          key: ValueKey('cat-panel-row-$rowIndex'),
+          ownerId: panelOwner?.id,
+          visible: panelOwner != null && _expandedId == panelOwner.id,
+          children: panelOwner == null
+              ? const <CategoryEntry>[]
+              : _childrenOf(panelOwner.id),
+          selectedId: widget.selectedId,
+          accent: widget.accent,
+          columns: _columns,
+          onSelected: widget.onSelected,
+        ),
+      );
     }
     return Column(children: rows);
   }
@@ -689,6 +700,7 @@ class _CategoryPickerState extends ConsumerState<_CategoryPicker> {
 /// 列表模式的一级分类行：无卡片，扁平的图标 + 名称，右侧箭头随展开旋转。
 class _ParentCategoryTile extends StatelessWidget {
   const _ParentCategoryTile({
+    super.key,
     required this.category,
     required this.selected,
     required this.expanded,
@@ -833,6 +845,8 @@ class _ParentGridCell extends StatelessWidget {
 /// 二级分类面板：白色圆角底，展开/收起走高度 + 淡入的组合动画。
 class _ChildrenPanel extends StatefulWidget {
   const _ChildrenPanel({
+    super.key,
+    required this.ownerId,
     required this.visible,
     required this.children,
     required this.selectedId,
@@ -842,6 +856,8 @@ class _ChildrenPanel extends StatefulWidget {
     this.indent = 0,
   });
 
+  /// 当前面板归属的一级分类 id。同一个面板槽换了归属时要重播展开动画。
+  final String? ownerId;
   final bool visible;
   final List<CategoryEntry> children;
   final String? selectedId;
@@ -880,23 +896,27 @@ class _ChildrenPanelState extends State<_ChildrenPanel>
   @override
   void didUpdateWidget(covariant _ChildrenPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.visible == oldWidget.visible) return;
-    if (widget.visible) {
-      _controller.forward();
-      // 展开时把面板滚入可见区域，避免被键盘/底栏遮挡。
-      if (widget.children.isNotEmpty) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          Scrollable.ensureVisible(
-            context,
-            alignment: 0.5,
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeInOut,
-          );
-        });
-      }
-    } else {
+    final ownerChanged = widget.ownerId != oldWidget.ownerId;
+    if (widget.visible == oldWidget.visible && !ownerChanged) return;
+
+    if (!widget.visible) {
       _controller.reverse();
+      return;
+    }
+    // 同一行内从A 换成 B：内容整块换掉，从 0 重新长出来才不会显得是硬切。
+    if (ownerChanged) _controller.value = 0;
+    _controller.forward();
+    // 展开时把面板滚入可见区域，避免被键盘/底栏遮挡。
+    if (widget.children.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Scrollable.ensureVisible(
+          context,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeInOut,
+        );
+      });
     }
   }
 
@@ -909,7 +929,7 @@ class _ChildrenPanelState extends State<_ChildrenPanel>
   @override
   Widget build(BuildContext context) {
     if (widget.children.isEmpty) {
-      return const SizedBox(width: double.infinity);
+      return const SizedBox(width: double.infinity, height: 0);
     }
     return SizeTransition(
       sizeFactor: _expand,
@@ -1151,6 +1171,11 @@ class _AmountCard extends StatelessWidget {
 }
 
 /// 时间区：日期快捷（今天/昨天/选日期）+ 时间瓷贴。
+/// 时间区块：一张卡片里左右分栏（日期 | 时刻），下面跟一排「今天 / 昨天」快捷键。
+///
+/// 之前是「三枚等宽 chip + 一条独立的时间行」，两行都是满宽色块，
+/// 视觉重量和上面的分类网格打架；改成「主信息成卡、快捷键退到次要位置」
+/// 后，日期和时刻并排一眼可读，快捷键只在需要时才吸引注意。
 class _DateQuickRow extends StatelessWidget {
   const _DateQuickRow({
     required this.date,
@@ -1180,119 +1205,156 @@ class _DateQuickRow extends StatelessWidget {
     return date.year == y.year && date.month == y.month && date.day == y.day;
   }
 
+  /// 日期副标签：今天/昨天优先，其余显示星期，跨年时显示年份。
+  String get _dateHint {
+    if (_isToday) return '今天';
+    if (_isYesterday) return '昨天';
+    if (date.year != DateTime.now().year) return '${date.year} 年';
+    return formatWeekday(date);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final custom = !_isToday && !_isYesterday;
-    final dateLabel =
-        '${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _DateTimeField(
+                  icon: FLucideIcons.calendarDays,
+                  value: formatDay(date),
+                  hint: _dateHint,
+                  onTap: onPickDate,
+                ),
+              ),
+              Container(width: 1, height: 34, color: AppColors.line),
+              Expanded(
+                child: _DateTimeField(
+                  icon: FLucideIcons.clock,
+                  value: _clock(time),
+                  hint: '时刻',
+                  onTap: onPickTime,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
         Row(
           children: [
-            Expanded(
-              child: _DateChip(label: '今天', selected: _isToday, onTap: onToday),
-            ),
+            _DateChip(label: '今天', selected: _isToday, onTap: onToday),
             const SizedBox(width: 8),
-            Expanded(
-              child: _DateChip(
-                label: '昨天',
-                selected: _isYesterday,
-                onTap: onYesterday,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _DateChip(
-                icon: FLucideIcons.calendar,
-                label: custom ? dateLabel : '其他',
-                selected: custom,
-                onTap: onPickDate,
-              ),
-            ),
+            _DateChip(label: '昨天', selected: _isYesterday, onTap: onYesterday),
           ],
-        ),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: onPickTime,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  FLucideIcons.clock,
-                  size: 16,
-                  color: AppColors.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  time.format(context),
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
         ),
       ],
     );
   }
+
+  /// 固定 24 小时制，与时间选择器保持一致，避免跟随系统出现「下午 8:46」。
+  static String _clock(TimeOfDay value) =>
+      '${value.hour.toString().padLeft(2, '0')}:'
+      '${value.minute.toString().padLeft(2, '0')}';
 }
 
+/// 卡片内的一栏：图标 + 主值 + 次要提示，整栏可点。
+class _DateTimeField extends StatelessWidget {
+  const _DateTimeField({
+    required this.icon,
+    required this.value,
+    required this.hint,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String value;
+  final String hint;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 17, color: AppColors.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hint,
+                    maxLines: 1,
+                    style: text.labelSmall?.copyWith(
+                      color: AppColors.muted,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 快捷日期胶囊：只承担「今天 / 昨天」两个高频跳转，尺寸比主卡片小一号。
 class _DateChip extends StatelessWidget {
   const _DateChip({
     required this.label,
     required this.selected,
     required this.onTap,
-    this.icon,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(20),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
         decoration: BoxDecoration(
           color: selected ? AppColors.primarySoft : AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? AppColors.primary : Colors.transparent,
-            width: 1.3,
+            color: selected ? AppColors.primary : AppColors.line,
           ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (icon != null) ...[
-              Icon(
-                icon,
-                size: 14,
-                color: selected ? AppColors.primary : AppColors.muted,
-              ),
-              const SizedBox(width: 5),
-            ],
-            Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: selected ? AppColors.primary : AppColors.ink,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ],
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: selected ? AppColors.primary : AppColors.muted,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          ),
         ),
       ),
     );

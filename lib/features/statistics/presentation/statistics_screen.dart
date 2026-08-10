@@ -172,7 +172,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     return SafeArea(
       bottom: false,
       child: ListView(
-        padding: const EdgeInsets.only(bottom: 100),
+        // 导航栏已贴底固定、不再覆盖内容，且本页无 FAB，
+        // 底部只留一点收尾留白即可。
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
