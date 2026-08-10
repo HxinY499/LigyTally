@@ -4,11 +4,11 @@ import 'package:forui/forui.dart';
 class AppColors {
   static const ink = Color(0xFF17211E);
   static const muted = Color(0xFF65716D);
-  static const canvas = Color(0xFFF5F7F5);
+  static const canvas = Color(0xFFF5F5F5);
   static const surface = Color(0xFFFFFFFF);
-  static const line = Color(0xFFDCE3DF);
-  static const primary = Color(0xFF087A69);
-  static const primarySoft = Color(0xFFDDF1EC);
+  static const line = Color(0xFFDCDCDC);
+  static const primary = Color(0xFF5190F2);
+  static const primarySoft = Color(0xFFE3EDFD);
   static const expense = Color(0xFFD55A46);
   static const expenseSoft = Color(0xFFF8E8E4);
   static const income = Color(0xFF2E7D32);
@@ -127,7 +127,7 @@ ThemeData buildAppTheme() {
 
 /// forui 品牌主题：以 neutral(light/touch) 为底，套上LigyTally 的语义化配色。
 ///
-/// - primary       → 品牌绿，用于选中态、强调按钮
+/// - primary       → 品牌蓝，用于选中态、强调按钮
 /// - destructive   → 支出红（记账语境里的"扣钱/删除"）
 /// - background→ 页面浅灰底
 /// - card / border  → 卡片白面 + 淡描边

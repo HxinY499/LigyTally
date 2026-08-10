@@ -31,8 +31,8 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
               splashRadius: 22,
               icon: const Icon(
                 FLucideIcons.chevronLeft,
-                color: AppColors.primary,
-                size: 26,
+                color: AppColors.ink,
+                size: 24,
               ),
             )
           : null,

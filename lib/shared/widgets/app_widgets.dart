@@ -16,6 +16,7 @@ library;
 
 export 'app_button.dart';
 export 'app_card.dart';
+export 'app_page_header.dart';
 export 'app_switch.dart';
 export 'app_text_field.dart';
 export 'app_tile.dart';

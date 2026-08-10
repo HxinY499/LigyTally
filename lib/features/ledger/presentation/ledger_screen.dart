@@ -66,9 +66,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
       context: context,
       builder: (context) => Dialog(
         backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 40),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 28, 24, 10),
@@ -142,11 +140,29 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
       child: Column(
         children: [
           // 顶栏：左侧标题（或搜索框），右侧一枚搜索图标（切换态）。
-          _TopBar(
-            searching: _searching,
-            controller: _searchController,
-            onToggle: _toggleSearch,
-            onChanged: (value) => setState(() => _query = value.trim()),
+          AppPageHeader(
+            content: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 160),
+              child: _searching
+                  ? _SearchField(
+                      key: const ValueKey('search'),
+                      controller: _searchController,
+                      onChanged: (value) =>
+                          setState(() => _query = value.trim()),
+                    )
+                  : Text(
+                      '记账',
+                      key: const ValueKey('title'),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+            ),
+            actions: [
+              AppIconButton(
+                onPress: _toggleSearch,
+                icon: Icon(_searching ? FLucideIcons.x : FLucideIcons.search),
+              ),
+            ],
           ),
           Expanded(
             child: StreamBuilder<LedgerSummary>(
@@ -195,9 +211,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                           return const SliverToBoxAdapter(
                             child: Padding(
                               padding: EdgeInsets.symmetric(vertical: 80),
-                              child: Center(
-                                child: CircularProgressIndicator(),
-                              ),
+                              child: Center(child: CircularProgressIndicator()),
                             ),
                           );
                         }
@@ -221,9 +235,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                               icon: keyword.isEmpty
                                   ? FLucideIcons.receipt
                                   : FLucideIcons.searchX,
-                              title: keyword.isEmpty
-                                  ? '这个月还没有记录'
-                                  : '没有匹配的账单',
+                              title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
                               detail: keyword.isEmpty
                                   ? '点击右下角加号记下第一笔'
                                   : '换一个关键词再试',
@@ -274,55 +286,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   }
 }
 
-/// 顶栏：默认显示「记账」标题 + 右侧搜索图标；点击搜索图标切换为
-/// 左侧展开一个不大的输入框（约屏宽 65%），再次点击关闭并清空关键词。
-class _TopBar extends StatelessWidget {
-  const _TopBar({
-    required this.searching,
-    required this.controller,
-    required this.onToggle,
-    required this.onChanged,
-  });
-
-  final bool searching;
-  final TextEditingController controller;
-  final VoidCallback onToggle;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 160),
-              child: searching
-                  ? _SearchField(
-                      key: const ValueKey('search'),
-                      controller: controller,
-                      onChanged: onChanged,
-                    )
-                  : Text(
-                      '记账',
-                      key: const ValueKey('title'),
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w800),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          AppIconButton(
-            onPress: onToggle,
-            icon: Icon(searching ? FLucideIcons.x : FLucideIcons.search),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
+/// 搜索输入框：点击顶栏搜索图标展开，再次点击关闭并清空关键词。
 class _SearchField extends StatelessWidget {
   const _SearchField({
     super.key,
@@ -814,9 +778,8 @@ class _MonthPickerDialogState extends State<_MonthPickerDialog> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).pop(DateTime(_year, _month)),
+                    onPressed: () =>
+                        Navigator.of(context).pop(DateTime(_year, _month)),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.primary,
                       side: const BorderSide(

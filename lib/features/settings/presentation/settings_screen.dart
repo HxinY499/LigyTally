@@ -118,80 +118,78 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 4, 20),
-            child: Text(
-              '设置',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          const AppPageHeader(title: '设置'),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+              children: [
+                _SettingsCard(
+                  children: [
+                    _SettingsItem(
+                      title: '分类管理',
+                      showChevron: true,
+                      onTap: () => Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => const CategoryManagementScreen(),
+                        ),
+                      ),
+                    ),
+                    const _SettingsItem(
+                      title: '默认货币',
+                      trailing: Text(
+                        '人民币',
+                        style: TextStyle(fontSize: 14, color: AppColors.muted),
+                      ),
+                    ),
+                    _SettingsItem(
+                      title: '分类选择样式',
+                      trailing: _LayoutToggle(
+                        value: ref.watch(categoryPickerLayoutProvider),
+                        onChanged: (value) => ref
+                            .read(categoryPickerLayoutProvider.notifier)
+                            .setLayout(value),
+                      ),
+                    ),
+                    _SettingsItem(
+                      title: '金额千分位',
+                      trailing: AppSwitch(
+                        value: ref.watch(moneyGroupedProvider),
+                        onChange: (value) => ref
+                            .read(moneyGroupedProvider.notifier)
+                            .setGrouped(value),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _SettingsCard(
+                  children: [
+                    _SettingsItem(
+                      title: '导出数据',
+                      showChevron: true,
+                      onTap: _busy ? null : _exportBackup,
+                    ),
+                    _SettingsItem(
+                      title: '导入数据',
+                      showChevron: !_busy,
+                      trailing: _busy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : null,
+                      onTap: _busy ? null : _restoreBackup,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const _AboutCard(),
+              ],
             ),
           ),
-          _SettingsCard(
-            children: [
-              _SettingsItem(
-                title: '分类管理',
-                showChevron: true,
-                onTap: () => Navigator.of(context).push<void>(
-                  MaterialPageRoute(
-                    builder: (_) => const CategoryManagementScreen(),
-                  ),
-                ),
-              ),
-              const _SettingsItem(
-                title: '默认货币',
-                trailing: Text(
-                  '人民币',
-                  style: TextStyle(fontSize: 14, color: AppColors.muted),
-                ),
-              ),
-              _SettingsItem(
-                title: '分类选择样式',
-                trailing: _LayoutToggle(
-                  value: ref.watch(categoryPickerLayoutProvider),
-                  onChanged: (value) => ref
-                      .read(categoryPickerLayoutProvider.notifier)
-                      .setLayout(value),
-                ),
-              ),
-              _SettingsItem(
-                title: '金额千分位',
-                trailing: AppSwitch(
-                  value: ref.watch(moneyGroupedProvider),
-                  onChange: (value) => ref
-                      .read(moneyGroupedProvider.notifier)
-                      .setGrouped(value),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _SettingsCard(
-            children: [
-              _SettingsItem(
-                title: '导出数据',
-                showChevron: true,
-                onTap: _busy ? null : _exportBackup,
-              ),
-              _SettingsItem(
-                title: '导入数据',
-                showChevron: !_busy,
-                trailing: _busy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : null,
-                onTap: _busy ? null : _restoreBackup,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const _AboutCard(),
         ],
       ),
     );
@@ -361,10 +359,7 @@ class _SettingsItem extends StatelessWidget {
                 ],
               ),
             ),
-            if (trailing != null) ...[
-              const SizedBox(width: 12),
-              trailing!,
-            ],
+            if (trailing != null) ...[const SizedBox(width: 12), trailing!],
             if (showChevron) ...[
               const SizedBox(width: 8),
               const Icon(
@@ -442,7 +437,6 @@ class _LayoutIcon extends StatelessWidget {
     );
   }
 }
-
 
 class _OutlineChip extends StatelessWidget {
   const _OutlineChip({
@@ -744,7 +738,7 @@ class _CategoryManagementScreenState
                     }
                     return Padding(
                       padding: EdgeInsets.only(left: isChild ? 24 : 0),
-                child: AppCard(
+                      child: AppCard(
                         child: AppTile(
                           prefix: CircleAvatar(
                             radius: isChild ? 17 : 20,
@@ -770,8 +764,10 @@ class _CategoryManagementScreenState
                             children: [
                               AppSwitch(
                                 value: category.isActive,
-                                onChange: (value) => database
-                                    .setCategoryActive(category.id, value),
+                                onChange: (value) => database.setCategoryActive(
+                                  category.id,
+                                  value,
+                                ),
                               ),
                               const SizedBox(width: 4),
                               AppIconButton(

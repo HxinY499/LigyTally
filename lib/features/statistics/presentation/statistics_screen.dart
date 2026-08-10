@@ -11,7 +11,6 @@ import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../features/ledger/application/providers.dart';
 import '../../../shared/widgets/app_widgets.dart';
-import '../../../shared/widgets/summary_band.dart';
 
 enum StatisticsPeriod { day, week, month, year, custom }
 
@@ -36,9 +35,73 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     StatisticsPeriod.custom => _customRange ?? monthRange(_anchor),
   };
 
+  /// 上一周期区间，用于环比（本期 vs 上期）。
+  LedgerDateRange get _previousRange => switch (_period) {
+    StatisticsPeriod.day => dayRange(_anchor.subtract(const Duration(days: 1))),
+    StatisticsPeriod.week =>
+      weekRange(_anchor.subtract(const Duration(days: 7))),
+    StatisticsPeriod.month => monthRange(
+      DateTime(_anchor.year, _anchor.month - 1, 1),
+    ),
+    StatisticsPeriod.year => yearRange(DateTime(_anchor.year - 1, 1, 1)),
+    StatisticsPeriod.custom => () {
+      final range = _range;
+      final shift = Duration(days: math.max(1, range.dayCount));
+      return LedgerDateRange(
+        range.start.subtract(shift),
+        range.endExclusive.subtract(shift),
+      );
+    }(),
+  };
+
+  /// 「周期支出对比」的近 6 个周期（升序，末位为当前周期）。
+  List<PeriodSpan> get _comparisonSpans {
+    const count = 6;
+    final spans = <PeriodSpan>[];
+    for (var offset = count - 1; offset >= 0; offset--) {
+      final (range, label) = _spanAt(offset);
+      spans.add(PeriodSpan(range: range, label: label));
+    }
+    return spans;
+  }
+
+  /// offset=0 表示当前周期，offset=1 表示上一周期，以此类推。
+  (LedgerDateRange, String) _spanAt(int offset) {
+    switch (_period) {
+      case StatisticsPeriod.day:
+        final day = _anchor.subtract(Duration(days: offset));
+        return (dayRange(day), '${day.month}/${day.day}');
+      case StatisticsPeriod.week:
+        final anchor = _anchor.subtract(Duration(days: 7 * offset));
+        final range = weekRange(anchor);
+        return (range, '${range.start.month}/${range.start.day}');
+      case StatisticsPeriod.year:
+        final year = _anchor.year - offset;
+        return (yearRange(DateTime(year, 1, 1)), '$year');
+      case StatisticsPeriod.month:
+      case StatisticsPeriod.custom:
+        final month = DateTime(_anchor.year, _anchor.month - offset, 1);
+        return (monthRange(month), '${month.month}月');
+    }
+  }
+
   bool get _groupByMonth =>
       _period == StatisticsPeriod.year ||
       (_period == StatisticsPeriod.custom && _range.dayCount > 62);
+
+  String get _comparisonTitle => switch (_period) {
+    StatisticsPeriod.day => '日支出对比',
+    StatisticsPeriod.week => '周支出对比',
+    StatisticsPeriod.year => '年支出对比',
+    _ => '月支出对比',
+  };
+
+  String get _trendTitle => switch (_period) {
+    StatisticsPeriod.day => '当日支出趋势',
+    StatisticsPeriod.week => '本周支出趋势',
+    StatisticsPeriod.year => '年度支出趋势',
+    _ => '本期支出趋势',
+  };
 
   String get _rangeLabel {
     final range = _range;
@@ -163,148 +226,82 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               ],
             ),
           ),
-          StreamBuilder<LedgerSummary>(
-            stream: database.watchSummary(range),
-            builder: (context, snapshot) {
-              final summary =
-                  snapshot.data ??
-                  const LedgerSummary(
-                    incomeCents: 0,
-                    expenseCents: 0,
-                    entryCount: 0,
-                  );
-              return Column(
-                children: [
-                  SummaryBand(summary: summary, compact: true),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 2),
-                    child: Row(
-                      children: [
-                        Text(
-                          '${summary.entryCount} 笔记录',
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(color: AppColors.muted),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '日均支出 ${formatMoney(summary.expenseCents ~/ math.max(1, range.dayCount))}',
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(color: AppColors.muted),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
+
+          // 本期支出/收入 大数字对比（含与上一周期的环比）。
+          _OverviewCard(
+            currentStream: database.watchSummary(range),
+            previousStream: database.watchSummary(_previousRange),
+            dayCount: range.dayCount,
           ),
+
+          // 支出趋势 折线图。
+          _SectionCard(
+            title: _trendTitle,
+            child: SizedBox(
+              height: 200,
+              child: StreamBuilder<List<TrendPoint>>(
+                stream: database.watchTrend(range, groupByMonth: _groupByMonth),
+                builder: (context, snapshot) =>
+                    _TrendLineChart(points: snapshot.data ?? const []),
+              ),
+            ),
+          ),
+
+          // 支出分类构成 环形图 + 排行。
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
             child: AppCard(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 12, 12),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '收支趋势',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      height: 210,
-                      child: StreamBuilder<List<TrendPoint>>(
-                        stream: database.watchTrend(
-                          range,
-                          groupByMonth: _groupByMonth,
-                        ),
-                        builder: (context, snapshot) =>
-                            _TrendChart(points: snapshot.data ?? const []),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Row(
                       children: [
-                        _LegendDot(color: AppColors.expense, label: '支出'),
-                        SizedBox(width: 20),
-                        _LegendDot(color: AppColors.income, label: '收入'),
+                        Expanded(
+                          child: Text(
+                            '分类构成',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        AppSegmentedControl<int>(
+                          expanded: false,
+                          selected: _categoryKind,
+                          onChanged: (value) =>
+                              setState(() => _categoryKind = value),
+                          segments: const [
+                            AppSegment(value: 0, label: '支出'),
+                            AppSegment(value: 1, label: '收入'),
+                          ],
+                        ),
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    StreamBuilder<List<CategoryTotal>>(
+                      stream: database.watchCategoryTotals(range, _categoryKind),
+                      builder: (context, snapshot) => _CategoryComposition(
+                        totals: snapshot.data ?? const <CategoryTotal>[],
+                        kind: _categoryKind,
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '分类排行',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                AppSegmentedControl<int>(
-                  expanded: false,
-                  selected: _categoryKind,
-                  onChanged: (value) => setState(() => _categoryKind = value),
-                  segments: const [
-                    AppSegment(value: 0, label: '支出'),
-                    AppSegment(value: 1, label: '收入'),
-                  ],
-                ),
-              ],
+
+          // 周期支出对比 柱状图（末位高亮）。
+          _SectionCard(
+            title: _comparisonTitle,
+            child: SizedBox(
+              height: 190,
+              child: StreamBuilder<List<PeriodBar>>(
+                stream: database.watchPeriodBars(_comparisonSpans),
+                builder: (context, snapshot) =>
+                    _PeriodBarChart(bars: snapshot.data ?? const []),
+              ),
             ),
-          ),
-          StreamBuilder<List<CategoryTotal>>(
-            stream: database.watchCategoryTotals(range, _categoryKind),
-            builder: (context, snapshot) {
-              final totals = snapshot.data ?? const <CategoryTotal>[];
-              if (totals.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: AppCard(
-                    child: SizedBox(
-                      height: 104,
-                      child: Center(
-                        child: Text(
-                          '当前周期没有${_categoryKind == 0 ? '支出' : '收入'}记录',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: AppColors.muted),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }
-              final total = totals.fold<int>(
-                0,
-                (sum, item) => sum + item.totalCents,
-              );
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: AppCard(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 6,
-                    ),
-                    child: Column(
-                      children: [
-                        for (final item in totals)
-                          _CategoryRow(item: item, totalCents: total),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
           ),
         ],
       ),
@@ -312,8 +309,257 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   }
 }
 
-class _TrendChart extends StatelessWidget {
-  const _TrendChart({required this.points});
+/// 通用"标题 + 内容"卡片，统一各图表区块的外观。
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+      child: AppCard(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 12, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 16),
+              child,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 本期支出 / 本期收入 大数字对比块，底部各自带与上一周期的环比。
+class _OverviewCard extends StatelessWidget {
+  const _OverviewCard({
+    required this.currentStream,
+    required this.previousStream,
+    required this.dayCount,
+  });
+
+  final Stream<LedgerSummary> currentStream;
+  final Stream<LedgerSummary> previousStream;
+  final int dayCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+      child: AppCard(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+          child: StreamBuilder<LedgerSummary>(
+            stream: currentStream,
+            builder: (context, currentSnap) {
+              final current =
+                  currentSnap.data ??
+                  const LedgerSummary(
+                    incomeCents: 0,
+                    expenseCents: 0,
+                    entryCount: 0,
+                  );
+              return StreamBuilder<LedgerSummary>(
+                stream: previousStream,
+                builder: (context, prevSnap) {
+                  final previous =
+                      prevSnap.data ??
+                      const LedgerSummary(
+                        incomeCents: 0,
+                        expenseCents: 0,
+                        entryCount: 0,
+                      );
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _BigStat(
+                              label: '本期支出',
+                              cents: current.expenseCents,
+                              accent: AppColors.expense,
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            height: 40,
+                            margin: const EdgeInsets.symmetric(horizontal: 8),
+                            color: AppColors.line,
+                          ),
+                          Expanded(
+                            child: _BigStat(
+                              label: '本期收入',
+                              cents: current.incomeCents,
+                              accent: AppColors.income,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      const Divider(height: 1),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _DeltaStat(
+                              label: '较上期支出',
+                              current: current.expenseCents,
+                              previous: previous.expenseCents,
+                              upIsBad: true,
+                            ),
+                          ),
+                          Expanded(
+                            child: _DeltaStat(
+                              label: '较上期收入',
+                              current: current.incomeCents,
+                              previous: previous.incomeCents,
+                              upIsBad: false,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '${current.entryCount} 笔记录 · 日均支出 ${formatMoney(current.expenseCents ~/ math.max(1, dayCount))}',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(color: AppColors.muted),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BigStat extends StatelessWidget {
+  const _BigStat({
+    required this.label,
+    required this.cents,
+    required this.accent,
+  });
+
+  final String label;
+  final int cents;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: AppColors.muted),
+        ),
+        const SizedBox(height: 6),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            formatMoney(cents),
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 26,
+              height: 1.05,
+              fontWeight: FontWeight.w800,
+              color: accent,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 环比小指标：显示相对上一周期的涨跌百分比与箭头。
+class _DeltaStat extends StatelessWidget {
+  const _DeltaStat({
+    required this.label,
+    required this.current,
+    required this.previous,
+    required this.upIsBad,
+  });
+
+  final String label;
+  final int current;
+  final int previous;
+
+  /// 支出上涨=偏负面（红），收入上涨=偏正面（绿）。
+  final bool upIsBad;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasBase = previous != 0;
+    final diff = current - previous;
+    final up = diff > 0;
+    final flat = diff == 0;
+    final percent = hasBase ? (diff.abs() / previous * 100) : null;
+
+    final Color color;
+    if (flat) {
+      color = AppColors.muted;
+    } else if (up) {
+      color = upIsBad ? AppColors.expense : AppColors.income;
+    } else {
+      color = upIsBad ? AppColors.income : AppColors.expense;
+    }
+
+    final String text;
+    if (!hasBase) {
+      text = current == 0 ? '—' : '新增';
+    } else if (flat) {
+      text = '持平';
+    } else {
+      text = '${up ? '↑' : '↓'} ${percent!.toStringAsFixed(1)}%';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: AppColors.muted),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          text,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 支出趋势折线图：支出用红线填充，收入用绿线，峰值标注气泡。
+class _TrendLineChart extends StatelessWidget {
+  const _TrendLineChart({required this.points});
 
   final List<TrendPoint> points;
 
@@ -329,18 +575,56 @@ class _TrendChart extends StatelessWidget {
         ),
       );
     }
+
     final maxCents = points.fold<int>(
       0,
       (value, point) =>
           math.max(value, math.max(point.expenseCents, point.incomeCents)),
     );
-    final maxY = math.max(10.0, maxCents / 100 * 1.18);
+    final maxY = math.max(10.0, maxCents / 100 * 1.28);
     final labelEvery = math.max(1, (points.length / 6).ceil());
-    return BarChart(
-      BarChartData(
+
+    // 峰值气泡：定位到支出最大的那个点。
+    var peakIndex = 0;
+    for (var i = 1; i < points.length; i++) {
+      if (points[i].expenseCents > points[peakIndex].expenseCents) {
+        peakIndex = i;
+      }
+    }
+    final showPeak = points[peakIndex].expenseCents > 0;
+
+    List<FlSpot> spots(int Function(TrendPoint) selector) => [
+      for (var i = 0; i < points.length; i++)
+        FlSpot(i.toDouble(), selector(points[i]) / 100),
+    ];
+
+    LineChartBarData barData(Color color, List<FlSpot> data, bool fill) {
+      return LineChartBarData(
+        spots: data,
+        isCurved: true,
+        curveSmoothness: 0.28,
+        color: color,
+        barWidth: 2.4,
+        isStrokeCapRound: true,
+        dotData: FlDotData(
+          show: points.length <= 16,
+          getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+            radius: 2.6,
+            color: color,
+            strokeWidth: 0,
+          ),
+        ),
+        belowBarData: BarAreaData(
+          show: fill,
+          color: color.withValues(alpha: 0.10),
+        ),
+      );
+    }
+
+    return LineChart(
+      LineChartData(
+        minY: 0,
         maxY: maxY,
-        alignment: BarChartAlignment.spaceAround,
-        barTouchData: BarTouchData(enabled: true),
         gridData: FlGridData(
           drawVerticalLine: false,
           horizontalInterval: maxY / 4,
@@ -361,7 +645,8 @@ class _TrendChart extends StatelessWidget {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 28,
+              reservedSize: 26,
+              interval: 1,
               getTitlesWidget: (value, meta) {
                 final index = value.toInt();
                 if (index < 0 ||
@@ -381,26 +666,340 @@ class _TrendChart extends StatelessWidget {
             ),
           ),
         ),
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => AppColors.ink,
+            getTooltipItems: (spots) => spots
+                .map(
+                  (s) => LineTooltipItem(
+                    formatMoney((s.y * 100).round()),
+                    const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        showingTooltipIndicators: showPeak
+            ? [
+                ShowingTooltipIndicators([
+                  LineBarSpot(
+                    barData(
+                      AppColors.expense,
+                      spots((p) => p.expenseCents),
+                      true,
+                    ),
+                    1,
+                    FlSpot(
+                      peakIndex.toDouble(),
+                      points[peakIndex].expenseCents / 100,
+                    ),
+                  ),
+                ]),
+              ]
+            : const [],
+        lineBarsData: [
+          barData(AppColors.income, spots((p) => p.incomeCents), false),
+          barData(AppColors.expense, spots((p) => p.expenseCents), true),
+        ],
+      ),
+    );
+  }
+}
+
+/// 分类构成：左侧环形甜甜圈（中心显示总额），右侧图例，下方排行列表。
+class _CategoryComposition extends StatelessWidget {
+  const _CategoryComposition({required this.totals, required this.kind});
+
+  final List<CategoryTotal> totals;
+  final int kind;
+
+  // 甜甜圈配色：主蓝系为主，尾部渐次变浅/换色，与截图观感一致。
+  static const _palette = [
+    Color(0xFF5190F2),
+    Color(0xFF7FB0F6),
+    Color(0xFFE5A62E),
+    Color(0xFF64B5A4),
+    Color(0xFFB39DDB),
+    Color(0xFFBFD3EC),
+  ];
+
+  Color _colorAt(int index) => _palette[index % _palette.length];
+
+  @override
+  Widget build(BuildContext context) {
+    if (totals.isEmpty) {
+      return SizedBox(
+        height: 96,
+        child: Center(
+          child: Text(
+            '当前周期没有${kind == 0 ? '支出' : '收入'}记录',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppColors.muted),
+          ),
+        ),
+      );
+    }
+
+    final total = totals.fold<int>(0, (sum, item) => sum + item.totalCents);
+    // 环形只画前若干项，其余合并为"其他"，避免细碎扇区。
+    const maxSlices = 5;
+    final slices = <_Slice>[];
+    if (totals.length <= maxSlices) {
+      for (var i = 0; i < totals.length; i++) {
+        slices.add(
+          _Slice(
+            label: totals[i].name,
+            cents: totals[i].totalCents,
+            color: _colorAt(i),
+          ),
+        );
+      }
+    } else {
+      for (var i = 0; i < maxSlices; i++) {
+        slices.add(
+          _Slice(
+            label: totals[i].name,
+            cents: totals[i].totalCents,
+            color: _colorAt(i),
+          ),
+        );
+      }
+      final rest = totals
+          .skip(maxSlices)
+          .fold<int>(0, (sum, item) => sum + item.totalCents);
+      slices.add(
+        _Slice(label: '其他', cents: rest, color: _colorAt(maxSlices)),
+      );
+    }
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 172,
+          child: Row(
+            children: [
+              Expanded(
+                flex: 5,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    PieChart(
+                      PieChartData(
+                        sectionsSpace: 2,
+                        centerSpaceRadius: 46,
+                        startDegreeOffset: -90,
+                        sections: [
+                          for (final slice in slices)
+                            PieChartSectionData(
+                              value: slice.cents.toDouble(),
+                              color: slice.color,
+                              radius: 20,
+                              showTitle: false,
+                            ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          kind == 0 ? '总支出' : '总收入',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(color: AppColors.muted),
+                        ),
+                        const SizedBox(height: 2),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            formatMoney(total),
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                flex: 4,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final slice in slices)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 9,
+                              height: 9,
+                              decoration: BoxDecoration(
+                                color: slice.color,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Text(
+                                slice.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              total == 0
+                                  ? '0%'
+                                  : '${(slice.cents / total * 100).toStringAsFixed(0)}%',
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: AppColors.muted,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 22),
+        for (var i = 0; i < totals.length; i++)
+          _CategoryRow(
+            rank: i + 1,
+            item: totals[i],
+            totalCents: total,
+            color: _colorAt(i),
+          ),
+      ],
+    );
+  }
+}
+
+class _Slice {
+  const _Slice({
+    required this.label,
+    required this.cents,
+    required this.color,
+  });
+
+  final String label;
+  final int cents;
+  final Color color;
+}
+
+/// 周期支出对比柱状图：末位（当前周期）高亮。
+class _PeriodBarChart extends StatelessWidget {
+  const _PeriodBarChart({required this.bars});
+
+  final List<PeriodBar> bars;
+
+  @override
+  Widget build(BuildContext context) {
+    if (bars.isEmpty) {
+      return Center(
+        child: Text(
+          '暂无对比数据',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppColors.muted),
+        ),
+      );
+    }
+
+    final maxCents = bars.fold<int>(
+      0,
+      (value, bar) => math.max(value, bar.expenseCents),
+    );
+    final maxY = math.max(10.0, maxCents / 100 * 1.25);
+
+    return BarChart(
+      BarChartData(
+        maxY: maxY,
+        alignment: BarChartAlignment.spaceAround,
+        gridData: FlGridData(
+          drawVerticalLine: false,
+          horizontalInterval: maxY / 4,
+          getDrawingHorizontalLine: (_) =>
+              const FlLine(color: AppColors.line, strokeWidth: 1),
+        ),
+        borderData: FlBorderData(show: false),
+        barTouchData: BarTouchData(
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (_) => AppColors.ink,
+            getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
+              formatMoney((rod.toY * 100).round()),
+              const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          leftTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 26,
+              interval: 1,
+              getTitlesWidget: (value, meta) {
+                final index = value.toInt();
+                if (index < 0 || index >= bars.length) {
+                  return const SizedBox.shrink();
+                }
+                final isLast = index == bars.length - 1;
+                return Padding(
+                  padding: const EdgeInsets.only(top: 7),
+                  child: Text(
+                    isLast ? '本期' : bars[index].label,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: isLast ? FontWeight.w700 : FontWeight.w400,
+                      color: isLast ? AppColors.primary : AppColors.ink,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
         barGroups: [
-          for (var index = 0; index < points.length; index++)
+          for (var i = 0; i < bars.length; i++)
             BarChartGroupData(
-              x: index,
-              barsSpace: 2,
+              x: i,
               barRods: [
                 BarChartRodData(
-                  toY: points[index].expenseCents / 100,
-                  width: points.length > 16 ? 4 : 8,
-                  color: AppColors.expense,
+                  toY: bars[i].expenseCents / 100,
+                  width: 16,
+                  color: i == bars.length - 1
+                      ? AppColors.primary
+                      : AppColors.primarySoft,
                   borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(2),
-                  ),
-                ),
-                BarChartRodData(
-                  toY: points[index].incomeCents / 100,
-                  width: points.length > 16 ? 4 : 8,
-                  color: AppColors.income,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(2),
+                    top: Radius.circular(4),
                   ),
                 ),
               ],
@@ -411,51 +1010,46 @@ class _TrendChart extends StatelessWidget {
   }
 }
 
-class _LegendDot extends StatelessWidget {
-  const _LegendDot({required this.color, required this.label});
-
-  final Color color;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        Text(label, style: Theme.of(context).textTheme.labelMedium),
-      ],
-    );
-  }
-}
-
 class _CategoryRow extends StatelessWidget {
-  const _CategoryRow({required this.item, required this.totalCents});
+  const _CategoryRow({
+    required this.rank,
+    required this.item,
+    required this.totalCents,
+    required this.color,
+  });
 
+  final int rank;
   final CategoryTotal item;
   final int totalCents;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     final ratio = totalCents == 0 ? 0.0 : item.totalCents / totalCents;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 9),
       child: Row(
         children: [
+          SizedBox(
+            width: 18,
+            child: Text(
+              '$rank',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: AppColors.muted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
           Container(
-            width: 38,
-            height: 38,
+            width: 34,
+            height: 34,
             decoration: const BoxDecoration(
               color: AppColors.primarySoft,
               shape: BoxShape.circle,
             ),
             child: Icon(
               categoryIcon(item.iconKey),
-              size: 20,
+              size: 18,
               color: AppColors.primary,
             ),
           ),
@@ -489,7 +1083,7 @@ class _CategoryRow extends StatelessWidget {
                     value: ratio,
                     minHeight: 5,
                     backgroundColor: AppColors.line,
-                    color: AppColors.accent,
+                    color: color,
                   ),
                 ),
                 const SizedBox(height: 4),

@@ -399,6 +399,58 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// 近 [count] 个周期的支出/收入总额，用于"周期支出对比"柱状图。
+  ///
+  /// [ranges] 由调用方按周期类型（日/周/月/年）算好并按时间升序传入，
+  /// 这里用一条 SQL 的 CASE WHEN 把每个区间聚合成一列，避免 N 次订阅。
+  Stream<List<PeriodBar>> watchPeriodBars(List<PeriodSpan> ranges) {
+    if (ranges.isEmpty) {
+      return Stream.value(const <PeriodBar>[]);
+    }
+    final expenseCases = StringBuffer();
+    final incomeCases = StringBuffer();
+    final variables = <Variable<Object>>[];
+    for (var i = 0; i < ranges.length; i++) {
+      expenseCases.write(
+        'COALESCE(SUM(CASE WHEN kind = 0 AND accounting_date >= ? AND accounting_date < ? THEN amount_cents ELSE 0 END), 0) AS e$i, ',
+      );
+      incomeCases.write(
+        'COALESCE(SUM(CASE WHEN kind = 1 AND accounting_date >= ? AND accounting_date < ? THEN amount_cents ELSE 0 END), 0) AS n$i, ',
+      );
+    }
+    // 变量顺序需与 SQL 中 `?` 出现顺序一致：先所有 expense 段，再所有 income 段。
+    for (final span in ranges) {
+      variables
+        ..add(Variable.withString(dateKey(span.range.start)))
+        ..add(Variable.withString(dateKey(span.range.endExclusive)));
+    }
+    for (final span in ranges) {
+      variables
+        ..add(Variable.withString(dateKey(span.range.start)))
+        ..add(Variable.withString(dateKey(span.range.endExclusive)));
+    }
+    final overallStart = dateKey(ranges.first.range.start);
+    final overallEnd = dateKey(ranges.last.range.endExclusive);
+    variables
+      ..add(Variable.withString(overallStart))
+      ..add(Variable.withString(overallEnd));
+    return customSelect(
+      'SELECT ${expenseCases.toString()}${incomeCases.toString().replaceAll(RegExp(r', $'), '')} '
+      'FROM transactions WHERE accounting_date >= ? AND accounting_date < ?',
+      variables: variables,
+      readsFrom: {transactions},
+    ).watchSingle().map((row) {
+      return [
+        for (var i = 0; i < ranges.length; i++)
+          PeriodBar(
+            label: ranges[i].label,
+            expenseCents: row.read<int>('e$i'),
+            incomeCents: row.read<int>('n$i'),
+          ),
+      ];
+    });
+  }
+
   Future<List<TransactionImageEntry>> imagesFor(String transactionId) {
     return (select(transactionImages)
           ..where((row) => row.transactionId.equals(transactionId))
@@ -505,4 +557,25 @@ class TrendPoint {
   final String bucket;
   final int incomeCents;
   final int expenseCents;
+}
+
+/// 「周期支出对比」的输入：一个时间区间 + 展示用短标签（如 "8月" / "本周"）。
+class PeriodSpan {
+  const PeriodSpan({required this.range, required this.label});
+
+  final LedgerDateRange range;
+  final String label;
+}
+
+/// 「周期支出对比」的一根柱：某个周期的支出/收入合计。
+class PeriodBar {
+  const PeriodBar({
+    required this.label,
+    required this.expenseCents,
+    required this.incomeCents,
+  });
+
+  final String label;
+  final int expenseCents;
+  final int incomeCents;
 }
