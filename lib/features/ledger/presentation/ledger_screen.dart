@@ -45,6 +45,14 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     );
   }
 
+  Future<void> _addTransactionForDay(DateTime day) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => TransactionEditor(initialDate: dateOnly(day)),
+      ),
+    );
+  }
+
   Future<void> _pickMonth() async {
     final picked = await showMonthPicker(context, initial: _month);
     if (picked != null && mounted) setState(() => _month = picked);
@@ -69,7 +77,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 40),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 10),
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -83,6 +91,9 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+              // 两个按钮同宽：都用 double.infinity 撑满弹窗内容区。
+              // 原来「取消」是裸 TextButton，宽度只跟着文字走，
+              // 和撑满的「确定」并排时一长一短，看着像没对齐。
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
@@ -104,11 +115,23 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                   ),
                 ),
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text(
-                  '取消',
-                  style: TextStyle(fontSize: 15, color: AppColors.ink),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.ink,
+                    // 与「确定」同一组内边距和圆角，两颗按钮才等高等宽。
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                  ),
+                  child: const Text(
+                    '取消',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
             ],
@@ -136,158 +159,140 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     final range = monthRange(_month);
     return SafeArea(
       bottom: false,
-      child: Column(
-        children: [
-          // 顶栏：左侧标题（或搜索框），右侧一枚搜索图标（切换态）。
-          AppPageHeader(
-            content: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 160),
-              child: _searching
-                  ? _SearchField(
-                      key: const ValueKey('search'),
-                      controller: _searchController,
-                      onChanged: (value) =>
-                          setState(() => _query = value.trim()),
-                    )
-                  : const Text(
-                      '记账',
-                      key: ValueKey('title'),
-                      style: kAppHeaderTitleStyle,
-                    ),
-            ),
-            actions: [
-              IconButton(
-                onPressed: _toggleSearch,
-                tooltip: '搜索',
-                splashRadius: 22,
-                icon: Icon(
-                  _searching ? FLucideIcons.x : FLucideIcons.search,
-                  size: 22,
-                  color: AppColors.ink,
-                ),
-              ),
-            ],
-          ),
-          Expanded(
-            child: StreamBuilder<LedgerSummary>(
-              stream: database.watchSummary(range),
-              builder: (context, summarySnapshot) {
-                final summary =
-                    summarySnapshot.data ??
-                    const LedgerSummary(
-                      incomeCents: 0,
-                      expenseCents: 0,
-                      entryCount: 0,
-                    );
-                return CustomScrollView(
-                  slivers: [
-                    // 金色摘要卡（可跟随滚动上移）
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
-                        child: SummaryBand(summary: summary),
-                      ),
-                    ),
-                    // 吸顶月份/收支条：紧贴页头，粘在顶部。
-                    SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _MonthStickyBarDelegate(
-                        month: _month,
-                        summary: summary,
-                        onPick: _pickMonth,
-                      ),
-                    ),
-                    // 列表
-                    StreamBuilder<List<LedgerItem>>(
-                      stream: database.watchTransactions(range),
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return SliverToBoxAdapter(
-                            child: _MessageState(
-                              icon: FLucideIcons.circleAlert,
-                              title: '账单加载失败',
-                              detail: '${snapshot.error}',
-                            ),
-                          );
-                        }
-                        final allItems = snapshot.data;
-                        if (allItems == null) {
-                          return const SliverToBoxAdapter(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 80),
-                              child: Center(child: CircularProgressIndicator()),
-                            ),
-                          );
-                        }
-                        final keyword = _query.toLowerCase();
-                        final items = keyword.isEmpty
-                            ? allItems
-                            : allItems
-                                  .where(
-                                    (item) =>
-                                        item.transaction.note
-                                            .toLowerCase()
-                                            .contains(keyword) ||
-                                        item.category.name
-                                            .toLowerCase()
-                                            .contains(keyword),
-                                  )
-                                  .toList();
-                        if (items.isEmpty) {
-                          return SliverToBoxAdapter(
-                            child: _MessageState(
-                              icon: keyword.isEmpty
-                                  ? FLucideIcons.receipt
-                                  : FLucideIcons.searchX,
-                              title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
-                              detail: keyword.isEmpty
-                                  ? '点击右下角加号记下第一笔'
-                                  : '换一个关键词再试',
-                            ),
-                          );
-                        }
-                        final groups = <String, List<LedgerItem>>{};
-                        for (final item in items) {
-                          groups
-                              .putIfAbsent(
-                                item.transaction.accountingDate,
-                                () => [],
-                              )
-                              .add(item);
-                        }
-                        final entries = groups.entries.toList();
-                        return SliverPadding(
-                          // 底部留白只需避开居中悬浮的「记一笔」FAB
-                          // （56 直径 + 16 浮起边距+ 余量）；
-                          // 导航栏已贴底固定，不再覆盖列表。
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 84),
-                          sliver: SliverList.builder(
-                            itemCount: entries.length,
-                            itemBuilder: (context, index) {
-                              final group = entries[index];
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 14),
-                                child: _DayCard(
-                                  day: dateFromKey(group.key),
-                                  items: group.value,
-                                  onTapItem: _edit,
-                                  onLongPressItem: (item) {
-                                    HapticFeedback.mediumImpact();
-                                    _confirmDelete(item);
-                                  },
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                );
-              },
-            ),
+      child: AppPageHeader(
+        // 非搜索态走 title，享受大标题折叠；搜索态改用 content 渲染输入框，
+        // 页头固定为紧凑高度（输入框不该被缩放）。
+        title: _searching ? null : '记账',
+        content: _searching
+            ? _SearchField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _query = value.trim()),
+              )
+            : null,
+        actions: [
+          AppHeaderAction(
+            icon: _searching ? FLucideIcons.x : FLucideIcons.search,
+            tooltip: _searching ? '关闭搜索' : '搜索',
+            onTap: _toggleSearch,
           ),
         ],
+        body: StreamBuilder<LedgerSummary>(
+          stream: database.watchSummary(range),
+          builder: (context, summarySnapshot) {
+            final summary =
+                summarySnapshot.data ??
+                const LedgerSummary(
+                  incomeCents: 0,
+                  expenseCents: 0,
+                  entryCount: 0,
+                );
+            return CustomScrollView(
+              slivers: [
+                // 金色摘要卡（可跟随滚动上移）
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                    child: SummaryBand(summary: summary),
+                  ),
+                ),
+                // 吸顶月份/收支条：紧贴页头，粘在顶部。
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _MonthStickyBarDelegate(
+                    month: _month,
+                    summary: summary,
+                    onPick: _pickMonth,
+                  ),
+                ),
+                // 列表
+                StreamBuilder<List<LedgerItem>>(
+                  stream: database.watchTransactions(range),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return SliverToBoxAdapter(
+                        child: _MessageState(
+                          icon: FLucideIcons.circleAlert,
+                          title: '账单加载失败',
+                          detail: '${snapshot.error}',
+                        ),
+                      );
+                    }
+                    final allItems = snapshot.data;
+                    if (allItems == null) {
+                      return const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 80),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                      );
+                    }
+                    final keyword = _query.toLowerCase();
+                    final items = keyword.isEmpty
+                        ? allItems
+                        : allItems
+                              .where(
+                                (item) =>
+                                    item.transaction.note
+                                        .toLowerCase()
+                                        .contains(keyword) ||
+                                    item.category.name.toLowerCase().contains(
+                                      keyword,
+                                    ),
+                              )
+                              .toList();
+                    if (items.isEmpty) {
+                      return SliverToBoxAdapter(
+                        child: _MessageState(
+                          icon: keyword.isEmpty
+                              ? FLucideIcons.receipt
+                              : FLucideIcons.searchX,
+                          title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
+                          detail: keyword.isEmpty ? '点击右下角加号记下第一笔' : '换一个关键词再试',
+                        ),
+                      );
+                    }
+                    final groups = <String, List<LedgerItem>>{};
+                    for (final item in items) {
+                      groups
+                          .putIfAbsent(
+                            item.transaction.accountingDate,
+                            () => [],
+                          )
+                          .add(item);
+                    }
+                    final entries = groups.entries.toList();
+                    return SliverPadding(
+                      // 底部留白只需避开居中悬浮的「记一笔」FAB
+                      // （56 直径 + 16 浮起边距+ 余量）；
+                      // 导航栏已贴底固定，不再覆盖列表。
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 84),
+                      sliver: SliverList.builder(
+                        itemCount: entries.length,
+                        itemBuilder: (context, index) {
+                          final group = entries[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 14),
+                            child: _DayCard(
+                              day: dateFromKey(group.key),
+                              items: group.value,
+                              onTapHeader: () =>
+                                  _addTransactionForDay(dateFromKey(group.key)),
+                              onTapItem: _edit,
+                              onLongPressItem: (item) {
+                                HapticFeedback.mediumImpact();
+                                _confirmDelete(item);
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -295,56 +300,64 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
 
 /// 搜索输入框：点击顶栏搜索图标展开，再次点击关闭并清空关键词。
 class _SearchField extends StatelessWidget {
-  const _SearchField({
-    super.key,
-    required this.controller,
-    required this.onChanged,
-  });
+  const _SearchField({required this.controller, required this.onChanged});
 
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context) {
+    // 高38 而非 40：让搜索框在 56 的页头里上下各留 9，
+    // 视觉重心与静态标题一致，切换时不会有「页头变胖」的错觉。
     return SizedBox(
-      height: 40,
+      height: 38,
       child: TextField(
         controller: controller,
         autofocus: true,
         onChanged: onChanged,
-        style: const TextStyle(fontSize: 14, color: AppColors.ink),
+        style: const TextStyle(
+          fontSize: 15,
+          height: 1.2,
+          letterSpacing: -0.1,
+          color: AppColors.ink,
+        ),
+        cursorColor: AppColors.primary,
+        cursorRadius: const Radius.circular(2),
         decoration: InputDecoration(
           filled: true,
           fillColor: AppColors.surface,
           hintText: '搜索备注或分类',
-          hintStyle: const TextStyle(color: AppColors.muted, fontSize: 14),
+          hintStyle: const TextStyle(
+            color: AppColors.inactive,
+            fontSize: 15,
+            height: 1.2,
+            letterSpacing: -0.1,
+          ),
           prefixIcon: const Icon(
             FLucideIcons.search,
-            size: 17,
-            color: AppColors.muted,
+            size: 16,
+            color: AppColors.inactive,
           ),
           prefixIconConstraints: const BoxConstraints(
             minWidth: 34,
             minHeight: 34,
           ),
           isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 8),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
-            borderSide: BorderSide.none,
-          ),
+          contentPadding: const EdgeInsets.only(right: 12),
+          border: _searchBorder(AppColors.line),
+          enabledBorder: _searchBorder(AppColors.line),
+          focusedBorder: _searchBorder(AppColors.primary),
         ),
       ),
     );
   }
+
+  /// 搜索框描边：常态发丝灰、聚焦品牌蓝。
+  /// 原来三态全是 `BorderSide.none`，白框浮在浅灰底上边界发虚。
+  static OutlineInputBorder _searchBorder(Color color) => OutlineInputBorder(
+    borderRadius: BorderRadius.circular(19),
+    borderSide: BorderSide(color: color),
+  );
 }
 
 /// 一天一张白色圆角大卡：顶部日期条+ 分割线 + 条目列。
@@ -352,12 +365,14 @@ class _DayCard extends ConsumerWidget {
   const _DayCard({
     required this.day,
     required this.items,
+    required this.onTapHeader,
     required this.onTapItem,
     required this.onLongPressItem,
   });
 
   final DateTime day;
   final List<LedgerItem> items;
+  final VoidCallback onTapHeader;
   final ValueChanged<LedgerItem> onTapItem;
   final ValueChanged<LedgerItem> onLongPressItem;
 
@@ -380,61 +395,96 @@ class _DayCard extends ConsumerWidget {
     } else {
       suffix = formatWeekday(day);
     }
-    return Container(
-      decoration: BoxDecoration(
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        borderRadius: BorderRadius.all(Radius.circular(18)),
+        // 与统计页图表卡同一组阴影：两屏的卡片浮起高度必须一致，
+        // 否则在底部导航来回切换时会觉得「其中一屏是平的」。
+        boxShadow: AppShadows.card,
+      ),
+      // 白底必须由 Material 提供，不能用 Container(color:)。
+      //
+      // 水波是画在**最近的 Material 上、且在子节点之下**的
+      // （`_RenderInkFeatures.paint` 先画 inkFeatures 再 super.paint）。
+      // 原来这里是不透明白底的 Container，最近的 Material 是 Scaffold 那层，
+      // 于是水波被白卡整块盖住——实测按下时像素零变化，点击毫无反馈。
+      // 换成 Material 后卡片自身就是水波画布，反馈才看得见。
+      //
+      // clipBehavior 让水波贴合圆角，不会在四角溢出成方块。
+      child: Material(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(18),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
-            child: Row(
-              children: [
-                Text(
-                  formatDay(day),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.ink,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  suffix,
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
-                ),
-                const Spacer(),
-                Text(
-                  '支 ${formatMoney(expense, grouped: grouped)}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  '收 ${formatMoney(income, grouped: grouped)}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
-                ),
-              ],
-            ),
-          ),
-          for (var index = 0; index < items.length; index++) ...[
-            if (index > 0)
-              const Divider(
-                height: 1,
-                thickness: 1,
-                indent: 18,
-                endIndent: 18,
-                color: Color(0xFFF1F4F2),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            InkWell(
+              onTap: onTapHeader,
+              // 卡片头点击加一笔，反馈配色与账单行统一。
+              // 只圆上边两角：卡片头贴着卡片顶部，下边是分割线不该有圆角。
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(18),
               ),
-            _LedgerRow(
-              item: items[index],
-              grouped: grouped,
-              onTap: () => onTapItem(items[index]),
-              onLongPress: () => onLongPressItem(items[index]),
+              highlightColor: AppColors.pressed,
+              splashColor: AppColors.ripple,
+              hoverColor: AppColors.ripple,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+                child: Row(
+                  children: [
+                    Text(
+                      formatDay(day),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      suffix,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '支 ${formatMoney(expense, grouped: grouped)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      '收 ${formatMoney(income, grouped: grouped)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
+            for (var index = 0; index < items.length; index++) ...[
+              if (index > 0)
+                const Divider(
+                  height: 1,
+                  thickness: 1,
+                  indent: 18,
+                  endIndent: 18,
+                  color: Color(0xFFF1F4F2),
+                ),
+              _LedgerRow(
+                item: items[index],
+                grouped: grouped,
+                onTap: () => onTapItem(items[index]),
+                onLongPress: () => onLongPressItem(items[index]),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -465,6 +515,13 @@ class _LedgerRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
+      // 账单行的点击反馈。
+      //
+      // 不设 borderRadius：行是卡片中间的一段，四角都不该圆
+      // （首行/末行的圆角由外层 Material 的 clipBehavior 统一裁）。
+      highlightColor: AppColors.pressed,
+      splashColor: AppColors.ripple,
+      hoverColor: AppColors.ripple,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         child: Row(
@@ -595,51 +652,58 @@ class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
     return Consumer(
       builder: (context, ref, _) {
         final grouped = ref.watch(moneyGroupedProvider);
-        return Container(
-          height: _height,
+        return Material(
+          // 吸顶条自己提供 Material：它铺的是页面灰底，
+          // 若沿用 Container(color:) 则月份按钮的水波同样会被灰底盖掉。
           color: AppColors.canvas,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
-            children: [
-              InkWell(
-                onTap: onPick,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        formatMonth(month),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
+          child: Container(
+            height: _height,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                InkWell(
+                  onTap: onPick,
+                  borderRadius: BorderRadius.circular(8),
+                  highlightColor: AppColors.pressed,
+                  splashColor: AppColors.ripple,
+                  hoverColor: AppColors.ripple,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          formatMonth(month),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          FLucideIcons.chevronDown,
+                          size: 16,
                           color: AppColors.ink,
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(
-                        FLucideIcons.chevronDown,
-                        size: 16,
-                        color: AppColors.ink,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const Spacer(),
-              Text(
-                '支 ${formatMoney(summary.expenseCents, grouped: grouped)}',
-                style: const TextStyle(fontSize: 13, color: AppColors.muted),
-              ),
-              const SizedBox(width: 14),
-              Text(
-                '收 ${formatMoney(summary.incomeCents, grouped: grouped)}',
-                style: const TextStyle(fontSize: 13, color: AppColors.muted),
-              ),
-            ],
+                const Spacer(),
+                Text(
+                  '支 ${formatMoney(summary.expenseCents, grouped: grouped)}',
+                  style: const TextStyle(fontSize: 13, color: AppColors.muted),
+                ),
+                const SizedBox(width: 14),
+                Text(
+                  '收 ${formatMoney(summary.incomeCents, grouped: grouped)}',
+                  style: const TextStyle(fontSize: 13, color: AppColors.muted),
+                ),
+              ],
+            ),
           ),
         );
       },

@@ -83,9 +83,9 @@ void main() {
         isTrue,
       );
       expect(
-        AppVersion.tryParse('v1.0.10')!.isNewerThan(
-          AppVersion.tryParse('1.0.9+3')!,
-        ),
+        AppVersion.tryParse(
+          'v1.0.10',
+        )!.isNewerThan(AppVersion.tryParse('1.0.9+3')!),
         isTrue,
       );
     });

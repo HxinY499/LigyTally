@@ -34,6 +34,9 @@ class SummaryBand extends ConsumerWidget {
           colors: [_warmA, _warmB],
         ),
         borderRadius: BorderRadius.circular(22),
+        // 用暖色阴影而不是中性灰：灰色压在暖黄渐变下会发浊，
+        // 阴影里掺入卡片自身色相才干净。与统计页 Hero 卡同一套思路。
+        boxShadow: AppShadows.heroWarm,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

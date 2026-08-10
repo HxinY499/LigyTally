@@ -30,8 +30,7 @@ class AmountExpression {
   }
 
   /// 表达式是否含未结算的运算符（用于 UI 是否显示「=」提示）。
-  static bool hasOperator(String raw) =>
-      raw.contains('+') || raw.contains('-');
+  static bool hasOperator(String raw) => raw.contains('+') || raw.contains('-');
 
   static List<String> _tokenize(String raw) {
     final tokens = <String>[];

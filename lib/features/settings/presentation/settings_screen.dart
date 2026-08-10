@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/preferences/app_icon.dart';
 import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/money_grouped.dart';
 import '../../../core/theme/app_theme.dart';
@@ -11,6 +12,7 @@ import '../../../core/update/update_controller.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
+import 'app_icon_picker_sheet.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -115,86 +117,105 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     showAppToast(context, message: message, level: level);
   }
 
+  Future<void> _pickAppIcon() async {
+    final current = ref.read(appIconProvider);
+    final picked = await showAppIconPickerSheet(context, current: current);
+    if (picked == null || picked == current || !mounted) return;
+    try {
+      await ref.read(appIconProvider.notifier).setStyle(picked);
+      if (mounted) {
+        _showMessage('图标已切换，桌面可能需要几秒刷新');
+      }
+    } catch (error) {
+      if (mounted) _showMessage('切换失败：$error', level: AppToastLevel.error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      child: Column(
-        children: [
-          const AppPageHeader(title: '设置'),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+      child: AppPageHeader(
+        title: '设置',
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+          children: [
+            const _SectionLabel('偏好'),
+            _SettingsCard(
               children: [
-                const _SectionLabel('偏好'),
-                _SettingsCard(
-                  children: [
-                    _SettingsItem(
-                      icon: FLucideIcons.tags,
-                      title: '分类管理',
-                      subtitle: '新增、停用或删除收支分类',
-                      showChevron: true,
-                      onTap: () => Navigator.of(context).push<void>(
-                        MaterialPageRoute(
-                          builder: (_) => const CategoryManagementScreen(),
-                        ),
-                      ),
+                _SettingsItem(
+                  icon: FLucideIcons.tags,
+                  title: '分类管理',
+                  subtitle: '新增、停用或删除收支分类',
+                  showChevron: true,
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => const CategoryManagementScreen(),
                     ),
-                    _SettingsItem(
-                      icon: FLucideIcons.layoutGrid,
-                      title: '分类选择样式',
-                      trailing: _LayoutToggle(
-                        value: ref.watch(categoryPickerLayoutProvider),
-                        onChanged: (value) => ref
-                            .read(categoryPickerLayoutProvider.notifier)
-                            .setLayout(value),
-                      ),
-                    ),
-                    _SettingsItem(
-                      icon: FLucideIcons.hash,
-                      title: '金额千分位',
-                      trailing: _TrailingSwitch(
-                        value: ref.watch(moneyGroupedProvider),
-                        onChange: (value) => ref
-                            .read(moneyGroupedProvider.notifier)
-                            .setGrouped(value),
-                      ),
-                    ),
-                    const _SettingsItem(
-                      icon: FLucideIcons.banknote,
-                      title: '默认货币',
-                      value: '人民币',
-                    ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 18),
-                const _SectionLabel('数据备份'),
-                _SettingsCard(
-                  children: [
-                    _SettingsItem(
-                      icon: FLucideIcons.upload,
-                      title: '导出数据',
-                      subtitle: '打包账单与图片，可设密码',
-                      showChevron: !_busy,
-                      onTap: _busy ? null : _exportBackup,
-                    ),
-                    _SettingsItem(
-                      icon: FLucideIcons.download,
-                      title: '导入数据',
-                      subtitle: '从备份文件恢复，覆盖当前数据',
-                      showChevron: !_busy,
-                      trailing: _busy ? const _RowSpinner() : null,
-                      onTap: _busy ? null : _restoreBackup,
-                    ),
-                  ],
+                _SettingsItem(
+                  icon: FLucideIcons.layoutGrid,
+                  title: '分类选择样式',
+                  trailing: _LayoutToggle(
+                    value: ref.watch(categoryPickerLayoutProvider),
+                    onChanged: (value) => ref
+                        .read(categoryPickerLayoutProvider.notifier)
+                        .setLayout(value),
+                  ),
                 ),
-                const SizedBox(height: 18),
-                const _SectionLabel('关于'),
-                const _AboutCard(),
+                _SettingsItem(
+                  icon: FLucideIcons.smartphone,
+                  title: '应用图标',
+                  trailing: _AppIconPreview(
+                    style: ref.watch(appIconProvider),
+                  ),
+                  showChevron: true,
+                  onTap: _pickAppIcon,
+                ),
+                _SettingsItem(
+                  icon: FLucideIcons.hash,
+                  title: '金额千分位',
+                  trailing: _TrailingSwitch(
+                    value: ref.watch(moneyGroupedProvider),
+                    onChange: (value) => ref
+                        .read(moneyGroupedProvider.notifier)
+                        .setGrouped(value),
+                  ),
+                ),
+                const _SettingsItem(
+                  icon: FLucideIcons.banknote,
+                  title: '默认货币',
+                  value: '人民币',
+                ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 18),
+            const _SectionLabel('数据备份'),
+            _SettingsCard(
+              children: [
+                _SettingsItem(
+                  icon: FLucideIcons.upload,
+                  title: '导出数据',
+                  subtitle: '打包账单与图片，可设密码',
+                  showChevron: !_busy,
+                  onTap: _busy ? null : _exportBackup,
+                ),
+                _SettingsItem(
+                  icon: FLucideIcons.download,
+                  title: '导入数据',
+                  subtitle: '从备份文件恢复，覆盖当前数据',
+                  showChevron: !_busy,
+                  trailing: _busy ? const _RowSpinner() : null,
+                  onTap: _busy ? null : _restoreBackup,
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            const _SectionLabel('关于'),
+            const _AboutCard(),
+          ],
+        ),
       ),
     );
   }
@@ -584,6 +605,31 @@ class _TrailingSwitch extends StatelessWidget {
   }
 }
 
+/// 应用图标行的右侧小缩略图：让用户在设置列表里就能看到当前选中的图标样式，
+/// 不需要文字说明。尺寸和其它行右侧的开关/胶囊控件视觉重量对齐。
+class _AppIconPreview extends StatelessWidget {
+  const _AppIconPreview({required this.style});
+
+  final AppIconStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final asset = style == AppIconStyle.dark
+        ? 'assets/branding/app-icon-dark.png'
+        : 'assets/branding/app-icon-light.png';
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: AppColors.line, width: 1),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Image.asset(asset, fit: BoxFit.cover),
+    );
+  }
+}
+
 /// 分类选择样式的紧凑二态切换器：灰底轨道 + 白色滑块（列表 / 网格）。
 ///
 /// 做成有可见边界的胶囊，右边缘能和同列的开关轨道、chevron 对齐；
@@ -674,10 +720,24 @@ class CategoryManagementScreen extends ConsumerStatefulWidget {
 }
 
 class _CategoryManagementScreenState
-    extends ConsumerState<CategoryManagementScreen> {
+    extends ConsumerState<CategoryManagementScreen>
+    with SingleTickerProviderStateMixin {
   int _kind = 0;
   List<CategoryEntry> _categories = const [];
   bool _busy = false;
+  late final FPopoverController _popoverController;
+
+  @override
+  void initState() {
+    super.initState();
+    _popoverController = FPopoverController(vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _popoverController.dispose();
+    super.dispose();
+  }
 
   Future<void> _exportConfig() async {
     setState(() => _busy = true);
@@ -849,126 +909,146 @@ class _CategoryManagementScreenState
   Widget build(BuildContext context) {
     final database = ref.watch(databaseProvider);
     return Scaffold(
-      appBar: AppTopBar(
+      body: AppTopBar(
         title: '分类管理',
         actions: [
-          PopupMenuButton<String>(
-            enabled: !_busy,
-            tooltip: '分类配置',
-            icon: const Icon(FLucideIcons.arrowLeftRight),
-            onSelected: (value) {
-              if (value == 'export') _exportConfig();
-              if (value == 'import') _importConfig();
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'export', child: Text('导出分类配置')),
-              PopupMenuItem(value: 'import', child: Text('导入并替换配置')),
-            ],
-          ),
-          IconButton(
-            onPressed: _busy ? null : _addCategory,
-            tooltip: '新建分类',
-            icon: const Icon(FLucideIcons.plus),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-            child: AppSegmentedControl<int>(
-              selected: _kind,
-              onChanged: (value) => setState(() => _kind = value),
-              segments: const [
-                AppSegment(value: 0, label: '支出分类'),
-                AppSegment(value: 1, label: '收入分类'),
-              ],
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<List<CategoryEntry>>(
-              stream: database.watchCategories(_kind, activeOnly: false),
-              builder: (context, snapshot) {
-                final categories = snapshot.data;
-                if (categories == null) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                _categories = categories;
-                final parents = categories
-                    .where((category) => category.level == 1)
-                    .toList();
-                final ordered = <CategoryEntry>[
-                  for (final parent in parents) ...[
-                    parent,
-                    ...categories.where(
-                      (category) => category.parentId == parent.id,
+          IgnorePointer(
+            ignoring: _busy,
+            child: FPopoverMenu(
+              control: FPopoverControl.managed(controller: _popoverController),
+              menu: [
+                FItemGroup(
+                  children: [
+                    FItem(
+                      title: const Text('导出分类配置'),
+                      onPress: _busy
+                          ? null
+                          : () {
+                              _popoverController.hide();
+                              _exportConfig();
+                            },
+                    ),
+                    FItem(
+                      title: const Text('导入并替换配置'),
+                      onPress: _busy
+                          ? null
+                          : () {
+                              _popoverController.hide();
+                              _importConfig();
+                            },
                     ),
                   ],
-                ];
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  itemCount: ordered.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 6),
-                  itemBuilder: (context, index) {
-                    final category = ordered[index];
-                    final isChild = category.level == 2;
-                    CategoryEntry? parent;
-                    if (isChild) {
-                      for (final candidate in parents) {
-                        if (candidate.id == category.parentId) {
-                          parent = candidate;
-                        }
-                      }
-                    }
-                    return Padding(
-                      padding: EdgeInsets.only(left: isChild ? 24 : 0),
-                      child: AppCard(
-                        child: AppTile(
-                          prefix: CircleAvatar(
-                            radius: isChild ? 17 : 20,
-                            backgroundColor: category.isActive
-                                ? AppColors.primarySoft
-                                : AppColors.line,
-                            foregroundColor: category.isActive
-                                ? AppColors.primary
-                                : AppColors.muted,
-                            child: Icon(
-                              categoryIcon(category.iconKey),
-                              size: isChild ? 17 : 20,
-                            ),
-                          ),
-                          title: Text(category.name),
-                          subtitle: Text(
-                            isChild
-                                ? '${parent?.name ?? '二级分类'} · ${category.isActive ? '启用' : '停用'}'
-                                : '一级分类 · ${category.isActive ? '启用' : '停用'}',
-                          ),
-                          suffix: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              AppSwitch(
-                                value: category.isActive,
-                                onChange: (value) => database.setCategoryActive(
-                                  category.id,
-                                  value,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              AppIconButton(
-                                onPress: () => _deleteCategory(category),
-                                icon: const Icon(FLucideIcons.trash2),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
+                ),
+              ],
+              child: AppHeaderAction(
+                icon: FLucideIcons.arrowLeftRight,
+                onTap: null,
+                enabled: !_busy,
+              ),
             ),
           ),
+          AppHeaderAction(
+            icon: FLucideIcons.plus,
+            tooltip: '新建分类',
+            onTap: _busy ? null : _addCategory,
+          ),
         ],
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: AppSegmentedControl<int>(
+                selected: _kind,
+                onChanged: (value) => setState(() => _kind = value),
+                segments: const [
+                  AppSegment(value: 0, label: '支出分类'),
+                  AppSegment(value: 1, label: '收入分类'),
+                ],
+              ),
+            ),
+            Expanded(
+              child: StreamBuilder<List<CategoryEntry>>(
+                stream: database.watchCategories(_kind, activeOnly: false),
+                builder: (context, snapshot) {
+                  final categories = snapshot.data;
+                  if (categories == null) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  _categories = categories;
+                  final parents = categories
+                      .where((category) => category.level == 1)
+                      .toList();
+                  final ordered = <CategoryEntry>[
+                    for (final parent in parents) ...[
+                      parent,
+                      ...categories.where(
+                        (category) => category.parentId == parent.id,
+                      ),
+                    ],
+                  ];
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    itemCount: ordered.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 6),
+                    itemBuilder: (context, index) {
+                      final category = ordered[index];
+                      final isChild = category.level == 2;
+                      CategoryEntry? parent;
+                      if (isChild) {
+                        for (final candidate in parents) {
+                          if (candidate.id == category.parentId) {
+                            parent = candidate;
+                          }
+                        }
+                      }
+                      return Padding(
+                        padding: EdgeInsets.only(left: isChild ? 24 : 0),
+                        child: AppCard(
+                          child: AppTile(
+                            prefix: CircleAvatar(
+                              radius: isChild ? 17 : 20,
+                              backgroundColor: category.isActive
+                                  ? AppColors.primarySoft
+                                  : AppColors.line,
+                              foregroundColor: category.isActive
+                                  ? AppColors.primary
+                                  : AppColors.muted,
+                              child: Icon(
+                                categoryIcon(category.iconKey),
+                                size: isChild ? 17 : 20,
+                              ),
+                            ),
+                            title: Text(category.name),
+                            subtitle: Text(
+                              isChild
+                                  ? '${parent?.name ?? '二级分类'} · ${category.isActive ? '启用' : '停用'}'
+                                  : '一级分类 · ${category.isActive ? '启用' : '停用'}',
+                            ),
+                            suffix: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AppSwitch(
+                                  value: category.isActive,
+                                  onChange: (value) => database
+                                      .setCategoryActive(category.id, value),
+                                ),
+                                const SizedBox(width: 4),
+                                AppIconButton(
+                                  onPress: () => _deleteCategory(category),
+                                  icon: const Icon(FLucideIcons.trash2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

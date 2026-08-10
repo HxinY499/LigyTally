@@ -218,9 +218,9 @@ class UpdateService {
     if (await part.exists()) await part.delete();
 
     final request = http.Request('GET', Uri.parse(info.apkUrl));
-    final response = await _client.send(request).timeout(
-      const Duration(seconds: 30),
-    );
+    final response = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) {
       throw HttpException('下载失败：HTTP ${response.statusCode}');
     }
@@ -231,7 +231,7 @@ class UpdateService {
 
     try {
       await for (final chunk in response.stream) {
-        if (cancelled?.call()?? false) {
+        if (cancelled?.call() ?? false) {
           throw const UpdateCancelledException();
         }
         sink.add(chunk);
@@ -297,10 +297,7 @@ class UpdateService {
   }
 
   Future<bool> _verify(File file, String expectedSha256) async {
-    final digest = await file
-        .openRead()
-        .transform(sha256)
-        .first;
+    final digest = await file.openRead().transform(sha256).first;
     return digest.toString().toLowerCase() == expectedSha256;
   }
 

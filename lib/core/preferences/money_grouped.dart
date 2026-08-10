@@ -27,5 +27,6 @@ class MoneyGroupedController extends Notifier<bool> {
   }
 }
 
-final moneyGroupedProvider =
-    NotifierProvider<MoneyGroupedController, bool>(MoneyGroupedController.new);
+final moneyGroupedProvider = NotifierProvider<MoneyGroupedController, bool>(
+  MoneyGroupedController.new,
+);

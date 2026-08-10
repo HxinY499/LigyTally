@@ -38,11 +38,43 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- MAIN/LAUNCHER 意图移到下方 activity-alias，用于运行时切换桌面图标。
+                 保留 MainActivity 但不再作为 launcher 入口。 -->
+        </activity>
+
+        <!-- 桌面图标切换用两个 activity-alias。
+             把 MAIN/LAUNCHER 意图从 MainActivity 挪到 alias 上，
+             运行期用 PackageManager.setComponentEnabledSetting 在
+             .LauncherDark / .LauncherLight 之间切换即可换图标，
+             MainActivity 本体不参与切换，保持进程与任务栈稳定。
+
+             注意：两个 alias 至少同时保持一个 enabled。
+             默认沿用先前的黑底白字（dark）。 -->
+        <activity-alias
+            android:name=".LauncherDark"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="Ligy Tally"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".LauncherLight"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_light"
+            android:label="Ligy Tally"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

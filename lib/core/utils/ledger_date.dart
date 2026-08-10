@@ -37,7 +37,8 @@ LedgerDateRange yearRange(DateTime anchor) {
   return LedgerDateRange(start, DateTime(anchor.year + 1));
 }
 
-String formatMonth(DateTime value) => '${value.year} 年 ${value.month} 月';String formatDay(DateTime value) => '${value.month} 月 ${value.day} 日';
+String formatMonth(DateTime value) => '${value.year} 年 ${value.month} 月';
+String formatDay(DateTime value) => '${value.month} 月 ${value.day} 日';
 
 String formatWeekday(DateTime value) {
   const weekdays = ['一', '二', '三', '四', '五', '六', '日'];

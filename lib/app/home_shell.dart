@@ -133,9 +133,10 @@ class _BottomNavBar extends StatelessWidget {
 
 /// 单个 tab：图标在上、小字在下。
 ///
-/// 选中态只改颜色（渐变到品牌蓝），不加底色块；
-/// 同时图标从 0.6 倍弹到 1 倍（[Curves.easeOutBack] 带一点回弹超调）。
-class _NavItem extends StatelessWidget {
+/// 图标常态就是正常大小（1.0）；**只在被激活的那一刻**播一次脉冲——
+/// 先快速压到 [_dip] 再弹回 1.0（[Curves.easeOutBack]带一点超调）。
+/// 缩放只作用在图标上，文字仅跟随颜色渐变。
+class _NavItem extends StatefulWidget {
   const _NavItem({
     required this.icon,
     required this.label,
@@ -149,46 +150,87 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem>
+    with SingleTickerProviderStateMixin {
+  /// 下压到的最小倍率：再小图标就像「闪没了」，不像被按下去。
+  static const _dip = 0.72;
+
+  late final AnimationController _pulse = AnimationController(
+    duration: const Duration(milliseconds: 380),
+    vsync: this,
+  );
+
+  /// 控制器停在 0 时序列给出 1.0，所以静止态天然是正常大小，无需额外分支。
+  /// 下压占 30% 时长（要快，才有「被按了一下」的因果感），回弹占 70%。
+  late final Animation<double> _scale = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 1.0,
+        end: _dip,
+      ).chain(CurveTween(curve: Curves.easeOutCubic)),
+      weight: 30,
+    ),
+    TweenSequenceItem(
+      tween: Tween(
+        begin: _dip,
+        end: 1.0,
+      ).chain(CurveTween(curve: Curves.easeOutBack)),
+      weight: 70,
+    ),
+  ]).animate(_pulse);
+
+  @override
+  void didUpdateWidget(_NavItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 只在「未选中 → 选中」的瞬间播；取消选中不播，
+    // 否则切页时旧 tab 也会跟着抖一下。
+    if (widget.selected && !oldWidget.selected) _pulse.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: TweenAnimationBuilder<double>(
-        duration: const Duration(milliseconds: 340),
-        // easeOutBack 在 0→1 途中会冲过 1 再回落，做出「弹一下」的手感；
-        // 反向（取消选中）用 easeOutCubic 平静收回，避免两个 tab 同时弹。
-        curve: selected ? Curves.easeOutBack : Curves.easeOutCubic,
-        tween: Tween(end: selected ? 1.0 : 0.0),
-        builder: (context, t, _) {
-          // t 会被 easeOutBack 推到 1 以上，颜色插值必须夹回 [0,1]。
-          final color = Color.lerp(
-            AppColors.inactive,
-            AppColors.primary,
-            t.clamp(0.0, 1.0),
-          );
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Transform.scale(
-                // 0.6 → 1.0：起点不能太小，否则图标像「从无到有」而非放大。
-                scale: 0.6 + 0.4 * t,
-                child: Icon(icon, size: 21, color: color),
+      onTap: widget.onTap,
+      child: TweenAnimationBuilder<Color?>(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        tween: ColorTween(
+          end: widget.selected ? AppColors.primary : AppColors.inactive,
+        ),
+        builder: (context, color, _) => Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // AnimatedBuilder 只包Icon：脉冲的每一帧都不去重建下面的文字。
+            AnimatedBuilder(
+              animation: _scale,
+              builder: (context, child) =>
+                  Transform.scale(scale: _scale.value, child: child),
+              child: Icon(widget.icon, size: 21, color: color),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              widget.label,
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                height: 1.1,
+                // 小字用常规字重，灰色粗体会发脏；选中态靠颜色区分即可。
+                fontWeight: widget.selected ? FontWeight.w600 : FontWeight.w400,
+                letterSpacing: 0.2,
               ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  height: 1.1,
-                  // 小字用常规字重，灰色粗体会发脏；选中态靠颜色区分即可。
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }

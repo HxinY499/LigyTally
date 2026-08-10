@@ -18,9 +18,15 @@ import '../application/amount_expression.dart';
 import '../application/providers.dart';
 
 class TransactionEditor extends ConsumerStatefulWidget {
-  const TransactionEditor({super.key, this.existing});
+  const TransactionEditor({super.key, this.existing, this.initialDate});
 
   final LedgerItem? existing;
+
+  /// 新建时的预设记账日期。
+  ///
+  /// 从明细页某天的日卡头部点「+」进来时带上那一天，省得用户再选一次日期。
+  /// 为 null 走「今天」。编辑已有账单时本参数无效——账单自身的日期才是准的。
+  final DateTime? initialDate;
 
   @override
   ConsumerState<TransactionEditor> createState() => _TransactionEditorState();
@@ -56,7 +62,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     _kind = transaction?.kind ?? 0;
     _categoryId = transaction?.categoryId;
     _date = transaction == null
-        ? dateOnly(DateTime.now())
+        ? dateOnly(widget.initialDate ?? DateTime.now())
         : dateFromKey(transaction.accountingDate);
     final occurred = transaction == null
         ? DateTime.now()
@@ -420,92 +426,83 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     }
 
     return Scaffold(
-      appBar: AppTopBar(title: _isEditing ? '编辑账单' : '记一笔'),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                children: [
-                  _KindSwitch(
-                    kind: _kind,
-                    onChanged: (value) {
-                      HapticFeedback.selectionClick();
-                      setState(() {
-                        _kind = value;
-                        _categoryId = null;
-                        _prefilledCategory = false;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 14),
-                  _AmountCard(
-                    expression: _amountExpr,
-                    amountValue: _amountValue,
-                    kind: _kind,
-                  ),
-                  const SizedBox(height: 22),
-                  const _SectionTitle(title: '分类'),
-                  const SizedBox(height: 10),
-                  StreamBuilder<List<CategoryEntry>>(
-                    stream: database.watchCategories(_kind),
-                    builder: (context, snapshot) {
-                      final categories =
-                          snapshot.data ?? const <CategoryEntry>[];
-                      if (categories.isEmpty) {
-                        return const SizedBox(
-                          height: 72,
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      _prefillLastCategory(categories);
-                      return _CategoryPicker(
-                        categories: categories,
-                        selectedId: _categoryId,
-                        accent: accent,
-                        onSelected: _onCategorySelected,
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  const _SectionTitle(title: '时间'),
-                  const SizedBox(height: 10),
-                  _DateQuickRow(
-                    date: _date,
-                    time: _time,
-                    onToday: () =>
-                        setState(() => _date = dateOnly(DateTime.now())),
-                    onYesterday: () => setState(
-                      () => _date = dateOnly(
-                        DateTime.now().subtract(const Duration(days: 1)),
-                      ),
+      body: AppTopBar(
+        title: _isEditing ? '编辑账单' : '记一笔',
+        body: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  children: [
+                    _KindSwitch(
+                      kind: _kind,
+                      onChanged: (value) {
+                        HapticFeedback.selectionClick();
+                        setState(() {
+                          _kind = value;
+                          _categoryId = null;
+                          _prefilledCategory = false;
+                        });
+                      },
                     ),
-                    onPickDate: _selectDate,
-                    onPickTime: _selectTime,
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    _AmountCard(
+                      expression: _amountExpr,
+                      amountValue: _amountValue,
+                      kind: _kind,
+                    ),
+                    const SizedBox(height: 22),
+                    const _SectionTitle(title: '分类'),
+                    const SizedBox(height: 10),
+                    StreamBuilder<List<CategoryEntry>>(
+                      stream: database.watchCategories(_kind),
+                      builder: (context, snapshot) {
+                        final categories =
+                            snapshot.data ?? const <CategoryEntry>[];
+                        if (categories.isEmpty) {
+                          return const SizedBox(
+                            height: 72,
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        _prefillLastCategory(categories);
+                        return _CategoryPicker(
+                          categories: categories,
+                          selectedId: _categoryId,
+                          accent: accent,
+                          onSelected: _onCategorySelected,
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
-            ),
-            // 备注/图片条 + 自定义键盘常驻底部，不随焦点消失；
-            // 备注框聚焦时系统键盘会把整个面板顶上去。
-            _NumericKeypad(
-              accent: accent,
-              canSave: _canSave,
-              saving: _saving,
-              noteController: _noteController,
-              imageCount: _visibleImageCount,
-              imagePreview: imagePreview,
-              onImageTap: _showImageSheet,
-              onInput: _onKeypadInput,
-              onSave: _canSave && !_saving ? () => _save() : null,
-              onSaveContinue: _canSave && !_saving && !_isEditing
-                  ? () => _save(continueAfter: true)
-                  : null,
-            ),
-          ],
+              // 日期/时刻 + 备注/图片条 + 自定义键盘常驻底部，不随焦点消失；
+              // 备注框聚焦时系统键盘会把整个面板顶上去。
+              _NumericKeypad(
+                accent: accent,
+                canSave: _canSave,
+                saving: _saving,
+                noteController: _noteController,
+                date: _date,
+                time: _time,
+                onPickDate: _selectDate,
+                onPickTime: _selectTime,
+                imageCount: _visibleImageCount,
+                imagePreview: imagePreview,
+                onImageTap: _showImageSheet,
+                onInput: _onKeypadInput,
+                onSave: _canSave && !_saving ? () => _save() : null,
+                onSaveContinue: _canSave && !_saving && !_isEditing
+                    ? () => _save(continueAfter: true)
+                    : null,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -998,40 +995,95 @@ class _SectionTitle extends StatelessWidget {
 }
 
 /// 支出/收入胶囊开关：滑块式白底选中块 + 收支语义色文字。
+///
+/// 刻意**不撑满一行**：它只是个二选一的类型开关，信息量远小于下面的金额卡与
+/// 分类网格。之前满宽 + 10px 竖向内距，视觉重量压过了真正的主角（金额），
+/// 一进页面眼睛先被它抓住。改成 [_kHeight] 高、内容宽度的小胶囊并居中，
+/// 层级立刻回到「金额 > 分类 > 类型开关」。
 class _KindSwitch extends StatelessWidget {
   const _KindSwitch({required this.kind, required this.onChanged});
 
   final int kind;
   final ValueChanged<int> onChanged;
 
+  /// 胶囊总高。32 是「拇指还够点、又不抢戏」的平衡点；
+  /// 配合 [_kSegmentWidth] 得到两枚 62x26 的小段。
+  static const double _kHeight = 32;
+
+  /// 单段宽度。两个中文字 + 呼吸空间，固定宽度让滑块位移距离恒定。
+  static const double _kSegmentWidth = 62;
+
+  static const double _kPadding = 3;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppColors.line.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          _KindSegment(
-            label: '支出',
-            color: AppColors.expense,
-            selected: kind == 0,
-            onTap: () => onChanged(0),
+    final selectedColor = kind == 0 ? AppColors.expense : AppColors.income;
+    return Center(
+      child: SizedBox(
+        height: _kHeight,
+        width: _kSegmentWidth * 2 + _kPadding * 2,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.line.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(_kHeight / 2),
           ),
-          _KindSegment(
-            label: '收入',
-            color: AppColors.income,
-            selected: kind == 1,
-            onTap: () => onChanged(1),
+          child: Stack(
+            children: [
+              // 滑块：一块白底在两段之间滑动。用位移而不是「两个段各自淡入淡出
+              // 背景」，切换才有连贯的运动感，也不会在中途出现两块白。
+              AnimatedAlign(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: kind == 0
+                    ? Alignment.centerLeft
+                    : Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.all(_kPadding),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    width: _kSegmentWidth,
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(
+                        (_kHeight - _kPadding * 2) / 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: selectedColor.withValues(alpha: 0.16),
+                          blurRadius: 5,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  _KindSegment(
+                    label: '支出',
+                    color: AppColors.expense,
+                    selected: kind == 0,
+                    onTap: () => onChanged(0),
+                  ),
+                  _KindSegment(
+                    label: '收入',
+                    color: AppColors.income,
+                    selected: kind == 1,
+                    onTap: () => onChanged(1),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
+/// 胶囊里的一段：只负责文字与点击，选中态的白底由 [_KindSwitch] 的滑块提供。
 class _KindSegment extends StatelessWidget {
   const _KindSegment({
     required this.label,
@@ -1051,32 +1103,18 @@ class _KindSegment extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            // 注意：不能用 Colors.transparent（透明黑 0x00000000），
-            // 白色 → 透明黑的插值会经过深灰，导致取消选中时闪一下暗色。
-            // 用透明白做端点，插值只动 alpha 通道，淡出就是干净的。
-            color: AppColors.surface.withValues(alpha: selected ? 1.0 : 0.0),
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.ink.withValues(alpha: selected ? 0.06 : 0.0),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: selected ? color : AppColors.muted,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-              ),
+        child: Center(
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.1,
+              letterSpacing: 0.2,
+              color: selected ? color : AppColors.inactive,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             ),
+            child: Text(label),
           ),
         ),
       ),
@@ -1170,26 +1208,22 @@ class _AmountCard extends StatelessWidget {
   }
 }
 
-/// 时间区：日期快捷（今天/昨天/选日期）+ 时间瓷贴。
-/// 时间区块：一张卡片里左右分栏（日期 | 时刻），下面跟一排「今天 / 昨天」快捷键。
+/// 键盘上方的日期/时刻条：两枚并排的小胶囊，点击各自唤起选择器。
 ///
-/// 之前是「三枚等宽 chip + 一条独立的时间行」，两行都是满宽色块，
-/// 视觉重量和上面的分类网格打架；改成「主信息成卡、快捷键退到次要位置」
-/// 后，日期和时刻并排一眼可读，快捷键只在需要时才吸引注意。
-class _DateQuickRow extends StatelessWidget {
-  const _DateQuickRow({
+/// 原先它是滚动区里的「时间」卡片 + 今天/昨天快捷键，占掉近三行高度，
+/// 而实际改动频率远低于金额和分类。现在挪到备注同一层的常驻面板顶部：
+/// 日期始终可见、随手可改，又不再和分类网格争夺竖向空间。
+/// 快捷键去掉了——默认就是今天，选别的日子走日历更直接。
+class _DateTimeBar extends StatelessWidget {
+  const _DateTimeBar({
     required this.date,
     required this.time,
-    required this.onToday,
-    required this.onYesterday,
     required this.onPickDate,
     required this.onPickTime,
   });
 
   final DateTime date;
   final TimeOfDay time;
-  final VoidCallback onToday;
-  final VoidCallback onYesterday;
   final VoidCallback onPickDate;
   final VoidCallback onPickTime;
 
@@ -1205,54 +1239,30 @@ class _DateQuickRow extends StatelessWidget {
     return date.year == y.year && date.month == y.month && date.day == y.day;
   }
 
-  /// 日期副标签：今天/昨天优先，其余显示星期，跨年时显示年份。
-  String get _dateHint {
+  /// 日期文案：今天/昨天直接说人话，其余显示「x 月 x 日 周x」，
+  /// 跨年再补上年份，避免把上一年的账记到今年而不自知。
+  String get _dateLabel {
     if (_isToday) return '今天';
     if (_isYesterday) return '昨天';
-    if (date.year != DateTime.now().year) return '${date.year} 年';
-    return formatWeekday(date);
+    final day = formatDay(date);
+    if (date.year != DateTime.now().year) return '${date.year} 年 $day';
+    return '$day ${formatWeekday(date)}';
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.line),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: _DateTimeField(
-                  icon: FLucideIcons.calendarDays,
-                  value: formatDay(date),
-                  hint: _dateHint,
-                  onTap: onPickDate,
-                ),
-              ),
-              Container(width: 1, height: 34, color: AppColors.line),
-              Expanded(
-                child: _DateTimeField(
-                  icon: FLucideIcons.clock,
-                  value: _clock(time),
-                  hint: '时刻',
-                  onTap: onPickTime,
-                ),
-              ),
-            ],
-          ),
+        _DateTimeChip(
+          icon: FLucideIcons.calendarDays,
+          label: _dateLabel,
+          onTap: onPickDate,
         ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            _DateChip(label: '今天', selected: _isToday, onTap: onToday),
-            const SizedBox(width: 8),
-            _DateChip(label: '昨天', selected: _isYesterday, onTap: onYesterday),
-          ],
+        const SizedBox(width: 8),
+        _DateTimeChip(
+          icon: FLucideIcons.clock,
+          label: _clock(time),
+          onTap: onPickTime,
         ),
       ],
     );
@@ -1264,96 +1274,43 @@ class _DateQuickRow extends StatelessWidget {
       '${value.minute.toString().padLeft(2, '0')}';
 }
 
-/// 卡片内的一栏：图标 + 主值 + 次要提示，整栏可点。
-class _DateTimeField extends StatelessWidget {
-  const _DateTimeField({
+/// 日期/时刻胶囊：白底小药丸，图标 + 一行文字，整块可点。
+class _DateTimeChip extends StatelessWidget {
+  const _DateTimeChip({
     required this.icon,
-    required this.value,
-    required this.hint,
+    required this.label,
     required this.onTap,
   });
 
   final IconData icon;
-  final String value;
-  final String hint;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 17, color: AppColors.primary),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      height: 1.1,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    hint,
-                    maxLines: 1,
-                    style: text.labelSmall?.copyWith(
-                      color: AppColors.muted,
-                      height: 1.1,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 快捷日期胶囊：只承担「今天 / 昨天」两个高频跳转，尺寸比主卡片小一号。
-class _DateChip extends StatelessWidget {
-  const _DateChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
   final String label;
-  final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primarySoft : AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? AppColors.primary : AppColors.line,
-          ),
-        ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: selected ? AppColors.primary : AppColors.muted,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(9),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.1,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.ink,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1587,7 +1544,7 @@ class _ImageEntry extends StatelessWidget {
   }
 }
 
-/// 底部常驻面板：备注/图片条 + 自定义数字键盘。
+/// 底部常驻面板：日期/时刻条 + 备注/图片条 + 自定义数字键盘。
 ///
 /// 固定高度布局（不用纵向 Expanded）——它被放在 Column 里、高度约束无界，
 /// 用 Expanded 会因无法确定高度而崩溃。每行固定 [_keyHeight]。
@@ -1599,6 +1556,10 @@ class _NumericKeypad extends StatelessWidget {
     required this.canSave,
     required this.saving,
     required this.noteController,
+    required this.date,
+    required this.time,
+    required this.onPickDate,
+    required this.onPickTime,
     required this.imageCount,
     required this.imagePreview,
     required this.onImageTap,
@@ -1612,6 +1573,10 @@ class _NumericKeypad extends StatelessWidget {
   final bool canSave;
   final bool saving;
   final TextEditingController noteController;
+  final DateTime date;
+  final TimeOfDay time;
+  final VoidCallback onPickDate;
+  final VoidCallback onPickTime;
   final int imageCount;
 
   /// 顶栏图片入口的缩略图（无图时为 null，显示相机图标）。
@@ -1634,9 +1599,19 @@ class _NumericKeypad extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 日期 / 时刻：放在备注上方，与输入区同层，随手可改。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: _DateTimeBar(
+              date: date,
+              time: time,
+              onPickDate: onPickDate,
+              onPickTime: onPickTime,
+            ),
+          ),
           // 备注输入 + 图片入口。
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: Row(
               children: [
                 Expanded(child: _NoteField(controller: noteController)),

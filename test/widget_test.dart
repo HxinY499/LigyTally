@@ -1,15 +1,21 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forui/forui.dart';
 import 'package:ligy_tally/core/category_config/category_config_service.dart';
 import 'package:ligy_tally/core/database/app_database.dart';
 import 'package:ligy_tally/core/database/default_categories.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/core/utils/ledger_date.dart';
+import 'package:ligy_tally/features/ledger/application/providers.dart';
+import 'package:ligy_tally/features/ledger/presentation/ledger_screen.dart';
+import 'package:ligy_tally/features/statistics/presentation/stats_design.dart';
 import 'package:ligy_tally/shared/widgets/summary_band.dart';
 
 void main() {
@@ -167,5 +173,399 @@ void main() {
     expect(find.text('35.75'), findsOneWidget);
     expect(find.text('100.00'), findsOneWidget);
     expect(find.text('+64.25'), findsOneWidget);
+  });
+
+  group('卡片阴影全应用统一', () {
+    test('统计页的卡片阴影就是 AppShadows 本身', () {
+      // 统计页早先在 StatsTokens 里自带一份阴影常量。这里断言它是**同一个
+      // 对象**（identical 而非 ==），确保是「转发」而不是「抄了一份数值」——
+      // 抄一份的话，以后改 AppShadows 统计页不会跟着变，两屏就漂移了。
+      expect(identical(StatsTokens.shadowCard, AppShadows.card), isTrue);
+      expect(identical(StatsTokens.shadowHero, AppShadows.heroPrimary), isTrue);
+    });
+
+    test('卡片阴影是两层叠加：近距离收边 + 远距离柔光', () {
+      // 单层阴影要么硬得像描边，要么糊成一团灰。这条锁住「两层」这个设计决定。
+      expect(AppShadows.card, hasLength(2));
+      final near = AppShadows.card.first;
+      final far = AppShadows.card.last;
+      // 近层负责压边界：偏移小、模糊小。
+      expect(near.offset.dy, lessThan(far.offset.dy));
+      expect(near.blurRadius, lessThan(far.blurRadius));
+      // 阴影不是纯黑——纯黑压在浅灰底上会发脏，要带一点冷色调（蓝 > 红）。
+      expect(near.color.b, greaterThan(near.color.r));
+    });
+
+    testWidgets('记账页的日卡带上了统一阴影', (tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      // 用一次性查询而不是 watchCategories 的首帧：流式查询会在测试里留下
+      // 活跃订阅，容易与后面的 pump 相互等待。
+      final categories = await database.exportCategories();
+      final expense = categories.firstWhere((item) => item.kind == 0);
+      final now = DateTime.now();
+      await database.saveTransaction(
+        entry: TransactionsCompanion.insert(
+          id: 'shadow-probe',
+          kind: 0,
+          amountCents: 1200,
+          categoryId: expense.id,
+          accountingDate: dateKey(now),
+          occurredAt: now.millisecondsSinceEpoch,
+          createdAt: now.millisecondsSinceEpoch,
+          updatedAt: now.millisecondsSinceEpoch,
+        ),
+        newImages: const [],
+        removedImageIds: const {},
+      );
+
+      final forui = buildForuiTheme();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [databaseProvider.overrideWithValue(database)],
+          child: MaterialApp(
+            theme: forui.toApproximateMaterialTheme(),
+            builder: (context, child) => FTheme(
+              data: forui,
+              child: FToaster(child: child!),
+            ),
+            // 必须自己套 Scaffold：LedgerScreen 不自带，实际运行时由
+            // home_shell 提供 Material 祖先，页头里的 InkResponse 依赖它。
+            home: const Scaffold(body: LedgerScreen()),
+          ),
+        ),
+      );
+      // 不用 pumpAndSettle：页面里有持续动画时它会等不到静止帧而挂死。
+      await tester.pump();
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
+      // 日卡的特征是「白面 + 18 圆角」，靠这两点定位。
+      // 日卡的阴影挂在 DecoratedBox 上（白底由内层 Material 提供，
+      // 这样卡片本身才是水波画布——见 _DayCard 注释）。
+      // 靠「18 圆角 + 有阴影 + 无底色」定位到它。
+      final dayCards = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((box) => box.decoration)
+          .whereType<BoxDecoration>()
+          .where(
+            (decoration) =>
+                decoration.borderRadius ==
+                    const BorderRadius.all(Radius.circular(18)) &&
+                decoration.boxShadow != null,
+          )
+          .toList();
+      expect(dayCards, isNotEmpty);
+      for (final card in dayCards) {
+        expect(card.boxShadow, AppShadows.card);
+      }
+
+      // drift 取消订阅时会排一个 0ms 的清理定时器，测试结束前要放掉它。
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+    });
+
+    testWidgets('月度摘要卡用的是暖色阴影', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            home: const Scaffold(
+              body: SummaryBand(
+                summary: LedgerSummary(
+                  incomeCents: 10000,
+                  expenseCents: 3575,
+                  entryCount: 2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // 摘要卡是暖黄渐变，配中性灰阴影会发浊，必须用带暖色相的那组。
+      final band = tester
+          .widgetList<Container>(find.byType(Container))
+          .map((container) => container.decoration)
+          .whereType<BoxDecoration>()
+          .where((decoration) => decoration.gradient != null)
+          .toList();
+      expect(band, hasLength(1));
+      expect(band.single.boxShadow, AppShadows.heroWarm);
+    });
+  });
+
+  group('首页的点击反馈', () {
+    /// 造一条今天的支出，返回内存库。
+    Future<AppDatabase> seed(WidgetTester tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      final categories = await database.exportCategories();
+      final expense = categories.firstWhere((item) => item.kind == 0);
+      final now = DateTime.now();
+      await database.saveTransaction(
+        entry: TransactionsCompanion.insert(
+          id: 'ink-probe',
+          kind: 0,
+          amountCents: 1200,
+          categoryId: expense.id,
+          accountingDate: dateKey(now),
+          occurredAt: now.millisecondsSinceEpoch,
+          createdAt: now.millisecondsSinceEpoch,
+          updatedAt: now.millisecondsSinceEpoch,
+        ),
+        newImages: const [],
+        removedImageIds: const {},
+      );
+      return database;
+    }
+
+    Future<void> pumpLedger(WidgetTester tester, AppDatabase database) async {
+      final forui = buildForuiTheme();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [databaseProvider.overrideWithValue(database)],
+          child: MaterialApp(
+            theme: forui.toApproximateMaterialTheme(),
+            builder: (context, child) => FTheme(
+              data: forui,
+              child: FToaster(child: child!),
+            ),
+            home: const Scaffold(body: LedgerScreen()),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+    }
+
+    testWidgets('日卡自己提供 Material，水波才有地方画', (tester) async {
+      final database = await seed(tester);
+      await pumpLedger(tester, database);
+
+      // 关键约定：白底必须由 Material 提供，不能是 Container(color:)。
+      //
+      // 水波画在「最近的 Material 上、且在子节点之下」。如果日卡白底是
+      // 不透明 Container，最近的 Material 就是 Scaffold 那层，水波会被
+      // 白卡整块盖住——实测过按下时像素零变化，点击毫无反馈。
+      final cards = tester
+          .widgetList<Material>(find.byType(Material))
+          .where(
+            (material) =>
+                material.color == AppColors.surface &&
+                material.borderRadius ==
+                    const BorderRadius.all(Radius.circular(18)),
+          )
+          .toList();
+      expect(cards, isNotEmpty);
+      for (final card in cards) {
+        // 必须裁剪，否则水波会在圆角外溢出成方块。
+        expect(card.clipBehavior, Clip.antiAlias);
+      }
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+    });
+
+    testWidgets('账单行与卡片头都配了反馈色', (tester) async {
+      final database = await seed(tester);
+      await pumpLedger(tester, database);
+
+      final inks = tester
+          .widgetList<InkWell>(find.byType(InkWell))
+          .where((ink) => ink.highlightColor == AppColors.pressed)
+          .toList();
+      // 至少三处：卡片头、账单行、吸顶月份按钮。
+      expect(inks.length, greaterThanOrEqualTo(3));
+      for (final ink in inks) {
+        // 水波比按下底色更淡——水波是动态扩散的，同色会显得炸开一朵蓝花。
+        expect(ink.splashColor, AppColors.ripple);
+        expect(ink.hoverColor, AppColors.ripple);
+      }
+      expect(AppColors.ripple.a, lessThan(AppColors.pressed.a));
+
+      // 带长按的那个才是账单行（卡片头只有 onTap）。
+      final rows = tester
+          .widgetList<InkWell>(find.byType(InkWell))
+          .where((ink) => ink.onLongPress != null)
+          .toList();
+      expect(rows, hasLength(1));
+      expect(rows.single.highlightColor, AppColors.pressed);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+    });
+
+    testWidgets('按下时像素真的会变——这是本次修复的核心证据', (tester) async {
+      // 用最小复现对比两种结构，直接量「按下前后有多少字节不同」。
+      //
+      // 这条比「断言 InkWell 配了颜色」强得多：配色写对了但被上层不透明
+      // 底色盖住，视觉上依然毫无反馈——原来的首页就是这种情况。
+      Future<int> pressDiff(Widget Function(Widget child) wrap) async {
+        final key = GlobalKey();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              backgroundColor: AppColors.canvas,
+              body: Center(
+                child: RepaintBoundary(
+                  key: key,
+                  child: wrap(
+                    InkWell(
+                      onTap: () {},
+                      highlightColor: AppColors.pressed,
+                      splashColor: AppColors.ripple,
+                      child: const SizedBox(height: 60, width: 200),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        Future<List<int>> shot() async {
+          final boundary =
+              key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+          late List<int> bytes;
+          // toImage 是真异步，必须放进 runAsync，否则拿到的是空白帧。
+          await tester.runAsync(() async {
+            final image = await boundary.toImage();
+            final data = await image.toByteData(
+              format: ui.ImageByteFormat.rawRgba,
+            );
+            bytes = data!.buffer.asUint8List().toList();
+            image.dispose();
+          });
+          return bytes;
+        }
+
+        final idle = await shot();
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.byType(InkWell)),
+        );
+        // 高亮是淡入的，多推几帧到最盛态再抓，否则可能抓到刚起步的一帧。
+        for (var i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 120));
+        }
+        final pressed = await shot();
+        await gesture.cancel();
+        await tester.pumpAndSettle();
+
+        var diff = 0;
+        for (var i = 0; i < idle.length; i++) {
+          if (idle[i] != pressed[i]) diff++;
+        }
+        return diff;
+      }
+
+      // 旧结构：白底由 Container 提供。最近的 Material 是 Scaffold 那层，
+      // 水波画在它上面、被白卡整块盖住 → 像素零变化。
+      final oldDiff = await pressDiff(
+        (child) => Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: AppShadows.card,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: child,
+        ),
+      );
+      expect(oldDiff, 0, reason: 'Container 白底会把反馈完全遮住（问题根因）');
+
+      // 新结构：卡片自己就是 Material，于是它成了水波画布。
+      final newDiff = await pressDiff(
+        (child) => DecoratedBox(
+          decoration: const BoxDecoration(
+            borderRadius: BorderRadius.all(Radius.circular(18)),
+            boxShadow: AppShadows.card,
+          ),
+          child: Material(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(18),
+            clipBehavior: Clip.antiAlias,
+            child: child,
+          ),
+        ),
+      );
+      expect(newDiff, greaterThan(0), reason: 'Material 白底下反馈必须可见');
+    });
+  });
+
+  group('删除确认弹窗', () {
+    testWidgets('确定与取消两颗按钮同宽', (tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      final categories = await database.exportCategories();
+      final expense = categories.firstWhere((item) => item.kind == 0);
+      final now = DateTime.now();
+      await database.saveTransaction(
+        entry: TransactionsCompanion.insert(
+          id: 'dialog-probe',
+          kind: 0,
+          amountCents: 1200,
+          categoryId: expense.id,
+          accountingDate: dateKey(now),
+          occurredAt: now.millisecondsSinceEpoch,
+          createdAt: now.millisecondsSinceEpoch,
+          updatedAt: now.millisecondsSinceEpoch,
+        ),
+        newImages: const [],
+        removedImageIds: const {},
+      );
+
+      final forui = buildForuiTheme();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [databaseProvider.overrideWithValue(database)],
+          child: MaterialApp(
+            theme: forui.toApproximateMaterialTheme(),
+            builder: (context, child) => FTheme(
+              data: forui,
+              child: FToaster(child: child!),
+            ),
+            home: const Scaffold(body: LedgerScreen()),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
+      final row = find.byWidgetPredicate(
+        (widget) => widget is InkWell && widget.onLongPress != null,
+      );
+      await tester.longPress(row);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      expect(find.text('确定'), findsOneWidget);
+      expect(find.text('取消'), findsOneWidget);
+
+      // 原来「取消」是裸 TextButton，宽度只跟着文字走，
+      // 和撑满的「确定」并排时一长一短。这条锁住两颗按钮等宽。
+      final confirm = tester.getSize(
+        find.ancestor(
+          of: find.text('确定'),
+          matching: find.byType(OutlinedButton),
+        ),
+      );
+      final cancel = tester.getSize(
+        find.ancestor(of: find.text('取消'), matching: find.byType(TextButton)),
+      );
+      expect(cancel.width, confirm.width);
+      // 高度也应一致（同一组 vertical padding + 同字号）。
+      expect(cancel.height, confirm.height);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+    });
   });
 }

@@ -22,6 +22,59 @@ class AppColors {
   static const income = Color(0xFF2E7D32);
   static const incomeSoft = Color(0xFFE8F5E9);
   static const accent = Color(0xFFE5A62E);
+
+  /// 列表项按下时的浅底反馈。
+  ///
+  /// 白面卡片上的点击反馈：太重会像「选中态」，太轻则等于没有。
+  /// 这里取品牌蓝的极低透明度版本，按下时是一层几乎无色的冷灰，
+  /// 既能确认「按到了」，又不会在快速滑动列表时闪出一片蓝。
+  static const pressed = Color(0x0F5190F2);
+
+  /// 水波扩散色：比 [pressed] 更淡。
+  ///
+  /// 水波是动态扩散的，视觉上比静态高亮更「抓眼」，
+  /// 因此必须比按下底色更淡，否则点一下会像炸开一朵蓝花。
+  static const ripple = Color(0x0A5190F2);
+}
+
+/// 全应用统一的卡片阴影。
+///
+/// 只有一处定义，记账页 / 统计页 / 以后新增的页面都引用这里——阴影一旦
+/// 各页硬编码，很快就会出现「同一种卡片在两屏浮起高度不一样」。
+///
+/// 设计上一律用**两层叠加**而不是单层：
+/// - 近距离一层（offset 1~2、blur 小）压出卡片边界，替代描边。
+///   描边在浅灰底上会压出一道灰线显脏，用极淡阴影收边更干净。
+/// - 远距离一层（offset 8、blur 大）做柔光，让卡片从背景「浮」起来。
+///
+/// 单层阴影要么太硬（边界锐利像描边），要么糊成一团灰（把底色压暗），
+/// 两层分工才能既有边界又有空气感。
+class AppShadows {
+  const AppShadows._();
+
+  /// 中性卡片阴影：白面卡片通用（记账日卡、统计各图表卡）。
+  ///
+  /// 色值用带蓝的深灰 `#101828` 而不是纯黑——纯黑阴影在浅灰底上会发脏，
+  /// 略带冷色调更接近真实环境光。
+  static const card = [
+    BoxShadow(color: Color(0x0A101828), offset: Offset(0, 1), blurRadius: 2),
+    BoxShadow(color: Color(0x0F101828), offset: Offset(0, 8), blurRadius: 24),
+  ];
+
+  /// 主色 Hero 卡阴影（统计页概览卡）：带品牌蓝色调，比中性灰更有发光感。
+  ///
+  /// 彩色卡片配中性灰阴影会显得「脏」——阴影里必须掺入卡片自身的色相。
+  static const heroPrimary = [
+    BoxShadow(color: Color(0x335190F2), offset: Offset(0, 8), blurRadius: 24),
+    BoxShadow(color: Color(0x1A5190F2), offset: Offset(0, 2), blurRadius: 6),
+  ];
+
+  /// 暖色 Hero 卡阴影（记账页月度摘要卡）：同 [heroPrimary] 的思路，
+  /// 色相换成摘要卡的暖黄 `#E5A62E`，避免中性灰压在暖黄渐变上发浊。
+  static const heroWarm = [
+    BoxShadow(color: Color(0x2ED9A22B), offset: Offset(0, 8), blurRadius: 24),
+    BoxShadow(color: Color(0x1AD9A22B), offset: Offset(0, 2), blurRadius: 6),
+  ];
 }
 
 TextStyle _flat(TextStyle? style) => (style ?? const TextStyle()).copyWith(

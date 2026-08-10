@@ -68,5 +68,4 @@ const categoryIcons = <String, IconData>{
   'other': FLucideIcons.ellipsis,
 };
 
-IconData categoryIcon(String key) =>
-    categoryIcons[key] ?? FLucideIcons.receipt;
+IconData categoryIcon(String key) => categoryIcons[key] ?? FLucideIcons.receipt;

@@ -9,9 +9,12 @@
 /// 改动不会扩散到每个页面。
 ///
 /// 保留裸用 forui 的例外（强业务语义 / 单点使用，抽壳收益低）：
-/// - `FItem`（账单行，高度定制，见 ledger_screen）
+/// - `FItem`（账单行，高度定制，见ledger_screen）
 /// - `FBottomNavigationBar`（仅 home_shell 一处）
 /// - `FScaffold` / `FTheme`（应用骨架，app.dart）
+///
+/// 页头：一级页 `AppPageHeader`、二级页 `AppTopBar`、页头图标 `AppHeaderAction`
+/// 三者同在 `app_page_header.dart`，共用一套几何令牌（见该文件顶部常量）。
 library;
 
 export 'app_button.dart';
@@ -22,5 +25,4 @@ export 'app_switch.dart';
 export 'app_text_field.dart';
 export 'app_tile.dart';
 export 'app_toast.dart';
-export 'app_top_bar.dart';
 export 'segmented_control.dart';

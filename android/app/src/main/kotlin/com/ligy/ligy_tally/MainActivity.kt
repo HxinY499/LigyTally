@@ -1,6 +1,8 @@
 package com.ligy.ligy_tally
 
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -20,7 +22,13 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val CHANNEL = "com.ligy.ligy_tally/app_update"
+        private const val ICON_CHANNEL = "com.ligy.ligy_tally/app_icon"
         private const val FILE_PROVIDER_AUTHORITY = "com.ligy.ligy_tally.update_provider"
+
+        // 桌面图标对应的两个 activity-alias 短名，
+        // 保持与 AndroidManifest.xml 里声明的一致。
+        private const val ALIAS_DARK = "LauncherDark"
+        private const val ALIAS_LIGHT = "LauncherLight"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -40,6 +48,26 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGS", "缺少 APK 路径", null)
                     } else {
                         installApk(path, result)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ICON_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getCurrent" -> result.success(currentIconKey())
+                "setIcon" -> {
+                    val key = call.argument<String>("key")
+                    if (key.isNullOrBlank()) {
+                        result.error("INVALID_ARGS", "缺少图标 key", null)
+                    } else {
+                        try {
+                            applyIcon(key)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("SET_ICON_FAILED", e.message ?: "切换图标失败", null)
+                        }
                     }
                 }
                 else -> result.notImplemented()
@@ -110,5 +138,52 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             result.error("INSTALL_FAILED", e.message ?: "拉起安装器失败", null)
         }
+    }
+
+    // ---- 桌面图标切换 ------------------------------------------------------
+
+    /**
+     * 读取当前生效的 activity-alias。
+     *
+     * 只关心 dark 是否启用——两个 alias 不允许同时禁用（会导致桌面上应用消失），
+     * 所以「非 dark 即 light」。
+     */
+    private fun currentIconKey(): String {
+        val dark = ComponentName(packageName, "$packageName.$ALIAS_DARK")
+        val state = packageManager.getComponentEnabledSetting(dark)
+        val enabled = when (state) {
+            PackageManager.COMPONENT_ENABLED_STATE_DEFAULT -> true // manifest 里 dark 默认 enabled
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
+            else -> false
+        }
+        return if (enabled) "dark" else "light"
+    }
+
+    /**
+     * 切换到指定图标。
+     *
+     * 关键点：先启用目标 alias，再禁用另一个。反过来做会出现「两个都禁用」
+     * 的瞬时状态，某些 launcher 会把应用图标从桌面上移除。
+     *
+     * DONT_KILL_APP 让 PackageManager 不重启进程——效果一般是桌面刷新
+     * 需要几秒才能看到新图标，属正常现象。
+     */
+    private fun applyIcon(key: String) {
+        val (enable, disable) = when (key) {
+            "dark" -> ALIAS_DARK to ALIAS_LIGHT
+            "light" -> ALIAS_LIGHT to ALIAS_DARK
+            else -> throw IllegalArgumentException("未知图标 key: $key")
+        }
+        val pm = packageManager
+        pm.setComponentEnabledSetting(
+            ComponentName(packageName, "$packageName.$enable"),
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            PackageManager.DONT_KILL_APP,
+        )
+        pm.setComponentEnabledSetting(
+            ComponentName(packageName, "$packageName.$disable"),
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            PackageManager.DONT_KILL_APP,
+        )
     }
 }
