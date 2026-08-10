@@ -93,7 +93,7 @@ class _BottomNavBar extends StatelessWidget {
 
   static const _items = [
     (icon: FLucideIcons.receiptText, label: '明细'),
-    (icon: FLucideIcons.chartColumn, label: '统计'),
+    (icon: FLucideIcons.chartPie, label: '统计'),
     (icon: FLucideIcons.settings2, label: '设置'),
   ];
 

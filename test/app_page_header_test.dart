@@ -17,7 +17,10 @@ void main() {
 
   Widget host(Widget child) => MaterialApp(
     theme: forui.toApproximateMaterialTheme(),
-    builder: (context, c) => FTheme(data: forui, child: FToaster(child: c!)),
+    builder: (context, c) => FTheme(
+      data: forui,
+      child: FToaster(child: c!),
+    ),
     home: child,
   );
 
@@ -30,8 +33,7 @@ void main() {
   /// 够长的内容，保证能滚出折叠所需距离。
   Widget longList() => ListView(
     children: [
-      for (var i = 0; i < 40; i++)
-        SizedBox(height: 60, child: Text('row $i')),
+      for (var i = 0; i < 40; i++) SizedBox(height: 60, child: Text('row $i')),
     ],
   );
 
@@ -64,11 +66,7 @@ void main() {
       expect(fontSizeOf(tester, '统计'), 28, reason: '展开态是大标题');
 
       final icon = tester.getRect(find.byIcon(FLucideIcons.search));
-      expect(
-        icon.center.dy,
-        centerLine,
-        reason: '图标居中在顶部操作行，不跟着大标题下移',
-      );
+      expect(icon.center.dy, centerLine, reason: '图标居中在顶部操作行，不跟着大标题下移');
       expect(
         viewportWidth - icon.right,
         kAppHeaderGutter,
@@ -135,7 +133,8 @@ void main() {
       expect(
         tester.getRect(find.text('分类管理')).left,
         kAppHeaderGutter,
-        reason: '这是「进二级页标题不横跳」的硬保证：'
+        reason:
+            '这是「进二级页标题不横跳」的硬保证：'
             '返回箭头在标题上方，不再横向挤压标题',
       );
       expect(fontSizeOf(tester, '分类管理'), 28);
@@ -149,9 +148,7 @@ void main() {
       await tester.pumpWidget(host(secondary()));
       await tester.tap(find.text('go'));
       await tester.pumpAndSettle();
-      final backBefore = tester.getRect(
-        find.byIcon(FLucideIcons.chevronLeft),
-      );
+      final backBefore = tester.getRect(find.byIcon(FLucideIcons.chevronLeft));
 
       await collapse(tester);
 
@@ -167,25 +164,25 @@ void main() {
 
   testWidgets('一级页与二级页：展开态标题几何完全重合', (tester) async {
     await tester.pumpWidget(
-      host(Scaffold(body: AppPageHeader(title: 'A', body: longList()))),
+      host(
+        Scaffold(
+          body: AppPageHeader(title: 'A', body: longList()),
+        ),
+      ),
     );
     final primary = tester.getRect(find.text('A'));
 
     await tester.pumpWidget(
-      host(Scaffold(body: AppTopBar(title: 'A', body: longList()))),
+      host(
+        Scaffold(
+          body: AppTopBar(title: 'A', body: longList()),
+        ),
+      ),
     );
     final secondary = tester.getRect(find.text('A'));
 
-    expect(
-      secondary.left,
-      primary.left,
-      reason: '跨页切换标题不得横向跳动',
-    );
-    expect(
-      secondary.top,
-      primary.top,
-      reason: '跨页切换标题不得纵向跳动',
-    );
+    expect(secondary.left, primary.left, reason: '跨页切换标题不得横向跳动');
+    expect(secondary.top, primary.top, reason: '跨页切换标题不得纵向跳动');
   });
 
   testWidgets('搜索框模式：页头固定为紧凑高度，输入框不被缩放', (tester) async {

@@ -167,9 +167,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _SettingsItem(
                   icon: FLucideIcons.smartphone,
                   title: '应用图标',
-                  trailing: _AppIconPreview(
-                    style: ref.watch(appIconProvider),
-                  ),
+                  trailing: _AppIconPreview(style: ref.watch(appIconProvider)),
                   showChevron: true,
                   onTap: _pickAppIcon,
                 ),

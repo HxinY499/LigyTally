@@ -68,8 +68,7 @@ class _AppIconPickerSheet extends StatelessWidget {
                     child: _IconOption(
                       asset: 'assets/branding/app-icon-dark.png',
                       selected: current == AppIconStyle.dark,
-                      onTap: () =>
-                          Navigator.pop(context, AppIconStyle.dark),
+                      onTap: () => Navigator.pop(context, AppIconStyle.dark),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -77,8 +76,7 @@ class _AppIconPickerSheet extends StatelessWidget {
                     child: _IconOption(
                       asset: 'assets/branding/app-icon-light.png',
                       selected: current == AppIconStyle.light,
-                      onTap: () =>
-                          Navigator.pop(context, AppIconStyle.light),
+                      onTap: () => Navigator.pop(context, AppIconStyle.light),
                     ),
                   ),
                 ],
@@ -122,10 +120,7 @@ class _IconOption extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected ? AppColors.primarySoft : AppColors.surface,
             borderRadius: BorderRadius.circular(26),
-            border: Border.all(
-              color: borderColor,
-              width: selected ? 2 : 1,
-            ),
+            border: Border.all(color: borderColor, width: selected ? 2 : 1),
           ),
           child: AspectRatio(
             aspectRatio: 1,

@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/last_category.dart';
+import '../../../core/preferences/money_grouped.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
@@ -150,6 +151,16 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           _amountExpr += key;
       }
     });
+  }
+
+  /// 长按退格：一次清空整个表达式。
+  ///
+  /// 输错一长串（`128.5+66`）时逐位点退格很折磨。用重一档的震动反馈
+  /// 与单击区分开，让用户知道「这下是全清，不是删一位」。
+  void _clearAmount() {
+    if (_amountExpr.isEmpty) return;
+    HapticFeedback.mediumImpact();
+    setState(() => _amountExpr = '');
   }
 
   /// 当前正在输入的数字段（最后一个运算符之后的部分）。
@@ -404,6 +415,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final storage = ref.watch(imageStorageProvider);
     // 收支语义色：支出红 / 收入绿，贯穿金额卡与键盘按键。
     final accent = _kind == 0 ? AppColors.expense : AppColors.income;
+    // 金额卡的千分位跟随全局偏好，与明细页 / 统计页的 formatMoney 保持一致。
+    final grouped = ref.watch(moneyGroupedProvider);
 
     // 顶栏图片入口的缩略图：优先最新待上传，其次已有图片。
     Widget? imagePreview;
@@ -453,6 +466,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                       expression: _amountExpr,
                       amountValue: _amountValue,
                       kind: _kind,
+                      grouped: grouped,
                     ),
                     const SizedBox(height: 22),
                     const _SectionTitle(title: '分类'),
@@ -496,6 +510,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                 imagePreview: imagePreview,
                 onImageTap: _showImageSheet,
                 onInput: _onKeypadInput,
+                onClear: _clearAmount,
                 onSave: _canSave && !_saving ? () => _save() : null,
                 onSaveContinue: _canSave && !_saving && !_isEditing
                     ? () => _save(continueAfter: true)
@@ -1122,88 +1137,244 @@ class _KindSegment extends StatelessWidget {
   }
 }
 
+/// 金额卡的测试入口。
+///
+/// [_AmountCard] 是私有的（不希望被别的页面误用），但它承载了几条容易回归的
+/// 硬性行为——溢出往左裁、高度不随运算符变化、负数要有文字解释。
+/// 这层薄壳只为 test/amount_card_test.dart 打开访问，不参与业务渲染。
+@visibleForTesting
+class AmountCardForTest extends StatelessWidget {
+  const AmountCardForTest({
+    super.key,
+    required this.expression,
+    required this.amountValue,
+    required this.kind,
+    this.grouped = true,
+  });
+
+  final String expression;
+  final double amountValue;
+  final int kind;
+  final bool grouped;
+
+  @override
+  Widget build(BuildContext context) => _AmountCard(
+    expression: expression,
+    amountValue: amountValue,
+    kind: kind,
+    grouped: grouped,
+  );
+}
+
 /// hero 金额卡片：只读展示，输入通过底部常驻的自定义数字键盘。
 ///
-/// 展示当前表达式（含 + −）；键盘常驻，故描边与光标条常显。
+/// ## 层级：结果是主角，过程是配角
+///
+/// 旧版把 28px 大字给了**表达式**（过程）、12px 灰字给了**合计**（结果），
+/// 而记账真正要确认的是「这笔到底多少钱」——重量分配是反的。
+/// 现在含运算符时：表达式退到上方一行小字，合计升为大字主角；
+/// 不含运算符时（绝大多数场景）仍是单行大字，**且卡片高度与含运算符时一致**，
+/// 靠固定 [_kBodyHeight] 撑住，避免按下「+」时整张卡忽然长高、下面分类网格跟着跳。
+///
+/// ## 溢出：截头留尾，而不是省略号截尾
+///
+/// 金额从左往右输入，尾部是刚按下的那一位。旧版用 `TextOverflow.ellipsis`
+/// 从尾部截，一长就变 `3.5+7+12+8…`——**新按的数字看不见了，光标还亮着**，
+/// 输入反馈直接断掉。这里改用右对齐 + 单行 [SingleChildScrollView] 反向裁剪：
+/// 超长时自然把左边挤出可视区，尾部与光标永远可见（同计算器的行为）。
 class _AmountCard extends StatelessWidget {
   const _AmountCard({
     required this.expression,
     required this.amountValue,
     required this.kind,
+    required this.grouped,
   });
 
   final String expression;
   final double amountValue;
   final int kind;
 
+  /// 是否千分位分组，跟随全局 `moneyGrouped` 偏好。
+  final bool grouped;
+
+  /// 主数字行的固定高度。锁死它，切换「有无运算符」时卡片总高不变。
+  static const double _kBodyHeight = 40;
+
+  /// 辅助行（表达式 / 提示语）固定高度，同样为了稳定总高。
+  static const double _kHintHeight = 18;
+
   @override
   Widget build(BuildContext context) {
     final amountColor = kind == 0 ? AppColors.expense : AppColors.income;
     final hasExpr = expression.isNotEmpty;
     final showEquals = AmountExpression.hasOperator(expression);
+    // 负数（如 `5-8`）保存按钮本来就是灰的，但旧版界面不解释为什么。
+    final isNegative = amountValue < 0;
+
+    // 主行显示什么：有运算符时显示合计（结果），否则显示正在输入的数字。
+    final mainText = showEquals
+        ? _formatValue(amountValue)
+        : (hasExpr
+              ? AmountExpression.format(expression, grouped: grouped)
+              : '');
+    final mainColor = isNegative
+        ? AppColors.expense
+        : (hasExpr ? amountColor : AppColors.line);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: amountColor, width: 1.5),
+        border: Border.all(
+          // 键盘常驻 = 这张卡永远是聚焦态，高饱和描边一直「喊」反而吵。
+          // 有值时才点亮到语义色，空态退成普通灰描边。
+          //
+          // 只换颜色、**不换宽度**：描边宽度参与布局，1 → 1.5 会让整张卡在按下
+          // 第一位数字时长高 1px，把下面的分类网格顶一下（已被高度测试拦到）。
+          color: hasExpr ? amountColor : AppColors.line,
+          width: 1.5,
+        ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            '¥',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: AppColors.muted,
-              fontWeight: FontWeight.w700,
+          // ── 辅助行：表达式过程 / 负数提示 ──
+          SizedBox(
+            height: _kHintHeight,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: isNegative
+                  ? Text(
+                      '金额需大于 0',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.1,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.expense.withValues(alpha: 0.85),
+                      ),
+                    )
+                  : (showEquals
+                        ? Text(
+                            AmountExpression.format(
+                              expression,
+                              grouped: grouped,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              height: 1.1,
+                              color: AppColors.muted,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          )
+                        : const SizedBox.shrink()),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+          // ── 主行：¥ + 大数字 + 光标 ──
+          SizedBox(
+            height: _kBodyHeight,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        hasExpr ? expression : '0.00',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(
-                              color: hasExpr ? amountColor : AppColors.line,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
-                            ),
-                      ),
-                    ),
-                    // 光标条（用细竖条模拟）。
-                    Container(
-                      margin: const EdgeInsets.only(left: 2),
-                      width: 2,
-                      height: 26,
-                      color: amountColor,
-                    ),
-                  ],
-                ),
-                // 含运算符时下方显示实时合计。
-                if (showEquals)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      '= ¥${amountValue.toStringAsFixed(2)}',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelMedium?.copyWith(color: AppColors.muted),
-                    ),
+                Text(
+                  '¥',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w700,
                   ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _ScrollingAmount(
+                    text: mainText,
+                    placeholder: '0.00',
+                    color: mainColor,
+                    caretColor: amountColor,
+                  ),
+                ),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// 合计的展示格式：固定两位小数 + 千分位。
+  String _formatValue(double value) {
+    final fixed = value.toStringAsFixed(2);
+    if (!grouped) return fixed;
+    final negative = fixed.startsWith('-');
+    final body = negative ? fixed.substring(1) : fixed;
+    return '${negative ? '-' : ''}${AmountExpression.format(body)}';
+  }
+}
+
+/// 金额主数字 + 紧跟其后的光标条，超长时向左溢出（尾部始终可见）。
+///
+/// 实现要点：外层 [SingleChildScrollView] 只用来做「反向裁剪」——
+/// `reverse: true` 让滚动位置默认停在末尾，
+/// `physics: NeverScrollableScrollPhysics` 禁掉手动滚动（金额不该被划走）。
+/// 这样内容超宽时被裁掉的是**左边**，而不是尾部加省略号。
+class _ScrollingAmount extends StatelessWidget {
+  const _ScrollingAmount({
+    required this.text,
+    required this.placeholder,
+    required this.color,
+    required this.caretColor,
+  });
+
+  final String text;
+
+  /// 空值时的占位数字（灰色）。
+  final String placeholder;
+  final Color color;
+  final Color caretColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final isEmpty = text.isEmpty;
+    final caret = Container(
+      margin: const EdgeInsets.only(left: 3),
+      width: 2,
+      height: 26,
+      decoration: BoxDecoration(
+        color: caretColor,
+        borderRadius: BorderRadius.circular(1),
+      ),
+    );
+    final number = Text(
+      isEmpty ? placeholder : text,
+      maxLines: 1,
+      softWrap: false,
+      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+        color: color,
+        fontWeight: FontWeight.w800,
+        // 等宽数字 + 零字距：位数变化时数字不左右抖，也不显松散。
+        letterSpacing: 0,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+
+    // 空态：光标贴在 ¥ 之后（即占位数字之前）。
+    // 旧版把光标放在灰色 `0.00` 右侧，暗示下一位落在 `0.00` 后面，
+    // 但实际按 5 得到的是 `5` 而不是 `0.005`，位置与行为不符。
+    if (isEmpty) {
+      return Row(
+        children: [
+          caret,
+          Flexible(child: number),
+        ],
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      reverse: true,
+      physics: const NeverScrollableScrollPhysics(),
+      child: Row(children: [number, caret]),
     );
   }
 }
@@ -1564,6 +1735,7 @@ class _NumericKeypad extends StatelessWidget {
     required this.imagePreview,
     required this.onImageTap,
     required this.onInput,
+    required this.onClear,
     required this.onSave,
     required this.onSaveContinue,
   });
@@ -1583,6 +1755,9 @@ class _NumericKeypad extends StatelessWidget {
   final Widget? imagePreview;
   final VoidCallback onImageTap;
   final ValueChanged<String> onInput;
+
+  /// 长按退格键：清空整个金额表达式。
+  final VoidCallback onClear;
   final VoidCallback? onSave;
   final VoidCallback? onSaveContinue;
 
@@ -1691,6 +1866,8 @@ class _NumericKeypad extends StatelessWidget {
                 value: keys[i],
                 symbolColor: accent,
                 onTap: () => onInput(keys[i]),
+                // 只有退格键支持长按全清。
+                onLongPress: keys[i] == 'back' ? onClear : null,
               ),
             ),
           ),
@@ -1702,13 +1879,21 @@ class _NumericKeypad extends StatelessWidget {
 
 /// 单个数字/符号/退格键（白底瓷键）。填满父级给定的固定高度。
 class _NumKey extends StatelessWidget {
-  const _NumKey({required this.value, required this.onTap, this.symbolColor});
+  const _NumKey({
+    required this.value,
+    required this.onTap,
+    this.symbolColor,
+    this.onLongPress,
+  });
 
   final String value;
   final VoidCallback onTap;
 
   /// 符号键（+ −）文字色：跟随收支语义色。
   final Color? symbolColor;
+
+  /// 长按回调。目前只有退格键用它做「一次清空」。
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -1719,6 +1904,7 @@ class _NumKey extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(12),
         child: Center(
           child: isBack
