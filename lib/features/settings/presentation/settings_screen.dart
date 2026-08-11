@@ -81,7 +81,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           title: const Text('覆盖当前数据'),
           content: Text(
             '备份包含 ${preview.transactionCount} 笔账单和 '
-            '${preview.imageCount} 张图片。恢复后当前数据将被替换。',
+            '${preview.imageCount} 张图片'
+            '${preview.categoryIconCount > 0 ? '、${preview.categoryIconCount} 个自定义分类图标' : ''}。'
+            '恢复后当前数据将被替换。',
           ),
           actions: [
             TextButton(
@@ -144,7 +146,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _SettingsItem(
                   icon: FLucideIcons.tags,
                   title: '分类管理',
-                  subtitle: '新增、停用或删除收支分类',
+                  subtitle: '新增、停用或删除收支分类，可自定义图标',
                   showChevron: true,
                   onTap: () => Navigator.of(context).push<void>(
                     MaterialPageRoute(
@@ -193,7 +195,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _SettingsItem(
                   icon: FLucideIcons.upload,
                   title: '导出数据',
-                  subtitle: '打包账单与图片，可设密码',
+                  subtitle: '打包账单、图片与分类图标，可设密码',
                   showChevron: !_busy,
                   onTap: _busy ? null : _exportBackup,
                 ),

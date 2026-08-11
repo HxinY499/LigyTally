@@ -11,7 +11,6 @@ import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/last_category.dart';
 import '../../../core/preferences/money_grouped.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/local_image.dart';
@@ -738,7 +737,8 @@ class _ParentCategoryTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
         child: Row(
           children: [
-            Icon(categoryIcon(category.iconKey), color: color, size: 24),
+            CategoryIconView(iconKey: category.iconKey, color: color, size: 24),
+
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -805,7 +805,12 @@ class _ParentGridCell extends StatelessWidget {
                 clipBehavior: Clip.none,
                 alignment: Alignment.center,
                 children: [
-                  Icon(categoryIcon(category.iconKey), color: color, size: 26),
+                  CategoryIconView(
+                    iconKey: category.iconKey,
+                    color: color,
+                    size: 26,
+                  ),
+
                   if (hasChildren)
                     Positioned(
                       right: -2,
@@ -1517,7 +1522,7 @@ class _CategoryCell extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(categoryIcon(iconKey), size: 24, color: color),
+            CategoryIconView(iconKey: iconKey, size: 24, color: color),
             const SizedBox(height: 6),
             Text(
               name,

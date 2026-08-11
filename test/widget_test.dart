@@ -11,6 +11,7 @@ import 'package:forui/forui.dart';
 import 'package:ligy_tally/core/category_config/category_config_service.dart';
 import 'package:ligy_tally/core/database/app_database.dart';
 import 'package:ligy_tally/core/database/default_categories.dart';
+import 'package:ligy_tally/core/media/image_storage.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/core/utils/ledger_date.dart';
 import 'package:ligy_tally/features/ledger/application/providers.dart';
@@ -129,10 +130,15 @@ void main() {
         }
       ''');
 
-      final service = CategoryConfigService(database);
+      final service = CategoryConfigService(
+        database,
+        ImageStorage.atRoot(directory.path),
+      );
       final preview = await service.inspect(file.path);
       expect(preview.parentCount, 2);
       expect(preview.childCount, 1);
+      // v1 的老配置里不可能有自定义图标，导入路径不该凭空造出图片。
+      expect(preview.iconImageCount, 0);
 
       await service.importAndReplace(file.path);
       final active = (await database.exportCategories())

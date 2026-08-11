@@ -109,28 +109,30 @@ const _kDividerThickness = 0.6;
 ///
 /// 业务页放 actions 时一律用它，别自己写 [IconButton]——
 /// 默认 IconButton 的 48 热区 + 内建 padding 会把图标推离右边线。
+///
+/// **[onTap] 为 null 就是彻底不可点**，视觉也一起置灰，没有例外。
+/// 这里曾有个 `enabled` 参数用来单独控制置灰，给「点击由外层接管」的场景
+/// （拿本组件当 popover 锚点）用。但 forui 的 `FPopoverMenu` 并不接管点击，
+/// 于是 `onTap: null` + `enabled: true` 造出了一颗看起来能点、实际是死键的
+/// 按钮，且因为视觉正常，没人发现。锚点场景请直接把
+/// `controller.toggle` 传进 [onTap]。
 class AppHeaderAction extends StatelessWidget {
   const AppHeaderAction({
     super.key,
     required this.icon,
     required this.onTap,
     this.tooltip,
-    this.enabled,
   });
 
   final IconData icon;
 
-  /// null 时不响应点击。视觉是否置灰由 [enabled] 决定（默认跟随本字段）。
+  /// null 时不响应点击，图标同时置灰。
   final VoidCallback? onTap;
   final String? tooltip;
 
-  /// 显式覆盖视觉可用态。用于「点击由外层接管」的场景
-  /// （如 [PopupMenuButton] 拿本组件当锚点，onTap 必须为 null）。
-  final bool? enabled;
-
   @override
   Widget build(BuildContext context) {
-    final active = enabled ?? (onTap != null);
+    final active = onTap != null;
     final button = InkResponse(
       onTap: onTap,
       radius: kAppHeaderActionSize / 2,

@@ -26,4 +26,5 @@ export 'app_switch.dart';
 export 'app_text_field.dart';
 export 'app_tile.dart';
 export 'app_toast.dart';
+export 'category_icon_view.dart';
 export 'segmented_control.dart';

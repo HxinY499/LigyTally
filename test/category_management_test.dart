@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
 import 'package:ligy_tally/core/database/app_database.dart';
+import 'package:ligy_tally/core/database/default_categories.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/core/utils/category_icons.dart';
 import 'package:ligy_tally/features/ledger/application/providers.dart';
@@ -18,20 +19,11 @@ void main() {
       final food = all.singleWhere((item) => item.name == '餐饮');
 
       // 支出侧已经有一级分类「餐饮」。
-      expect(
-        await database.categoryNameExists(kind: 0, name: '餐饮'),
-        isTrue,
-      );
+      expect(await database.categoryNameExists(kind: 0, name: '餐饮'), isTrue);
       // 收入侧没有——两侧分类互不相干，同名合法。
-      expect(
-        await database.categoryNameExists(kind: 1, name: '餐饮'),
-        isFalse,
-      );
+      expect(await database.categoryNameExists(kind: 1, name: '餐饮'), isFalse);
       // 「三餐」是餐饮的子分类，不算一级重名。
-      expect(
-        await database.categoryNameExists(kind: 0, name: '三餐'),
-        isFalse,
-      );
+      expect(await database.categoryNameExists(kind: 0, name: '三餐'), isFalse);
       expect(
         await database.categoryNameExists(
           kind: 0,
@@ -144,6 +136,68 @@ void main() {
         expect(categoryIcons.containsKey(key), isTrue, reason: '$key 不在映射表里');
       }
     });
+
+    test('每个可选图标都归属某个分组，扁平清单与分组一致', () {
+      // 原则之三：无组可归的图标说明它不属于记账语境，直接不收。
+      // 扁平清单是由分组推导出来的，这条同时锁住「两者不会脱节」。
+      final fromGroups = [
+        for (final group in categoryIconGroups) ...group.keys,
+      ];
+      expect(categoryIconChoices, fromGroups);
+      // 同一个 key 不该出现在两个分组里——用户会以为是两个不同图标。
+      expect(fromGroups.toSet(), hasLength(fromGroups.length));
+      for (final group in categoryIconGroups) {
+        expect(group.keys, isNotEmpty, reason: '${group.label} 是空组');
+        expect(group.label, isNotEmpty);
+      }
+    });
+
+    test('覆盖了常见自建分类，不再让多个分类挤同一个图标', () {
+      // 原则之一：覆盖优先于精简。这批分类以前无图可选，只能凑 car / finance
+      // 之类，导致「加油 / 停车 / 洗车」三个分类共用一个图标、失去区分度。
+      // 每一项都必须有**独占**的图形。
+      const shouldCover = {
+        '加油': 'fuel',
+        '停车': 'parking',
+        '话费': 'phone_bill',
+        '住宿': 'hotel',
+        '门票': 'ticket',
+        '保险': 'insurance',
+        '税': 'tax',
+        '存钱': 'savings',
+        '转账': 'transfer',
+        '订阅': 'subscription',
+        '日用品': 'household',
+        '家电': 'appliance',
+        '家具': 'furniture',
+        '装修': 'renovation',
+        '奶茶': 'milk_tea',
+        '超市': 'supermarket',
+      };
+      for (final entry in shouldCover.entries) {
+        expect(
+          categoryIconChoices,
+          contains(entry.value),
+          reason: '「${entry.key}」没有可选图标',
+        );
+      }
+      // 独占性由上一条的「无重复图形」保证，这里额外确认它们彼此不同图。
+      final glyphs = shouldCover.values.map(categoryIcon).toSet();
+      expect(glyphs, hasLength(shouldCover.length));
+    });
+
+    test('内置分类种子用到的图标 key 全部还在映射表里', () {
+      // categoryIcons 的 key 是以字符串存进数据库、也写进导出 JSON 的。
+      // 删 key 或改指向会让已有分类和老备份的图标变成兜底的 receipt，
+      // 所以那张表只能加。这条守住向后兼容。
+      for (final seed in defaultCategorySeeds) {
+        expect(
+          categoryIcons.containsKey(seed.iconKey),
+          isTrue,
+          reason: '种子「${seed.name}」的 ${seed.iconKey} 从映射表里消失了',
+        );
+      }
+    });
   });
 
   group('分类管理页', () {
@@ -154,8 +208,10 @@ void main() {
           overrides: [databaseProvider.overrideWithValue(database)],
           child: MaterialApp(
             theme: forui.toApproximateMaterialTheme(),
-            builder: (context, child) =>
-                FTheme(data: forui, child: FToaster(child: child!)),
+            builder: (context, child) => FTheme(
+              data: forui,
+              child: FToaster(child: child!),
+            ),
             home: const CategoryManagementScreen(),
           ),
         ),
@@ -246,7 +302,8 @@ void main() {
       // 面板标题说明了归属，用户不需要再自己选父级。
       expect(find.text('新建子分类'), findsOneWidget);
       expect(find.text('归属「餐饮」'), findsOneWidget);
-      expect(find.text('选择图标'), findsOneWidget);
+      // 图标区不再是一片无标题的连续网格，第一组标题就在视口里。
+      expect(find.text('吃喝'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField), '夜宵');
       await tester.pump();
@@ -309,6 +366,168 @@ void main() {
       // 用户再也找不回来重新启用。
       expect(find.text('餐饮'), findsOneWidget);
       expect(find.text('已停用'), findsOneWidget);
+
+      await teardown(tester);
+    });
+
+    testWidgets('图标网格按组分段，标题吸顶且底色不透明', (tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await pump(tester, database);
+
+      await tester.tap(find.text('添加子分类').first);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+
+      // 119 个图标无序平铺就是图标海。分组标题是这块区域的导航，
+      // 用户扫的是七八个词而不是一百多个图形。
+      expect(find.text('吃喝'), findsOneWidget);
+
+      // 吸顶 header 悬在网格之上，底色必须不透明，
+      // 否则下面滚动的图标会从字缝里穿过去。
+      final headerBox = tester
+          .widgetList<Container>(
+            find.ancestor(
+              of: find.text('吃喝'),
+              matching: find.byType(Container),
+            ),
+          )
+          .first;
+      expect(headerBox.color, AppColors.surface);
+
+      await teardown(tester);
+    });
+
+    testWidgets('编辑已有分类时，图标区自动滚到它所在的那一组', (tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      // savings（存钱罐）在最后几组的「收支」里，离首屏很远。
+      await database.addCategory(
+        id: 'scroll-probe',
+        kind: 0,
+        name: '房租测试',
+        iconKey: 'savings',
+      );
+      await pump(tester, database);
+
+      // 滚到底找到这张卡再点它的卡头。
+      await tester.scrollUntilVisible(find.text('房租测试'), 200);
+      await tester.pump();
+      await tester.tap(find.text('房租测试'));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+      expect(find.text('编辑分类'), findsOneWidget);
+
+      // 面板一打开就该停在「收支」组，否则用户看不到当前选中的图标，
+      // 会以为自己从没选过。
+      //
+      // 这里断言的是**格子**而不是分组标题：标题是 SliverPersistentHeader，
+      // 滚出视口后仍留在 widget 树里（find.text 照样能找到），
+      // 而网格子项是懒加载的 —— 只有滚到附近才会被建出来。
+      // 所以「savings 格子已建 + 第一组的格子没建」才真正证明滚动生效了。
+      //
+      // 按 ValueKey 而不是图形来找：同一个图标在页面别处也会出现
+      // （名称行的预览圆片、背后卡片里的分类图标），按图形找会撞上。
+      expect(find.byKey(const ValueKey('icon-cell-savings')), findsOneWidget);
+      expect(find.byKey(const ValueKey('icon-cell-restaurant')), findsNothing);
+
+      await teardown(tester);
+    });
+    testWidgets('页头的导出/导入按钮点得开菜单', (tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await pump(tester, database);
+
+      // 这条锁的是一个真实存在过的死键：当时 AppHeaderAction 传了
+      // `onTap: null` + `enabled: true`，指望外层的 FPopoverMenu 接管点击。
+      // 但 forui 的 popover 只把 child 当锚点、不装手势（Material 的
+      // PopupMenuButton 才会），于是按钮看起来是亮的、点了毫无反应，
+      // 而因为视觉正常，一直没人发现。
+      expect(find.text('导出分类配置'), findsNothing);
+
+      await tester.tap(find.byIcon(FLucideIcons.arrowLeftRight));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+
+      expect(find.text('导出分类配置'), findsOneWidget);
+      expect(find.text('导入并替换配置'), findsOneWidget);
+
+      await teardown(tester);
+    });
+
+    testWidgets('图标选择器第一组就是上传入口', (tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await pump(tester, database);
+
+      await tester.tap(find.text('添加子分类').first);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+
+      // 上传入口必须在面板打开时就可见。排在 120 个内置图标后面等于藏起来，
+      // 用户不会为了找它去滚十几屏。
+      expect(find.text('自己的图片'), findsOneWidget);
+      expect(find.byIcon(FLucideIcons.imagePlus), findsOneWidget);
+      // 第一组在最上面，所以内置图标的第一组标题也还在视口里。
+      expect(find.text('吃喝'), findsOneWidget);
+
+      await teardown(tester);
+    });
+
+    testWidgets('已有自定义图标的分类，打开编辑面板时它占一格且是选中态', (tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await database.addCategory(
+        id: 'custom-icon-probe',
+        kind: 0,
+        name: '自定义图',
+        iconKey: customCategoryIconKey('11111111-2222-3333-4444-555555555555'),
+      );
+      await pump(tester, database);
+
+      await tester.scrollUntilVisible(find.text('自定义图'), 200);
+      await tester.pump();
+      await tester.tap(find.text('自定义图'));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+
+      expect(find.text('编辑分类'), findsOneWidget);
+      // 网格里必须有一格代表这张图并且是选中态，否则用户看不到自己选的是
+      // 哪个（内置图标那 120 格里没有一格会亮），会以为图丢了。
+      expect(find.byKey(const ValueKey('icon-cell-custom')), findsOneWidget);
+      // 图片文件在测试环境里不存在，应当回落到默认图标而不是抛异常 /
+      // 留一块空白 —— 备份缺图、换机后图片没跟过来都是真实会发生的情况。
+      expect(tester.takeException(), isNull);
+
+      await teardown(tester);
+    });
+    testWidgets('图标本来就在首屏时不滚动——别把上传入口顶出视口', (tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await pump(tester, database);
+
+      // 「餐饮」的 restaurant 是第一组第一个，一打开就看得见。
+      // 这种情况下还去滚，会把顶上的「自己的图片」上传入口推出视口——
+      // 为了露出一个本来就露着的格子，反而藏掉一个功能入口。
+      await tester.tap(find.text('餐饮'));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+
+      expect(find.text('编辑分类'), findsOneWidget);
+      expect(find.byIcon(FLucideIcons.imagePlus), findsOneWidget);
+      final upload = tester.getRect(find.byIcon(FLucideIcons.imagePlus));
+      final header = tester.getRect(find.text('自己的图片'));
+      expect(
+        upload.top,
+        greaterThanOrEqualTo(header.bottom),
+        reason: '上传格子不该被吸顶标题盖住，说明列表没有被无谓地滚动',
+      );
 
       await teardown(tester);
     });

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/database/app_database.dart';
-import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import 'stats_charts.dart';
 import 'stats_design.dart';
 
@@ -303,9 +303,13 @@ class CategoryRankRow extends StatelessWidget {
                     color: color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(11),
                   ),
-                  child: Icon(
-                    categoryIcon(item.iconKey),
+                  child: CategoryIconView(
+                    iconKey: item.iconKey,
                     size: 17,
+                    // 外层是 34 的圆角方块。图片铺满它，圆形裁剪会把
+                    // 11 的圆角一并吃掉——一颗小点看着像加载失败，
+                    // 满格的圆更接近「这是个图标」。
+                    imageSize: 34,
                     color: color,
                   ),
                 ),

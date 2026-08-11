@@ -7,7 +7,6 @@ import 'package:forui/forui.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/preferences/money_grouped.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/summary_band.dart';
@@ -466,10 +465,12 @@ class _LedgerRow extends StatelessWidget {
               height: 40,
               alignment: Alignment.center,
               decoration: BoxDecoration(color: soft, shape: BoxShape.circle),
-              child: Icon(
-                categoryIcon(item.category.iconKey),
+              child: CategoryIconView(
+                iconKey: item.category.iconKey,
                 color: color,
                 size: 21,
+                // 外层是 40 的圆底，图片铺满它。
+                imageSize: 40,
               ),
             ),
             const SizedBox(width: 12),

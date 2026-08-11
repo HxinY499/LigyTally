@@ -29,5 +29,8 @@ final backupServiceProvider = Provider<BackupService>((ref) {
 });
 
 final categoryConfigServiceProvider = Provider<CategoryConfigService>((ref) {
-  return CategoryConfigService(ref.watch(databaseProvider));
+  return CategoryConfigService(
+    ref.watch(databaseProvider),
+    ref.watch(imageStorageProvider),
+  );
 });

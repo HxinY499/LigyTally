@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/media/image_storage.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -42,17 +43,47 @@ class _CategoryManagementScreenState
   int _kind = 0;
   bool _busy = false;
   late final FPopoverController _popoverController;
+  late final AppDatabase _database;
+  late final ImageStorage _storage;
 
   @override
   void initState() {
     super.initState();
     _popoverController = FPopoverController(vsync: this);
+    // 在 initState 里取：dispose 时要用它们回收图标文件，那时读不了 ref。
+    _database = ref.read(databaseProvider);
+    _storage = ref.read(imageStorageProvider);
   }
 
   @override
   void dispose() {
     _popoverController.dispose();
+    _pruneIconFiles();
     super.dispose();
+  }
+
+  /// 离开分类管理页时，清掉所有已经没人引用的自定义图标文件。
+  ///
+  /// 为什么用「扫目录对账」而不是在每条路径上顺手删文件：需要删的场景有
+  /// 上传后又点了取消、连着换了两张只留后一张、把图片换回内置图标、
+  /// 删掉整个分类（还会连带子分类）。这些出口各不相同，逐条去记迟早漏一处，
+  /// 而漏掉的文件会一直躺在之后每一个备份包里。
+  ///
+  /// 为什么是本页的 dispose 而不是编辑面板的：面板可以连开好几次
+  /// （编完一个接着编下一个），在面板的 dispose 里扫，有机会把「上一个面板
+  /// 正在关、下一个面板刚上传的那张图」当成孤儿删掉——那张图此刻确实还没
+  /// 写进库里。等整页退出时库已经是最终状态，不存在这种中间态。
+  void _pruneIconFiles() {
+    // 不 await：页面已经在拆了。失败最坏是留一张几十 KB 的孤儿图，
+    // 下次进出这个页面会再扫一遍。
+    _database
+        .exportCategories()
+        .then(
+          (rows) => _storage.pruneCategoryIcons(
+            customIconIdsOf(rows.map((row) => row.iconKey)),
+          ),
+        )
+        .ignore();
   }
 
   void _showMessage(
@@ -84,7 +115,8 @@ class _CategoryManagementScreenState
       final confirmed = await showAppConfirmDialog(
         context,
         message:
-            '导入 ${preview.parentCount} 个一级、${preview.childCount} 个二级分类？'
+            '导入 ${preview.parentCount} 个一级、${preview.childCount} 个二级分类'
+            '${preview.iconImageCount > 0 ? '（含 ${preview.iconImageCount} 张自定义图标）' : ''}？'
             '当前分类将被替换，历史账单用到的旧分类会保留并停用',
         confirmLabel: '导入并替换',
       );
@@ -124,39 +156,41 @@ class _CategoryManagementScreenState
       body: AppTopBar(
         title: '分类管理',
         actions: [
-          IgnorePointer(
-            ignoring: _busy,
-            child: FPopoverMenu(
-              control: FPopoverControl.managed(controller: _popoverController),
-              menu: [
-                FItemGroup(
-                  children: [
-                    FItem(
-                      title: const Text('导出分类配置'),
-                      onPress: _busy
-                          ? null
-                          : () {
-                              _popoverController.hide();
-                              _exportConfig();
-                            },
-                    ),
-                    FItem(
-                      title: const Text('导入并替换配置'),
-                      onPress: _busy
-                          ? null
-                          : () {
-                              _popoverController.hide();
-                              _importConfig();
-                            },
-                    ),
-                  ],
-                ),
-              ],
-              child: AppHeaderAction(
-                icon: FLucideIcons.arrowLeftRight,
-                onTap: null,
-                enabled: !_busy,
+          // 点击必须由这里主动 toggle：forui 的 FPopoverMenu 只把 child 当锚点，
+          // 不像 Material 的 PopupMenuButton 那样帮你把 child 包成按钮
+          // （见 FPopover.defaultBuilder，它原样返回 child）。
+          // 之前这里传的是 `onTap: null` + 外层 IgnorePointer，
+          // 结果整个菜单永远打不开——图标是亮的，但点了没有任何反应。
+          FPopoverMenu(
+            control: FPopoverControl.managed(controller: _popoverController),
+            menu: [
+              FItemGroup(
+                children: [
+                  FItem(
+                    title: const Text('导出分类配置'),
+                    onPress: _busy
+                        ? null
+                        : () {
+                            _popoverController.hide();
+                            _exportConfig();
+                          },
+                  ),
+                  FItem(
+                    title: const Text('导入并替换配置'),
+                    onPress: _busy
+                        ? null
+                        : () {
+                            _popoverController.hide();
+                            _importConfig();
+                          },
+                  ),
+                ],
               ),
+            ],
+            child: AppHeaderAction(
+              icon: FLucideIcons.arrowLeftRight,
+              tooltip: '导出 / 导入分类配置',
+              onTap: _busy ? null : _popoverController.toggle,
             ),
           ),
           AppHeaderAction(
@@ -300,84 +334,86 @@ class _CategoryCard extends StatelessWidget {
               highlightColor: AppColors.pressed,
               splashColor: AppColors.ripple,
               hoverColor: AppColors.ripple,
-              child: Padding
+              child:
+                  Padding
                   // 有子分类时下内距收窄，让卡头与下方网格成为一组。
                   (
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  14,
-                  16,
-                  children.isEmpty ? 14 : 10,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        // 停用的分类整体退成灰阶：一眼能从一列卡片里
-                        // 认出「这个现在不生效」，不用去读文字徽章。
-                        color: active ? _accentSoft : AppColors.canvas,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        categoryIcon(parent.iconKey),
-                        size: 21,
-                        color: active ? _accent : AppColors.inactive,
-                      ),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      14,
+                      16,
+                      children.isEmpty ? 14 : 10,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            // 停用的分类整体退成灰阶：一眼能从一列卡片里
+                            // 认出「这个现在不生效」，不用去读文字徽章。
+                            color: active ? _accentSoft : AppColors.canvas,
+                            shape: BoxShape.circle,
+                          ),
+                          child: CategoryIconView(
+                            iconKey: parent.iconKey,
+                            size: 21,
+                            imageSize: 40,
+                            color: active ? _accent : AppColors.inactive,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Flexible(
-                                child: Text(
-                                  parent.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 15.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: active
-                                        ? AppColors.ink
-                                        : AppColors.inactive,
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      parent.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 15.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: active
+                                            ? AppColors.ink
+                                            : AppColors.inactive,
+                                      ),
+                                    ),
                                   ),
+                                  if (!active) ...[
+                                    const SizedBox(width: 8),
+                                    const _MutedBadge('已停用'),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                children.isEmpty
+                                    ? '暂无子分类'
+                                    : '${children.length} 个子分类',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.muted,
                                 ),
                               ),
-                              if (!active) ...[
-                                const SizedBox(width: 8),
-                                const _MutedBadge('已停用'),
-                              ],
                             ],
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            children.isEmpty
-                                ? '暂无子分类'
-                                : '${children.length} 个子分类',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.muted,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 8),
+                        // 用铅笔而不是 chevron：这一行的动作是「编辑」，
+                        // 不是「进入下一层」——chevron 会让人以为还有个子页面。
+                        const Icon(
+                          FLucideIcons.pencil,
+                          size: 16,
+                          color: Color(0xFFC2CBC6),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    // 用铅笔而不是 chevron：这一行的动作是「编辑」，
-                    // 不是「进入下一层」——chevron 会让人以为还有个子页面。
-                    const Icon(
-                      FLucideIcons.pencil,
-                      size: 16,
-                      color: Color(0xFFC2CBC6),
-                    ),
-                  ],
-                ),
-              ),
+                  ),
             ),
             if (children.isNotEmpty)
               Padding(
@@ -481,8 +517,8 @@ class _ChildCell extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              categoryIcon(category.iconKey),
+            CategoryIconView(
+              iconKey: category.iconKey,
               size: 24,
               color: active ? accent : AppColors.inactive,
             ),
@@ -600,10 +636,7 @@ class _DashedBorderPainter extends CustomPainter {
       ..strokeWidth = 1.2;
     final path = Path()
       ..addRRect(
-        RRect.fromRectAndRadius(
-          Offset.zero & size,
-          const Radius.circular(18),
-        ),
+        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(18)),
       );
     for (final metric in path.computeMetrics()) {
       var distance = 0.0;
@@ -646,7 +679,9 @@ class _KindBarDelegate extends SliverPersistentHeaderDelegate {
       color: AppColors.canvas,
       child: SizedBox(
         height: _height,
-        child: Center(child: _KindSwitch(kind: kind, onChanged: onChanged)),
+        child: Center(
+          child: _KindSwitch(kind: kind, onChanged: onChanged),
+        ),
       ),
     );
   }

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/media/image_storage.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/category_icons.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -70,9 +72,12 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
   static const _maxNameLength = 12;
 
   late final TextEditingController _nameController;
+  late final ImageStorage _storage;
   late String _iconKey;
   late bool _active;
   bool _busy = false;
+
+  final _picker = ImagePicker();
 
   /// 名称输入的即时错误提示（空 / 超长 / 重名）。
   String? _error;
@@ -85,8 +90,7 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
   bool get _isChild => _parentId != null;
 
   /// 收支语义色：与记账页金额卡、键盘保持一致，让人一眼知道在编哪一侧。
-  Color get _accent =>
-      widget.kind == 0 ? AppColors.expense : AppColors.income;
+  Color get _accent => widget.kind == 0 ? AppColors.expense : AppColors.income;
 
   Color get _accentSoft =>
       widget.kind == 0 ? AppColors.expenseSoft : AppColors.incomeSoft;
@@ -99,6 +103,7 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
     // 新建时给个中性默认图标，用户不选也不会拿到空图标。
     _iconKey = existing?.iconKey ?? 'other';
     _active = existing?.isActive ?? true;
+    _storage = ref.read(imageStorageProvider);
     _nameController.addListener(() {
       // 名称一改就清掉上一次的报错，不让红字赖在屏幕上。
       if (_error != null) setState(() => _error = null);
@@ -109,6 +114,60 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  /// 选一张图片作为分类图标。
+  ///
+  /// 图片当场落盘（而不是攒到点保存时再写）：预览圆片和图标网格都要立刻
+  /// 显示它，而这两处都走 [CategoryIconView] 读文件路径。用户最后没采用的
+  /// 图由分类管理页离开时的那次回收兜住（见 `_pruneIconFiles`）。
+  Future<void> _pickIconImage(ImageSource source) async {
+    final picked = await _picker.pickImage(source: source, imageQuality: 100);
+    if (picked == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final id = const Uuid().v4();
+      await _storage.storeCategoryIcon(source: picked, iconId: id);
+      if (!mounted) return;
+      HapticFeedback.selectionClick();
+      setState(() {
+        _iconKey = customCategoryIconKey(id);
+        _busy = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showAppToast(
+        context,
+        message: '图片处理失败：$error',
+        level: AppToastLevel.error,
+      );
+    }
+  }
+
+  /// 点「上传图片」格子：先问来源（拍照 / 相册），与记账页加图片同一套问法。
+  Future<void> _chooseIconImageSource() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(FLucideIcons.camera),
+              title: const Text('拍照'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(FLucideIcons.images),
+              title: const Text('从相册选择'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    await _pickIconImage(source);
   }
 
   String get _title {
@@ -193,9 +252,7 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
     );
     if (!confirmed || !mounted) return;
     setState(() => _busy = true);
-    final result = await ref
-        .read(databaseProvider)
-        .deleteCategory(category.id);
+    final result = await ref.read(databaseProvider).deleteCategory(category.id);
     if (!mounted) return;
     switch (result) {
       case CategoryDeleteResult.deleted:
@@ -258,10 +315,7 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
                 const SizedBox(height: 3),
                 Text(
                   _subtitle!,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.muted,
-                  ),
+                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
                 ),
               ],
               const SizedBox(height: 18),
@@ -278,24 +332,10 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
                 ),
               ),
               const SizedBox(height: 16),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '选择图标',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.inactive,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ),
-              ),
               // 图标很多，给一块定高滚动区：面板整体高度稳定，
               // 不会因为图标表变长就顶到屏幕顶部。
-              _IconGrid(
+              // 分组标题在这块区域内粘性吸顶，滚到哪一组都知道自己在哪。
+              _IconPicker(
                 selected: _iconKey,
                 accent: _accent,
                 accentSoft: _accentSoft,
@@ -303,9 +343,16 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
                   HapticFeedback.selectionClick();
                   setState(() => _iconKey = key);
                 },
+                onUpload: _busy ? null : _chooseIconImageSource,
+                revealSelected: _isEditing,
               ),
               if (_isEditing) ...[
-                const Divider(height: 1, thickness: 1, indent: 20, endIndent: 20),
+                const Divider(
+                  height: 1,
+                  thickness: 1,
+                  indent: 20,
+                  endIndent: 20,
+                ),
                 _ActiveRow(
                   value: _active,
                   onChanged: (value) => setState(() => _active = value),
@@ -382,7 +429,15 @@ class _NameRow extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
-              child: Icon(categoryIcon(iconKey), size: 24, color: accent),
+              // 上传的图片铺满整个 46 圆片，内置图标仍是 24 的字形。
+              // 图片在 46 的圆里只画 24，中间那圈底色会让它看起来像
+              // 「贴了张小照片」，而分类图标本身就是个圆——满格才对。
+              child: CategoryIconView(
+                iconKey: iconKey,
+                size: 24,
+                imageSize: 46,
+                color: accent,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -445,13 +500,23 @@ class _NameRow extends StatelessWidget {
   }
 }
 
-/// 图标选择网格：6 列，定高滚动。
-class _IconGrid extends StatelessWidget {
-  const _IconGrid({
+/// 图标选择器：分组标题吸顶 + 6 列网格，定高滚动。
+///
+/// 用 [CustomScrollView] 而不是单个 [GridView]：需要「标题 + 该组网格」
+/// 交替排布，且标题要粘在滚动区顶部。滚过 119 个图标时，用户随时知道
+/// 自己在「出行」还是「居家」——一片连续网格是做不到这件事的。
+///
+/// 第一组固定是「自己的图片」：上传入口必须在面板打开时就能看到，
+/// 放在末尾等于藏起来（下面还有 120 个格子要滚）。这一组只有一到两个格子，
+/// 占不到半行，成本极低。
+class _IconPicker extends StatefulWidget {
+  const _IconPicker({
     required this.selected,
     required this.accent,
     required this.accentSoft,
     required this.onSelected,
+    required this.onUpload,
+    required this.revealSelected,
   });
 
   final String selected;
@@ -459,48 +524,303 @@ class _IconGrid extends StatelessWidget {
   final Color accentSoft;
   final ValueChanged<String> onSelected;
 
+  /// 点上传格子。null 时（正在处理图片）不响应。
+  final VoidCallback? onUpload;
+
+  /// 打开时是否滚到当前选中项。
+  ///
+  /// 只有编辑已有分类时才需要——那时 [selected] 是用户当初的选择，藏在第八组
+  /// 也得让他看见。新建时 [selected] 是代码给的默认值 `other`，而它恰好在
+  /// 最后一组：真去滚就等于一打开就停在列表底部，用户既看不到上传入口，
+  /// 也会误以为「其他」是自己选的。
+  final bool revealSelected;
+
+  @override
+  State<_IconPicker> createState() => _IconPickerState();
+}
+
+class _IconPickerState extends State<_IconPicker> {
+  late final ScrollController _controller;
+
+  /// 一行 6 个，格子高 48（42 图标 + 6 行距）。
+  static const _columns = 6;
+  static const _cellExtent = 48.0;
+  static const _headerExtent = 30.0;
+  static const _viewportHeight = 208.0;
+  static const _inset = 16.0;
+
+  /// 「自己的图片」组的高度：标题 + 一行格子。
+  static const _customGroupExtent = _headerExtent + _cellExtent;
+
+  @override
+  void initState() {
+    super.initState();
+    // 编辑已有分类时，它的图标可能在第 8 组——面板一打开就该滚到那儿，
+    // 否则用户看不到当前选中项，会以为「没选过图标」。
+    _controller = ScrollController(
+      initialScrollOffset: widget.revealSelected
+          ? _offsetOf(widget.selected)
+          : 0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// 估算 [key] 所在组的滚动偏移。
+  ///
+  /// 逐组累加「标题高 + 该组行数 × 行高」即可精确算出，
+  /// 因为两者都是固定值（不像可变高度列表那样只能靠 key 定位）。
+  /// 命中后回退半个格子，让目标行不贴着吸顶标题的下沿。
+  ///
+  /// 目标本来就在首屏内时**返回 0，一格都不滚**：滚动的目的只是「让用户
+  /// 看见自己选的那个」，目标已经看得见就没有理由动。硬滚会把顶上的
+  /// 「自己的图片」上传入口推出视口——为了露出一个本来就露着的格子，
+  /// 反而藏掉一个功能入口。
+  double _offsetOf(String key) {
+    // 自定义图片就在最顶上，不用滚。
+    if (isCustomCategoryIcon(key)) return 0;
+    var offset = _customGroupExtent;
+    for (final group in categoryIconGroups) {
+      if (group.keys.contains(key)) {
+        final row = offset + _headerExtent;
+        if (row + _cellExtent <= _viewportHeight) return 0;
+        return (offset - _cellExtent / 2).clamp(0.0, double.infinity);
+      }
+      final rows = (group.keys.length / _columns).ceil();
+      offset += _headerExtent + rows * _cellExtent;
+    }
+    return 0;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final custom = widget.selected;
     return SizedBox(
-      height: 196,
-      child: GridView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 6,
-          mainAxisSpacing: 6,
-          crossAxisSpacing: 6,
-        ),
-        itemCount: categoryIconChoices.length,
-        itemBuilder: (context, index) {
-          final key = categoryIconChoices[index];
-          final isSelected = key == selected;
-          return InkWell(
-            onTap: () => onSelected(key),
-            customBorder: const CircleBorder(),
-            child: Center(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  // 选中态直接填成语义色 + 白图标，是全屏最强的一个色块，
-                  // 在 60 个格子里一眼能找到「我选的是哪个」。
-                  color: isSelected ? accent : accentSoft.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
+      height: _viewportHeight,
+      child: CustomScrollView(
+        controller: _controller,
+        slivers: [
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _IconGroupHeaderDelegate(
+              label: '自己的图片',
+              extent: _headerExtent,
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: _inset),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: _columns,
+                mainAxisExtent: _cellExtent,
+              ),
+              delegate: SliverChildListDelegate([
+                // 已选中的自定义图片也占一格并显示选中态：否则用户上传完，
+                // 网格里没有任何一格是亮的，会以为图没选上。
+                if (isCustomCategoryIcon(custom))
+                  _IconCell(
+                    key: const ValueKey('icon-cell-custom'),
+                    iconKey: custom,
+                    selected: true,
+                    accent: widget.accent,
+                    accentSoft: widget.accentSoft,
+                    onTap: () => widget.onSelected(custom),
+                  ),
+                _UploadIconCell(
+                  accent: widget.accent,
+                  accentSoft: widget.accentSoft,
+                  onTap: widget.onUpload,
                 ),
-                alignment: Alignment.center,
-                child: Icon(
-                  categoryIcon(key),
-                  size: 21,
-                  color: isSelected ? Colors.white : AppColors.muted,
+              ]),
+            ),
+          ),
+          for (final group in categoryIconGroups) ...[
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _IconGroupHeaderDelegate(
+                label: group.label,
+                extent: _headerExtent,
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: _inset),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: _columns,
+                  mainAxisExtent: _cellExtent,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  childCount: group.keys.length,
+                  (context, index) {
+                    final key = group.keys[index];
+                    return _IconCell(
+                      // key 里带上图标 key：既让 Flutter 在滚动时正确复用格子，
+                      // 也让测试能精确定位到「网格里的某个图标」——
+                      // 只按图形找会撞上页面上别处的同一个图标。
+                      key: ValueKey('icon-cell-$key'),
+                      iconKey: key,
+                      selected: key == widget.selected,
+                      accent: widget.accent,
+                      accentSoft: widget.accentSoft,
+                      onTap: () => widget.onSelected(key),
+                    );
+                  },
                 ),
               ),
             ),
-          );
-        },
+          ],
+          const SliverToBoxAdapter(child: SizedBox(height: 8)),
+        ],
       ),
     );
   }
+}
+
+/// 单个图标格子。
+class _IconCell extends StatelessWidget {
+  const _IconCell({
+    super.key,
+    required this.iconKey,
+    required this.selected,
+    required this.accent,
+    required this.accentSoft,
+    required this.onTap,
+  });
+
+  final String iconKey;
+  final bool selected;
+  final Color accent;
+  final Color accentSoft;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final custom = isCustomCategoryIcon(iconKey);
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            // 选中态直接填成语义色 + 白图标，是这块区域里最强的一个色块，
+            // 在上百个格子里一眼能找到「我选的是哪个」。
+            color: selected ? accent : accentSoft.withValues(alpha: 0.5),
+            shape: BoxShape.circle,
+            // 图片铺满格子后底色被完全盖住，选中态就没了着力点，
+            // 改用一圈语义色描边来表达（与图片本身的颜色也不会打架）。
+            border: custom && selected
+                ? Border.all(color: accent, width: 2.5)
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: CategoryIconView(
+            iconKey: iconKey,
+            size: 21,
+            imageSize: 42,
+            color: selected ? Colors.white : AppColors.muted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「上传图片」格子：虚线圈 + 加号，形态上就是个空位。
+///
+/// 刻意不做成实心圆片：它不是一个可选的图标，而是一个动作。
+/// 与分类管理页末尾那张虚线「新建一级分类」卡是同一套语言。
+class _UploadIconCell extends StatelessWidget {
+  const _UploadIconCell({
+    required this.accent,
+    required this.accentSoft,
+    required this.onTap,
+  });
+
+  final Color accent;
+  final Color accentSoft;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Tooltip(
+      message: '上传图片作为图标',
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Center(
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: accentSoft.withValues(alpha: 0.25),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: enabled ? accent : AppColors.line,
+                width: 1.2,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              FLucideIcons.imagePlus,
+              size: 19,
+              color: enabled ? accent : AppColors.inactive,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 吸顶的分组标题。
+///
+/// 必须自己铺不透明底色：pinned 的 header 悬在网格之上，
+/// 透明底会让下面滚动的图标从字缝里穿过去。
+class _IconGroupHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _IconGroupHeaderDelegate({required this.label, required this.extent});
+
+  final String label;
+  final double extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+      alignment: Alignment.bottomLeft,
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: AppColors.inactive,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+
+  @override
+  double get maxExtent => extent;
+
+  @override
+  double get minExtent => extent;
+
+  @override
+  bool shouldRebuild(covariant _IconGroupHeaderDelegate oldDelegate) =>
+      oldDelegate.label != label || oldDelegate.extent != extent;
 }
 
 /// 编辑态的「启用」开关行。
