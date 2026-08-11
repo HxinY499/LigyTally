@@ -38,6 +38,9 @@ class TransactionEditor extends ConsumerStatefulWidget {
 
 class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   late final TextEditingController _noteController;
+
+  /// 备注框焦点。聚焦 = 系统键盘接管输入，数字键盘该主动让位。
+  final FocusNode _noteFocus = FocusNode();
   final ImagePicker _picker = ImagePicker();
   final List<XFile> _pendingImages = [];
   final List<TransactionImageEntry> _existingImages = [];
@@ -80,6 +83,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         ? ''
         : (transaction.amountCents / 100).toStringAsFixed(2);
     _noteController = TextEditingController(text: transaction?.note ?? '');
+    _noteFocus.addListener(() {
+      if (mounted) setState(() {});
+    });
     if (transaction != null) {
       Future<void>(() async {
         final images = await ref
@@ -99,6 +105,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   void dispose() {
     _backdropTimer?.cancel();
     _noteController.dispose();
+    _noteFocus.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -508,82 +515,93 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             title: _isEditing ? '编辑账单' : '记一笔',
             body: SafeArea(
               top: false,
-              child: Column(
-                children: [
-                  Expanded(
-                    child: ListView(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      children: [
-                        _KindSwitch(
-                          kind: _kind,
-                          onChanged: (value) {
-                            HapticFeedback.selectionClick();
-                            setState(() {
-                              _kind = value;
-                              _categoryId = null;
-                              _prefilledCategory = false;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 14),
-                        _AmountCard(
-                          expression: _amountExpr,
-                          amountValue: _amountValue,
-                          kind: _kind,
-                          grouped: grouped,
-                        ),
-                        const SizedBox(height: 22),
-                        const _SectionTitle(title: '分类'),
-                        const SizedBox(height: 10),
-                        StreamBuilder<List<CategoryEntry>>(
-                          stream: database.watchCategories(_kind),
-                          builder: (context, snapshot) {
-                            final categories =
-                                snapshot.data ?? const <CategoryEntry>[];
-                            if (categories.isEmpty) {
-                              return const SizedBox(
-                                height: 72,
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
+              // 键盘区显示与否由两个条件把关，各管一头，见 _NumericKeypad 类文档：
+              // 备注没聚焦（要不要留）、剩余高度够不够（能不能留）。
+              child: LayoutBuilder(
+                builder: (context, constraints) => Column(
+                  children: [
+                    Expanded(
+                      child: ListView(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        children: [
+                          // 收支开关与「分类」同行：它切的就是下面这张网格，
+                          // 摆在一起从属关系自明，也省下独占一行的高度。
+                          Row(
+                            children: [
+                              const _SectionTitle(title: '分类'),
+                              const Spacer(),
+                              _KindSwitch(
+                                kind: _kind,
+                                onChanged: (value) {
+                                  HapticFeedback.selectionClick();
+                                  setState(() {
+                                    _kind = value;
+                                    _categoryId = null;
+                                    _prefilledCategory = false;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          StreamBuilder<List<CategoryEntry>>(
+                            stream: database.watchCategories(_kind),
+                            builder: (context, snapshot) {
+                              final categories =
+                                  snapshot.data ?? const <CategoryEntry>[];
+                              if (categories.isEmpty) {
+                                return const SizedBox(
+                                  height: 72,
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              }
+                              _prefillLastCategory(categories);
+                              return _CategoryPicker(
+                                categories: categories,
+                                selectedId: _categoryId,
+                                accent: accent,
+                                onSelected: _onCategorySelected,
                               );
-                            }
-                            _prefillLastCategory(categories);
-                            return _CategoryPicker(
-                              categories: categories,
-                              selectedId: _categoryId,
-                              accent: accent,
-                              onSelected: _onCategorySelected,
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                      ],
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
                     ),
-                  ),
-                  // 日期/时刻 + 备注/图片条 + 自定义键盘常驻底部，不随焦点消失；
-                  // 备注框聚焦时系统键盘会把整个面板顶上去。
-                  _NumericKeypad(
-                    accent: accent,
-                    canSave: _canSave,
-                    saving: _saving,
-                    noteController: _noteController,
-                    date: _date,
-                    time: _time,
-                    onPickDate: _selectDate,
-                    onPickTime: _selectTime,
-                    imageCount: _visibleImageCount,
-                    imagePreview: imagePreview,
-                    onImageTap: _showImageSheet,
-                    onInput: _onKeypadInput,
-                    onClear: _clearAmount,
-                    onSave: _canSave && !_saving ? () => _save() : null,
-                    onSaveContinue: _canSave && !_saving && !_isEditing
-                        ? () => _save(continueAfter: true)
-                        : null,
-                  ),
-                ],
+                    // 金额显示 + 日期/时刻 + 备注/图片条 + 数字键盘合成一块常驻输入面板。
+                    _NumericKeypad(
+                      showKeys:
+                          !_noteFocus.hasFocus &&
+                          constraints.maxHeight >=
+                              _NumericKeypad.heightWithKeys,
+                      expression: _amountExpr,
+                      noteFocus: _noteFocus,
+                      amountValue: _amountValue,
+                      kind: _kind,
+                      grouped: grouped,
+                      accent: accent,
+                      canSave: _canSave,
+                      saving: _saving,
+                      noteController: _noteController,
+                      date: _date,
+                      time: _time,
+                      onPickDate: _selectDate,
+                      onPickTime: _selectTime,
+                      imageCount: _visibleImageCount,
+                      imagePreview: imagePreview,
+                      onImageTap: _showImageSheet,
+                      onInput: _onKeypadInput,
+                      onClear: _clearAmount,
+                      onSave: _canSave && !_saving ? () => _save() : null,
+                      onSaveContinue: _canSave && !_saving && !_isEditing
+                          ? () => _save(continueAfter: true)
+                          : null,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -967,12 +985,13 @@ class _ChildrenPanel extends StatefulWidget {
 
 class _ChildrenPanelState extends State<_ChildrenPanel>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    duration: const Duration(milliseconds: 260),
-    reverseDuration: const Duration(milliseconds: 200),
-    vsync: this,
-    value: widget.visible ? 1 : 0,
-  );
+  /// 必须在 [initState] 里建，不能靠 `late final` 的惰性初始化。
+  ///
+  /// 网格模式下每行都常挂一个面板槽，没展开的那些行 [build] 会因 children 为空
+  /// 提前返回，`_controller` 一次都不会被读到。等页面销毁时 [dispose] 里那句
+  /// `_controller.dispose()` 成了首次访问，才去构造 [AnimationController] ——
+  /// 而它要通过 context 查 [TickerMode]，此时 element 已经 deactivate，直接断言失败。
+  late final AnimationController _controller;
 
   late final Animation<double> _expand = CurvedAnimation(
     parent: _controller,
@@ -985,6 +1004,17 @@ class _ChildrenPanelState extends State<_ChildrenPanel>
     curve: const Interval(0.15, 1, curve: Curves.easeOut),
     reverseCurve: const Interval(0.4, 1, curve: Curves.easeIn),
   );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 260),
+      reverseDuration: const Duration(milliseconds: 200),
+      vsync: this,
+      value: widget.visible ? 1 : 0,
+    );
+  }
 
   @override
   void didUpdateWidget(covariant _ChildrenPanel oldWidget) {
@@ -1092,10 +1122,13 @@ class _SectionTitle extends StatelessWidget {
 
 /// 支出/收入胶囊开关：滑块式白底选中块 + 收支语义色文字。
 ///
-/// 刻意**不撑满一行**：它只是个二选一的类型开关，信息量远小于下面的金额卡与
-/// 分类网格。之前满宽 + 10px 竖向内距，视觉重量压过了真正的主角（金额），
-/// 一进页面眼睛先被它抓住。改成 [_kHeight] 高、内容宽度的小胶囊并居中，
-/// 层级立刻回到「金额 > 分类 > 类型开关」。
+/// 刻意**不撑满一行**：它只是个二选一的类型开关，信息量远小于金额与分类网格。
+/// 之前满宽 + 10px 竖向内距，视觉重量压过了真正的主角（金额），一进页面眼睛
+/// 先被它抓住。改成 [_kHeight] 高、内容宽度的小胶囊，层级才回到
+/// 「金额 > 分类 > 类型开关」。
+///
+/// 宽度由 [_kSegmentWidth] 定死、不做居中或拉伸 —— 摆在哪由调用方决定
+/// （现在是「分类」标题行的右端）。自带 [Center] 会在 Row 里撑满剩余宽度。
 class _KindSwitch extends StatelessWidget {
   const _KindSwitch({required this.kind, required this.onChanged});
 
@@ -1114,65 +1147,63 @@ class _KindSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selectedColor = kind == 0 ? AppColors.expense : AppColors.income;
-    return Center(
-      child: SizedBox(
-        height: _kHeight,
-        width: _kSegmentWidth * 2 + _kPadding * 2,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppColors.line.withValues(alpha: 0.35),
-            borderRadius: BorderRadius.circular(_kHeight / 2),
-          ),
-          child: Stack(
-            children: [
-              // 滑块：一块白底在两段之间滑动。用位移而不是「两个段各自淡入淡出
-              // 背景」，切换才有连贯的运动感，也不会在中途出现两块白。
-              AnimatedAlign(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                alignment: kind == 0
-                    ? Alignment.centerLeft
-                    : Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(_kPadding),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOut,
-                    width: _kSegmentWidth,
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(
-                        (_kHeight - _kPadding * 2) / 2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: selectedColor.withValues(alpha: 0.16),
-                          blurRadius: 5,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
+    return SizedBox(
+      height: _kHeight,
+      width: _kSegmentWidth * 2 + _kPadding * 2,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.line.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(_kHeight / 2),
+        ),
+        child: Stack(
+          children: [
+            // 滑块：一块白底在两段之间滑动。用位移而不是「两个段各自淡入淡出
+            // 背景」，切换才有连贯的运动感，也不会在中途出现两块白。
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: kind == 0
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.all(_kPadding),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOut,
+                  width: _kSegmentWidth,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(
+                      (_kHeight - _kPadding * 2) / 2,
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: selectedColor.withValues(alpha: 0.16),
+                        blurRadius: 5,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              Row(
-                children: [
-                  _KindSegment(
-                    label: '支出',
-                    color: AppColors.expense,
-                    selected: kind == 0,
-                    onTap: () => onChanged(0),
-                  ),
-                  _KindSegment(
-                    label: '收入',
-                    color: AppColors.income,
-                    selected: kind == 1,
-                    onTap: () => onChanged(1),
-                  ),
-                ],
-              ),
-            ],
-          ),
+            ),
+            Row(
+              children: [
+                _KindSegment(
+                  label: '支出',
+                  color: AppColors.expense,
+                  selected: kind == 0,
+                  onTap: () => onChanged(0),
+                ),
+                _KindSegment(
+                  label: '收入',
+                  color: AppColors.income,
+                  selected: kind == 1,
+                  onTap: () => onChanged(1),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -1247,15 +1278,27 @@ class AmountCardForTest extends StatelessWidget {
   );
 }
 
-/// hero 金额卡片：只读展示，输入通过底部常驻的自定义数字键盘。
+/// 输入面板顶部的金额显示条：只读展示，输入来自同一面板下方的数字键盘。
+///
+/// ## 形态：显示屏，不是卡片
+///
+/// 它曾是滚动区里一张独立的白底圆角卡（带语义色描边），因为孤悬在内容流中
+/// 需要自证边界。现在它和日期条、备注、按键同属一块 [_NumericKeypad] 面板，
+/// 再留圆角描边就成了「面板里套卡片」，视觉更碎。所以改成**通栏白条**：
+/// 无圆角无描边，靠与下方 [AppColors.canvas] 灰底的色差自然分区，
+/// 就是计算器「上显示屏、下键盘」的经典关系。
+///
+/// 描边原先还兼职「有值时点亮语义色」的反馈，去掉后由大数字本身和光标承担
+/// ——它们本来就是语义色，反馈没有丢。
 ///
 /// ## 层级：结果是主角，过程是配角
 ///
 /// 旧版把 28px 大字给了**表达式**（过程）、12px 灰字给了**合计**（结果），
 /// 而记账真正要确认的是「这笔到底多少钱」——重量分配是反的。
 /// 现在含运算符时：表达式退到上方一行小字，合计升为大字主角；
-/// 不含运算符时（绝大多数场景）仍是单行大字，**且卡片高度与含运算符时一致**，
-/// 靠固定 [_kBodyHeight] 撑住，避免按下「+」时整张卡忽然长高、下面分类网格跟着跳。
+/// 不含运算符时（绝大多数场景）仍是单行大字，**且总高与含运算符时一致**，
+/// 靠固定 [_kBodyHeight] 撑住。高度一变，整块输入面板会随按键上下跳
+/// （搬进面板前的后果是下面的分类网格跳，约束没变，只是代价更大了）。
 ///
 /// ## 溢出：截头留尾，而不是省略号截尾
 ///
@@ -1278,11 +1321,12 @@ class _AmountCard extends StatelessWidget {
   /// 是否千分位分组，跟随全局 `moneyGrouped` 偏好。
   final bool grouped;
 
-  /// 主数字行的固定高度。锁死它，切换「有无运算符」时卡片总高不变。
+  /// 主数字行的固定高度。锁死它，切换「有无运算符」时总高不变。
+  /// 40 是 28px 大字（headlineMedium）加行高后的下限，不能再压。
   static const double _kBodyHeight = 40;
 
   /// 辅助行（表达式 / 提示语）固定高度，同样为了稳定总高。
-  static const double _kHintHeight = 18;
+  static const double _kHintHeight = 16;
 
   @override
   Widget build(BuildContext context) {
@@ -1303,20 +1347,9 @@ class _AmountCard extends StatelessWidget {
         : (hasExpr ? amountColor : AppColors.line);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          // 键盘常驻 = 这张卡永远是聚焦态，高饱和描边一直「喊」反而吵。
-          // 有值时才点亮到语义色，空态退成普通灰描边。
-          //
-          // 只换颜色、**不换宽度**：描边宽度参与布局，1 → 1.5 会让整张卡在按下
-          // 第一位数字时长高 1px，把下面的分类网格顶一下（已被高度测试拦到）。
-          color: hasExpr ? amountColor : AppColors.line,
-          width: 1.5,
-        ),
-      ),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      color: AppColors.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -1693,11 +1726,16 @@ class _SheetAddTile extends StatelessWidget {
   }
 }
 
-/// 键盘顶栏的备注输入框：唤起系统键盘，面板整体被顶上去。
+/// 面板中部的备注输入框：唤起系统键盘，面板整体被顶上去，数字键盘同时收起。
+///
+/// 键盘右下角固定为「完成」（[TextInputAction.done]）而不是换行——备注是单行，
+/// 且这是收起系统键盘、让数字键盘和保存键回来的主出口。次出口是点金额显示条。
+/// 没有出口的话，用户打完备注得先在面板外找地方点一下才能保存。
 class _NoteField extends StatelessWidget {
-  const _NoteField({required this.controller});
+  const _NoteField({required this.controller, required this.focusNode});
 
   final TextEditingController controller;
+  final FocusNode focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -1707,6 +1745,9 @@ class _NoteField extends StatelessWidget {
     );
     return TextField(
       controller: controller,
+      focusNode: focusNode,
+      textInputAction: TextInputAction.done,
+      onSubmitted: (_) => FocusScope.of(context).unfocus(),
       maxLength: 200,
       maxLines: 1,
       style: const TextStyle(fontSize: 14, color: AppColors.ink),
@@ -1796,14 +1837,41 @@ class _ImageEntry extends StatelessWidget {
   }
 }
 
-/// 底部常驻面板：日期/时刻条 + 备注/图片条 + 自定义数字键盘。
+/// 底部常驻输入面板：金额显示条 + 日期/时刻条 + 备注/图片条 + 数字键盘。
+///
+/// 金额显示与键盘本是一个逻辑控件，早期却被拆在页面两端（金额卡在滚动区顶部、
+/// 键盘钉在底部），眼睛要在屏幕上下两头来回跑才能确认「按下去的数字进了哪」。
+/// 现在合成一块：显示条通栏白底当「显示屏」，其余部分灰底当「键盘」，
+/// 输入与反馈落在同一个拇指可达的区域内。
 ///
 /// 固定高度布局（不用纵向 Expanded）——它被放在 Column 里、高度约束无界，
 /// 用 Expanded 会因无法确定高度而崩溃。每行固定 [_keyHeight]。
-/// 键盘始终显示、不会消失；记账场景常见「多笔相加」，加减直接在键盘算，
-/// 金额卡实时显示合计。按键强调色跟随收支类型（支出红 / 收入绿）。
+/// 数字键盘常驻、不随金额输入消失；记账场景常见「多笔相加」，加减直接在键盘算，
+/// 显示条实时给出合计。按键强调色跟随收支类型（支出红 / 收入绿）。
+///
+/// 键盘区（[showKeys]）由调用方用两个条件把关，缺一不可：
+///
+/// 1. **备注没聚焦**——聚焦时输入已被系统键盘接管，数字键盘不但用不上，
+///    还会把分类网格挤没。这条管「要不要留」，是体验。
+/// 2. **剩余高度 >= [heightWithKeys]**——面板在 Column 里是固定高度，
+///    上方 `Expanded` 收缩到 0 之后无处可让，装不下就是 RenderFlex overflow。
+///    这条管「能不能留」，是正确性。
+///
+/// 少了第 1 条，大屏上（系统键盘吃掉 300 后仍然装得下）两套键盘会同时堆在
+/// 屏幕上。少了第 2 条，失焦的瞬间键盘区会立刻装回来，而此时系统键盘还在
+/// 下滑、空间尚未归还，小屏上那一帧就是黄黑条。
+///
+/// 高度判断刻意落在「装不装得下」而不是「系统键盘是否弹起」：前者与布局同帧
+/// 成立，后者要追 viewInsets 的变化时序，中间必然出现「空间已经变小、键盘区
+/// 还没撤」的帧。也因此收起过程不能加高度动画——动画的中间高度同样会撞上限。
 class _NumericKeypad extends StatelessWidget {
   const _NumericKeypad({
+    required this.showKeys,
+    required this.noteFocus,
+    required this.expression,
+    required this.amountValue,
+    required this.kind,
+    required this.grouped,
     required this.accent,
     required this.canSave,
     required this.saving,
@@ -1820,6 +1888,24 @@ class _NumericKeypad extends StatelessWidget {
     required this.onSave,
     required this.onSaveContinue,
   });
+
+  /// 是否渲染数字键盘区。见类文档里的两个把关条件。
+  final bool showKeys;
+
+  /// 备注框的焦点。挂到 [_NoteField] 上，供上层判断是否该收起键盘区。
+  final FocusNode noteFocus;
+
+  /// 金额表达式原文（可含 + −），交给显示条排版。
+  final String expression;
+
+  /// 表达式求值结果，含运算符时作为主数字显示。
+  final double amountValue;
+
+  /// 收支类型：0 支出 / 1 收入。显示条按它取语义色。
+  final int kind;
+
+  /// 是否千分位分组，跟随全局 `moneyGrouped` 偏好。
+  final bool grouped;
 
   /// 收支语义色：支出红 / 收入绿，用于符号键与保存键。
   final Color accent;
@@ -1845,6 +1931,19 @@ class _NumericKeypad extends StatelessWidget {
   static const double _keyHeight = 52;
   static const double _gap = 6;
 
+  /// 键盘区自身的高度：4 行按键 + 3 道行距 + 底部留白。
+  static const double _keysHeight = _keyHeight * 4 + _gap * 3 + 10;
+
+  /// 面板去掉键盘区后的高度：显示条 72 + 日期条约 38 + 备注行 62。
+  ///
+  /// 日期胶囊的高度由文字度量决定、不是写死的，所以这里取的是含余量的估值；
+  /// 估小了会导致「判断说装得下、实际差几个像素」，因此宁可往大了算。
+  static const double _panelBaseHeight = 180;
+
+  /// 完整面板（含键盘区）需要的高度。低于它就必须收起键盘区，
+  /// 否则 Column 溢出。test/transaction_editor_test.dart 锁住这条。
+  static const double heightWithKeys = _panelBaseHeight + _keysHeight;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1855,6 +1954,18 @@ class _NumericKeypad extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 金额显示屏。整条可点 = 收起系统键盘，让数字键盘回来——
+          // 备注打完字后回到记账主流程的最短路径，也强化「显示条属于输入面板」。
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: _AmountCard(
+              expression: expression,
+              amountValue: amountValue,
+              kind: kind,
+              grouped: grouped,
+            ),
+          ),
           // 日期 / 时刻：放在备注上方，与输入区同层，随手可改。
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
@@ -1870,7 +1981,12 @@ class _NumericKeypad extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: Row(
               children: [
-                Expanded(child: _NoteField(controller: noteController)),
+                Expanded(
+                  child: _NoteField(
+                    controller: noteController,
+                    focusNode: noteFocus,
+                  ),
+                ),
                 const SizedBox(width: 10),
                 _ImageEntry(
                   count: imageCount,
@@ -1880,55 +1996,60 @@ class _NumericKeypad extends StatelessWidget {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _keyRow(const ['7', '8', '9', 'back']),
-                const SizedBox(height: _gap),
-                _keyRow(const ['4', '5', '6', '-']),
-                const SizedBox(height: _gap),
-                _keyRow(const ['1', '2', '3', '+']),
-                const SizedBox(height: _gap),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: _keyHeight,
-                        child: _AgainKey(onTap: onSaveContinue),
-                      ),
-                    ),
-                    const SizedBox(width: _gap),
-                    Expanded(
-                      child: SizedBox(
-                        height: _keyHeight,
-                        child: _NumKey(value: '0', onTap: () => onInput('0')),
-                      ),
-                    ),
-                    const SizedBox(width: _gap),
-                    Expanded(
-                      child: SizedBox(
-                        height: _keyHeight,
-                        child: _NumKey(value: '.', onTap: () => onInput('.')),
-                      ),
-                    ),
-                    const SizedBox(width: _gap),
-                    Expanded(
-                      child: SizedBox(
-                        height: _keyHeight,
-                        child: _SaveKey(
-                          accent: accent,
-                          enabled: canSave,
-                          loading: saving,
-                          onTap: onSave,
-                        ),
-                      ),
-                    ),
-                  ],
+          if (showKeys) _keys(),
+        ],
+      ),
+    );
+  }
+
+  /// 数字键盘区。空间不够时整块从面板里摘掉，理由见类文档。
+  Widget _keys() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _keyRow(const ['7', '8', '9', 'back']),
+          const SizedBox(height: _gap),
+          _keyRow(const ['4', '5', '6', '-']),
+          const SizedBox(height: _gap),
+          _keyRow(const ['1', '2', '3', '+']),
+          const SizedBox(height: _gap),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: _keyHeight,
+                  child: _AgainKey(onTap: onSaveContinue),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: _gap),
+              Expanded(
+                child: SizedBox(
+                  height: _keyHeight,
+                  child: _NumKey(value: '0', onTap: () => onInput('0')),
+                ),
+              ),
+              const SizedBox(width: _gap),
+              Expanded(
+                child: SizedBox(
+                  height: _keyHeight,
+                  child: _NumKey(value: '.', onTap: () => onInput('.')),
+                ),
+              ),
+              const SizedBox(width: _gap),
+              Expanded(
+                child: SizedBox(
+                  height: _keyHeight,
+                  child: _SaveKey(
+                    accent: accent,
+                    enabled: canSave,
+                    loading: saving,
+                    onTap: onSave,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
