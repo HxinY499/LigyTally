@@ -24,35 +24,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _busy = false;
 
-  Future<String?> _askPassword(String title) async {
-    final controller = TextEditingController();
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          decoration: const InputDecoration(
-            labelText: '密码',
-            hintText: '留空表示不加密',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('继续'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    return value;
-  }
+  Future<String?> _askPassword(String title) =>
+      showAppPasswordDialog(context, title: title);
 
   Future<void> _exportBackup() async {
     final password = await _askPassword('导出完整备份');
@@ -77,29 +50,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       final preview = await service.inspect(file, password: password);
       if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('覆盖当前数据'),
-          content: Text(
+      // 与密码弹窗同一套视觉，别让同一条流程里出现两种长相的弹窗。
+      final confirmed = await showAppConfirmDialog(
+        context,
+        message:
             '备份包含 ${preview.transactionCount} 笔账单和 '
             '${preview.imageCount} 张图片'
             '${preview.categoryIconCount > 0 ? '、${preview.categoryIconCount} 个自定义分类图标' : ''}。'
             '恢复后当前数据将被替换。',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('恢复'),
-            ),
-          ],
-        ),
+        confirmLabel: '恢复',
       );
-      if (confirmed == true) {
+      if (confirmed) {
         await service.restore(file, password: password);
         if (mounted) _showMessage('数据恢复完成', level: AppToastLevel.success);
       }

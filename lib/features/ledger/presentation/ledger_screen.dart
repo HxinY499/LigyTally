@@ -867,11 +867,27 @@ class _MonthPickerDialogState extends State<_MonthPickerDialog> {
                     ),
                   ),
                 ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text(
-                    '取消',
-                    style: TextStyle(fontSize: 15, color: AppColors.ink),
+                const SizedBox(height: 8),
+                // 与「确定」同宽同高：一长一短会看着像没对齐，
+                // 也和 showAppConfirmDialog 的按钮区保持一致。
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.ink,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                    ),
+                    child: const Text(
+                      '取消',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ),
               ],
