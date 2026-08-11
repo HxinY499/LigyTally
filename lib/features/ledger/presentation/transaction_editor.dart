@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,12 +9,14 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/media/image_storage.dart';
+import '../../../core/preferences/backdrop_blur.dart';
 import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/last_category.dart';
 import '../../../core/preferences/money_grouped.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../../shared/widgets/image_backdrop.dart';
 import '../../../shared/widgets/local_image.dart';
 import '../application/amount_expression.dart';
 import '../application/providers.dart';
@@ -41,6 +43,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   final List<TransactionImageEntry> _existingImages = [];
   final Set<String> _removedImageIds = {};
   final ScrollController _scrollController = ScrollController();
+
+  /// 背板当前展示第几张图（多图时由 [_backdropTimer] 推着走）。
+  int _backdropIndex = 0;
+  Timer? _backdropTimer;
 
   /// 金额表达式（可含+ −），例如 "3.5+7"。展示与计算都基于它。
   String _amountExpr = '';
@@ -79,13 +85,19 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         final images = await ref
             .read(databaseProvider)
             .imagesFor(transaction.id);
-        if (mounted) setState(() => _existingImages.addAll(images));
+        if (mounted) {
+          setState(() {
+            _existingImages.addAll(images);
+            _restartBackdropRotation();
+          });
+        }
       });
     }
   }
 
   @override
   void dispose() {
+    _backdropTimer?.cancel();
     _noteController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -97,21 +109,22 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           .length +
       _pendingImages.length;
 
-  /// 铺在页面背板上的图片，与顶栏缩略图取同一张（最新待上传 > 最后一张已有）。
+  /// 可以铺到页面背板上的图，顺序与图片面板一致（已有图在前，新选的在后）。
   ///
   /// 解码宽度压到 [_kBackdropDecodeWidth]：这一层会被高斯模糊 + 渐隐吃掉细节，
   /// 按原始分辨率解码只是白白占内存。已有图片走 [ImageStorage.resolveSyncPath]
   /// 的同步缓存，避免异步 resolve 让背板晚一帧闪进来。
-  ImageProvider? get _backdropImage {
-    if (_pendingImages.isNotEmpty) {
-      return _resized(File(_pendingImages.last.path));
-    }
-    for (final image in _existingImages.reversed) {
+  List<ImageProvider> get _backdropImages {
+    final images = <ImageProvider>[];
+    for (final image in _existingImages) {
       if (_removedImageIds.contains(image.id)) continue;
       final path = ImageStorage.resolveSyncPath(image.thumbnailPath);
-      return path == null ? null : _resized(File(path));
+      if (path != null) images.add(_resized(File(path)));
     }
-    return null;
+    for (final image in _pendingImages) {
+      images.add(_resized(File(image.path)));
+    }
+    return images;
   }
 
   ImageProvider _resized(File file) => ResizeImage(
@@ -119,6 +132,20 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     width: _kBackdropDecodeWidth,
     allowUpscaling: false,
   );
+
+  /// 图片增删后重排背板轮播：只有一张不转，多张从第一张重新开始。
+  ///
+  /// 索引只增不回绕，取图时再对当前张数取模——这样删图导致张数变化时
+  /// 也不会越界，不用在每个增删入口同步维护索引。
+  void _restartBackdropRotation() {
+    _backdropTimer?.cancel();
+    _backdropTimer = null;
+    _backdropIndex = 0;
+    if (_visibleImageCount < 2) return;
+    _backdropTimer = Timer.periodic(_kBackdropRotateInterval, (_) {
+      if (mounted) setState(() => _backdropIndex++);
+    });
+  }
 
   /// 新建账单时预选「上次在该收支类型下选的分类」。
   void _prefillLastCategory(List<CategoryEntry> categories) {
@@ -352,7 +379,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         },
       ),
     );
-    if (mounted) setState(() {});
+    if (mounted) setState(_restartBackdropRotation);
   }
 
   Future<void> _selectDate() async {
@@ -412,6 +439,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           _pendingImages.clear();
           _existingImages.clear();
           _removedImageIds.clear();
+          _restartBackdropRotation();
         });
         showAppToast(
           context,
@@ -441,6 +469,11 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final accent = _kind == 0 ? AppColors.expense : AppColors.income;
     // 金额卡的千分位跟随全局偏好，与明细页 / 统计页的 formatMoney 保持一致。
     final grouped = ref.watch(moneyGroupedProvider);
+    // 多图时轮流当背板：索引由定时器推进，这里对当前张数取模。
+    final backdrops = _backdropImages;
+    final backdrop = backdrops.isEmpty
+        ? null
+        : backdrops[_backdropIndex % backdrops.length];
 
     // 顶栏图片入口的缩略图：优先最新待上传，其次已有图片。
     Widget? imagePreview;
@@ -466,7 +499,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          _ImageBackdrop(image: _backdropImage),
+          ImageBackdrop(
+            image: backdrop,
+            blurSigma: ref.watch(backdropBlurProvider),
+          ),
           AppTopBar(
             backgroundColor: Colors.transparent,
             title: _isEditing ? '编辑账单' : '记一笔',
@@ -557,74 +593,11 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   }
 }
 
-/// 账单图片铺成的页面背板。
-///
-/// 不直接把照片当墙纸：先按 [_kBackdropBlurSigma] 做高斯模糊，再用竖直方向的
-/// 透明度渐变把它从顶部化开、在页面中段完全隐入 canvas 底色。照片只留下色调
-/// 与光影，深色正文与白色卡片的可读性不受它影响；底部键盘区仍是纯色。
-class _ImageBackdrop extends StatelessWidget {
-  const _ImageBackdrop({required this.image});
-
-  /// 为 null 时不画任何东西，露出 Scaffold 的 canvas 底色。
-  final ImageProvider? image;
-
-  @override
-  Widget build(BuildContext context) {
-    final image = this.image;
-    return IgnorePointer(
-      // 换图与首帧都走淡入，避免编辑页异步读出图片后背板突然砸下来。
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 280),
-        // 默认 layoutBuilder 给的是松约束，图会缩成固有大小杵在页面正中。
-        // 背板必须吃满整页，渐变的起止位置才对得上页面。
-        layoutBuilder: (current, previous) => Stack(
-          fit: StackFit.expand,
-          children: [...previous, ?current],
-        ),
-        child: image == null
-            ? const SizedBox.shrink()
-            // 键盘每按一下都会重建整页；隔离出去省掉背板的模糊重绘。
-            : RepaintBoundary(
-                key: ValueKey(image),
-                child: ShaderMask(
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (rect) => LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.white.withValues(alpha: _kBackdropMaxOpacity),
-                      Colors.white.withValues(
-                        alpha: _kBackdropMaxOpacity * 0.5,
-                      ),
-                      Colors.white.withValues(alpha: 0),
-                    ],
-                    stops: const [0, 0.34, 0.66],
-                  ).createShader(rect),
-                  child: ImageFiltered(
-                    imageFilter: ui.ImageFilter.blur(
-                      sigmaX: _kBackdropBlurSigma,
-                      sigmaY: _kBackdropBlurSigma,
-                    ),
-                    child: Image(
-                      image: image,
-                      fit: BoxFit.cover,
-                      alignment: Alignment.topCenter,
-                    ),
-                  ),
-                ),
-              ),
-      ),
-    );
-  }
-}
-
 /// 背板图的解码宽度。模糊后细节全丢，再高只是多占内存。
 const int _kBackdropDecodeWidth = 480;
 
-/// 背板图顶部的最大不透明度。再高会压掉 [AppColors.ink] 正文的对比度。
-const double _kBackdropMaxOpacity = 0.4;
-
-const double _kBackdropBlurSigma = 24;
+/// 多图时每张背板停留的时长。
+const _kBackdropRotateInterval = Duration(seconds: 4);
 
 class _CategoryPicker extends ConsumerStatefulWidget {
   const _CategoryPicker({

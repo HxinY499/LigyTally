@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import 'category_transactions_sheet.dart';
 import 'stats_charts.dart';
 import 'stats_design.dart';
 
 /// 分类构成卡的内容：环形图 + 图例 + 排行榜。
 ///
 /// 相比原实现的结构性改动：
-/// - 环形图与图例改为「点选联动」：点扇区高亮对应排行行，反之亦然
+/// - 环形图与图例「点选联动」：点扇区高亮对应排行行，反之亦然
+/// - 排行行点击是**下钻**：弹出该分类的账单明细面板，不参与选中态。
+///   汇总层已经有环形图 + 图例两处可以点选高亮，排行再做第三处等于
+///   把用户锁在汇总层——看到某个分类偏高，下一步想问的是「哪几笔」
 /// - 排行行重排为「图标 → 名称/进度条 → 金额/占比」，金额右对齐成一列，
 ///   原来金额和名称同行、进度条横跨整行，扫读时找不到数字在哪一列
 /// - 排行默认只展开前 6 项，超出折叠，避免分类多时卡片长到失控
@@ -20,6 +25,8 @@ class CategoryComposition extends StatefulWidget {
     required this.totals,
     required this.kind,
     required this.grouped,
+    required this.range,
+    required this.rangeLabel,
   });
 
   final List<CategoryTotal> totals;
@@ -28,6 +35,12 @@ class CategoryComposition extends StatefulWidget {
   final int kind;
 
   final bool grouped;
+
+  /// 当前统计区间：点排行下钻明细时按同一区间查账单。
+  final LedgerDateRange range;
+
+  /// 区间文案，显示在明细面板头部，说明「这些账单来自哪一段时间」。
+  final String rangeLabel;
 
   @override
   State<CategoryComposition> createState() => _CategoryCompositionState();
@@ -97,6 +110,24 @@ class _CategoryCompositionState extends State<CategoryComposition> {
     setState(() => _selected = index);
   }
 
+  /// 下钻到某个分类的账单明细。
+  ///
+  /// 排行第 6 项之后也能点：它们是真实分类，只是环形图里被并进「其他」
+  /// 才统一取灰色。颜色沿用排行行自身的色，面板与来源在视觉上对得上。
+  void _openDetails(int index) {
+    HapticFeedback.selectionClick();
+    showCategoryTransactionsSheet(
+      context,
+      category: widget.totals[index],
+      range: widget.range,
+      rangeLabel: widget.rangeLabel,
+      kind: widget.kind,
+      color: index < _maxSlices
+          ? StatsTokens.categoryColor(index)
+          : StatsTokens.categoryRest,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final totals = widget.totals;
@@ -162,12 +193,12 @@ class _CategoryCompositionState extends State<CategoryComposition> {
             color: i < _maxSlices
                 ? StatsTokens.categoryColor(i)
                 : StatsTokens.categoryRest,
-            highlighted: _selected == i,
+            // 选中「其他」那一片时 _selected == _maxSlices，它对应的是聚合项，
+            // 不是排行第 6 行那个具体分类，两处都要挡住越界的下标。
+            highlighted: _selected == i && _selected < _maxSlices,
             dimmed: _selected >= 0 && _selected != i && _selected < _maxSlices,
             grouped: widget.grouped,
-            onTap: i < _maxSlices
-                ? () => _select(_selected == i ? -1 : i)
-                : null,
+            onTap: () => _openDetails(i),
           ),
         if (totals.length > _collapsedRows)
           Center(
@@ -252,7 +283,7 @@ class _LegendRow extends StatelessWidget {
   }
 }
 
-/// 分类排行行：图标底座 + 名称/进度条 + 右侧金额与占比。
+/// 分类排行行：图标底座 + 名称/进度条 + 右侧金额与占比 + 下钻箭头。
 class CategoryRankRow extends StatelessWidget {
   const CategoryRankRow({
     super.key,
@@ -263,7 +294,7 @@ class CategoryRankRow extends StatelessWidget {
     required this.highlighted,
     required this.dimmed,
     required this.grouped,
-    this.onTap,
+    required this.onTap,
   });
 
   final int rank;
@@ -278,7 +309,9 @@ class CategoryRankRow extends StatelessWidget {
   final bool dimmed;
 
   final bool grouped;
-  final VoidCallback? onTap;
+
+  /// 下钻到该分类的账单明细。
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -354,6 +387,14 @@ class CategoryRankRow extends StatelessWidget {
                       ),
                     ],
                   ),
+                ),
+                // 可下钻的提示。点击行为从「就地高亮」换成「弹出明细」后，
+                // 行内不再有任何即时视觉变化，没有这个箭头用户不会想到能点。
+                const SizedBox(width: 2),
+                const Icon(
+                  FLucideIcons.chevronRight,
+                  size: 15,
+                  color: StatsTokens.textFaint,
                 ),
               ],
             ),

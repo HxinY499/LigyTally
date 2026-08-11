@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,10 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/media/image_storage.dart';
 import '../../../core/preferences/money_grouped.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../../shared/widgets/image_backdrop.dart';
 import '../../../shared/widgets/summary_band.dart';
 import '../application/providers.dart';
 import 'transaction_editor.dart';
@@ -138,88 +142,100 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                     onPick: _pickMonth,
                   ),
                 ),
-                // 列表
-                StreamBuilder<List<LedgerItem>>(
-                  stream: database.watchTransactions(range),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return SliverToBoxAdapter(
-                        child: _MessageState(
-                          icon: FLucideIcons.circleAlert,
-                          title: '账单加载失败',
-                          detail: '${snapshot.error}',
-                        ),
-                      );
-                    }
-                    final allItems = snapshot.data;
-                    if (allItems == null) {
-                      return const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 80),
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
-                      );
-                    }
-                    final keyword = _query.toLowerCase();
-                    final items = keyword.isEmpty
-                        ? allItems
-                        : allItems
-                              .where(
-                                (item) =>
-                                    item.transaction.note
-                                        .toLowerCase()
-                                        .contains(keyword) ||
-                                    item.category.name.toLowerCase().contains(
-                                      keyword,
-                                    ),
-                              )
-                              .toList();
-                    if (items.isEmpty) {
-                      return SliverToBoxAdapter(
-                        child: _MessageState(
-                          icon: keyword.isEmpty
-                              ? FLucideIcons.receipt
-                              : FLucideIcons.searchX,
-                          title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
-                          detail: keyword.isEmpty ? '点击右下角加号记下第一笔' : '换一个关键词再试',
-                        ),
-                      );
-                    }
-                    final groups = <String, List<LedgerItem>>{};
-                    for (final item in items) {
-                      groups
-                          .putIfAbsent(
-                            item.transaction.accountingDate,
-                            () => [],
-                          )
-                          .add(item);
-                    }
-                    final entries = groups.entries.toList();
-                    return SliverPadding(
-                      // 底部留白只需避开居中悬浮的「记一笔」FAB
-                      // （56 直径 + 16 浮起边距+ 余量）；
-                      // 导航栏已贴底固定，不再覆盖列表。
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 84),
-                      sliver: SliverList.builder(
-                        itemCount: entries.length,
-                        itemBuilder: (context, index) {
-                          final group = entries[index];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 14),
-                            child: _DayCard(
-                              day: dateFromKey(group.key),
-                              items: group.value,
-                              onTapHeader: () =>
-                                  _addTransactionForDay(dateFromKey(group.key)),
-                              onTapItem: _edit,
-                              onLongPressItem: (item) {
-                                HapticFeedback.mediumImpact();
-                                _confirmDelete(item);
-                              },
+                // 列表。图片路径单独订阅一条流：它变得远比账单本身少，
+                // 塞进 watchTransactions 会让每次记账都多 join 一次图片表。
+                StreamBuilder<Map<String, String>>(
+                  stream: database.watchFirstImagePaths(range),
+                  builder: (context, imageSnapshot) {
+                    final imagePaths =
+                        imageSnapshot.data ?? const <String, String>{};
+                    return StreamBuilder<List<LedgerItem>>(
+                      stream: database.watchTransactions(range),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return SliverToBoxAdapter(
+                            child: _MessageState(
+                              icon: FLucideIcons.circleAlert,
+                              title: '账单加载失败',
+                              detail: '${snapshot.error}',
                             ),
                           );
-                        },
-                      ),
+                        }
+                        final allItems = snapshot.data;
+                        if (allItems == null) {
+                          return const SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 80),
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+                          );
+                        }
+                        final keyword = _query.toLowerCase();
+                        final items = keyword.isEmpty
+                            ? allItems
+                            : allItems
+                                  .where(
+                                    (item) =>
+                                        item.transaction.note
+                                            .toLowerCase()
+                                            .contains(keyword) ||
+                                        item.category.name
+                                            .toLowerCase()
+                                            .contains(keyword),
+                                  )
+                                  .toList();
+                        if (items.isEmpty) {
+                          return SliverToBoxAdapter(
+                            child: _MessageState(
+                              icon: keyword.isEmpty
+                                  ? FLucideIcons.receipt
+                                  : FLucideIcons.searchX,
+                              title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
+                              detail: keyword.isEmpty
+                                  ? '点击右下角加号记下第一笔'
+                                  : '换一个关键词再试',
+                            ),
+                          );
+                        }
+                        final groups = <String, List<LedgerItem>>{};
+                        for (final item in items) {
+                          groups
+                              .putIfAbsent(
+                                item.transaction.accountingDate,
+                                () => [],
+                              )
+                              .add(item);
+                        }
+                        final entries = groups.entries.toList();
+                        return SliverPadding(
+                          // 底部留白只需避开居中悬浮的「记一笔」FAB
+                          // （56 直径 + 16 浮起边距+ 余量）；
+                          // 导航栏已贴底固定，不再覆盖列表。
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 84),
+                          sliver: SliverList.builder(
+                            itemCount: entries.length,
+                            itemBuilder: (context, index) {
+                              final group = entries[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 14),
+                                child: _DayCard(
+                                  day: dateFromKey(group.key),
+                                  items: group.value,
+                                  imagePaths: imagePaths,
+                                  onTapHeader: () => _addTransactionForDay(
+                                    dateFromKey(group.key),
+                                  ),
+                                  onTapItem: _edit,
+                                  onLongPressItem: (item) {
+                                    HapticFeedback.mediumImpact();
+                                    _confirmDelete(item);
+                                  },
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
                     );
                   },
                 ),
@@ -299,6 +315,7 @@ class _DayCard extends ConsumerWidget {
   const _DayCard({
     required this.day,
     required this.items,
+    required this.imagePaths,
     required this.onTapHeader,
     required this.onTapItem,
     required this.onLongPressItem,
@@ -306,6 +323,9 @@ class _DayCard extends ConsumerWidget {
 
   final DateTime day;
   final List<LedgerItem> items;
+
+  /// 账单 id → 首图缩略图相对路径，没有图的账单不在表里。
+  final Map<String, String> imagePaths;
   final VoidCallback onTapHeader;
   final ValueChanged<LedgerItem> onTapItem;
   final ValueChanged<LedgerItem> onLongPressItem;
@@ -413,6 +433,7 @@ class _DayCard extends ConsumerWidget {
               _LedgerRow(
                 item: items[index],
                 grouped: grouped,
+                imagePath: imagePaths[items[index].transaction.id],
                 onTap: () => onTapItem(items[index]),
                 onLongPress: () => onLongPressItem(items[index]),
               ),
@@ -428,12 +449,16 @@ class _LedgerRow extends StatelessWidget {
   const _LedgerRow({
     required this.item,
     required this.grouped,
+    required this.imagePath,
     required this.onTap,
     required this.onLongPress,
   });
 
   final LedgerItem item;
   final bool grouped;
+
+  /// 这条账单首图的缩略图相对路径，没配图的账单为 null。
+  final String? imagePath;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
@@ -446,7 +471,7 @@ class _LedgerRow extends StatelessWidget {
       item.transaction.occurredAt,
     );
     final note = item.transaction.note.trim();
-    return InkWell(
+    final row = InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
       // 账单行的点击反馈。
@@ -518,8 +543,43 @@ class _LedgerRow extends StatelessWidget {
         ),
       ),
     );
+
+    final relativePath = imagePath;
+    if (relativePath == null) return row;
+    final file = ImageStorage.resolveSyncPath(relativePath);
+    if (file == null) return row;
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: ImageBackdrop(
+            image: ResizeImage(
+              FileImage(File(file)),
+              width: _kRowBackdropDecodeWidth,
+              allowUpscaling: false,
+            ),
+            blurSigma: _kRowBackdropBlurSigma,
+            maxOpacity: _kRowBackdropOpacity,
+            // 横向渐隐：色从分类图标那侧化开，右边的金额留在干净底色上。
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            alignment: Alignment.center,
+          ),
+        ),
+        row,
+      ],
+    );
   }
 }
+
+/// 行背板的解码宽度。一行才 60 出头的高度，再清晰也是浪费。
+const int _kRowBackdropDecodeWidth = 240;
+
+/// 行背板固定这一档模糊，不跟设置页的记账页背景走——列表要的是一眼扫过
+/// 「这笔有照片」，不是看照片本身。
+const double _kRowBackdropBlurSigma = 24;
+
+/// 比记账页淡：行里挤着分类名、时间备注这些小字，浓了压不住。
+const double _kRowBackdropOpacity = 0.3;
 
 class _MessageState extends StatelessWidget {
   const _MessageState({

@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'package:ligy_tally/core/utils/ledger_date.dart';
 import 'package:ligy_tally/features/ledger/application/providers.dart';
 import 'package:ligy_tally/features/statistics/presentation/statistics_screen.dart';
 import 'package:ligy_tally/features/statistics/presentation/statistics_window.dart';
+import 'package:ligy_tally/features/statistics/presentation/stats_category.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_design.dart';
 
 /// 统计页回归测试。
@@ -256,6 +258,62 @@ void main() {
       expect(find.text(expenseCategory.name), findsWidgets);
       // 唯一一个分类必然占 100%。
       expect(find.text('100%'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
+    testWidgets('点排行行弹出明细面板：二级分类的账单归在一级分类下', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final categories = await database.exportCategories();
+      // 挑一个二级分类：排行按一级分类聚合，明细必须把子分类的账单一起捞出来，
+      // 否则从排行下钻会看到「合计 100 元、明细 0 笔」。
+      final child = categories.firstWhere(
+        (item) => item.kind == 0 && item.parentId != null,
+      );
+      final parent = categories.firstWhere((item) => item.id == child.parentId);
+      final now = DateTime.now();
+      final today =
+          '${now.year.toString().padLeft(4, '0')}-'
+          '${now.month.toString().padLeft(2, '0')}-'
+          '${now.day.toString().padLeft(2, '0')}';
+
+      await database.saveTransaction(
+        entry: TransactionsCompanion.insert(
+          id: 'stat-child-1',
+          kind: 0,
+          amountCents: 5000,
+          categoryId: child.id,
+          accountingDate: today,
+          occurredAt: now.millisecondsSinceEpoch,
+          note: const Value('午餐外卖'),
+          createdAt: now.millisecondsSinceEpoch,
+          updatedAt: now.millisecondsSinceEpoch,
+        ),
+        newImages: const [],
+        removedImageIds: const {},
+      );
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      // 排行只有一行，显示的是一级分类名。
+      expect(find.byType(CategoryRankRow), findsOneWidget);
+      expect(find.text(parent.name), findsWidgets);
+
+      await tester.tap(find.byType(CategoryRankRow));
+      await settle(tester);
+
+      // 面板头给出区间与笔数，明细行给出二级分类名与备注。
+      final rangeLabel = StatisticsWindow(
+        period: StatisticsPeriod.month,
+        anchor: now,
+      ).rangeLabel;
+      expect(find.text('$rangeLabel · 共 1 笔'), findsOneWidget);
+      expect(find.text(child.name), findsOneWidget);
+      expect(find.textContaining('午餐外卖'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
     });

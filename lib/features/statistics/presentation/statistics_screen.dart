@@ -153,7 +153,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                   children: [
                     StatsSectionHeader(
                       title: '分类构成',
-                      caption: '点击扇区可查看单项占比',
+                      caption: '点扇区看占比，点排行看明细',
                       trailing: _KindToggle(
                         selected: _categoryKind,
                         onChanged: (value) =>
@@ -184,6 +184,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                           totals: totals,
                           kind: _categoryKind,
                           grouped: grouped,
+                          range: range,
+                          rangeLabel: _window.rangeLabel,
                         );
                       },
                     ),

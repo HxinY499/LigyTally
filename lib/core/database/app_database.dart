@@ -366,6 +366,51 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// 某个一级分类在区间内的账单明细，按发生时间倒序。
+  ///
+  /// 归属口径与 [watchCategoryTotals] 一致：交易挂在二级分类上时也算进它的
+  /// 一级分类。只按 `category_id == rootCategoryId` 过滤会漏掉全部二级分类的
+  /// 账单——排行里的合计是按 root 聚合的，两处口径必须相同，否则明细的
+  /// 笔数/金额对不上排行行上的数字。
+  ///
+  /// 分类树只有两级（见 [watchCategoryTotals] 的 `COALESCE(parent_id, id)`），
+  /// 所以「自身 or 父为 root」已覆盖全部情况。
+  Stream<List<LedgerItem>> watchCategoryTransactions(
+    LedgerDateRange range, {
+    required String rootCategoryId,
+    required int kind,
+  }) {
+    final query =
+        select(transactions).join([
+            innerJoin(
+              categories,
+              categories.id.equalsExp(transactions.categoryId),
+            ),
+          ])
+          ..where(
+            transactions.accountingDate.isBiggerOrEqualValue(
+                  dateKey(range.start),
+                ) &
+                transactions.accountingDate.isSmallerThanValue(
+                  dateKey(range.endExclusive),
+                ) &
+                transactions.kind.equals(kind) &
+                (categories.id.equals(rootCategoryId) |
+                    categories.parentId.equals(rootCategoryId)),
+          )
+          ..orderBy([OrderingTerm.desc(transactions.occurredAt)]);
+    return query.watch().map(
+      (rows) => rows
+          .map(
+            (row) => LedgerItem(
+              transaction: row.readTable(transactions),
+              category: row.readTable(categories),
+            ),
+          )
+          .toList(),
+    );
+  }
+
   Stream<LedgerSummary> watchSummary(LedgerDateRange range) {
     return customSelect(
       '''
@@ -518,6 +563,38 @@ class AppDatabase extends _$AppDatabase {
           ..where((row) => row.transactionId.equals(transactionId))
           ..orderBy([(row) => OrderingTerm.asc(row.sortOrder)]))
         .get();
+  }
+
+  /// [range] 内每条账单首图的缩略图相对路径，键为账单 id。
+  ///
+  /// 明细列表要给有图的账单铺行背景。一行一次 [imagesFor] 会变成几十次查询，
+  /// 所以按月一把捞回来在内存里配对；只留每条账单排序最靠前的那张，
+  /// 后面的图列表用不上。
+  Stream<Map<String, String>> watchFirstImagePaths(LedgerDateRange range) {
+    final query =
+        select(transactionImages).join([
+            innerJoin(
+              transactions,
+              transactions.id.equalsExp(transactionImages.transactionId),
+            ),
+          ])
+          ..where(
+            transactions.accountingDate.isBiggerOrEqualValue(
+                  dateKey(range.start),
+                ) &
+                transactions.accountingDate.isSmallerThanValue(
+                  dateKey(range.endExclusive),
+                ),
+          )
+          ..orderBy([OrderingTerm.asc(transactionImages.sortOrder)]);
+    return query.watch().map((rows) {
+      final paths = <String, String>{};
+      for (final row in rows) {
+        final image = row.readTable(transactionImages);
+        paths.putIfAbsent(image.transactionId, () => image.thumbnailPath);
+      }
+      return paths;
+    });
   }
 
   Future<void> saveTransaction({

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/preferences/app_icon.dart';
+import '../../../core/preferences/backdrop_blur.dart';
 import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/money_grouped.dart';
 import '../../../core/theme/app_theme.dart';
@@ -10,6 +11,7 @@ import '../../../core/update/update_controller.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
 import 'app_icon_picker_sheet.dart';
+import 'backdrop_blur_sheet.dart';
 import 'category_management_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -146,7 +148,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _SettingsItem(
                   icon: FLucideIcons.tags,
                   title: '分类管理',
-                  subtitle: '新增、停用或删除收支分类，可自定义图标',
                   showChevron: true,
                   onTap: () => Navigator.of(context).push<void>(
                     MaterialPageRoute(
@@ -163,6 +164,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         .read(categoryPickerLayoutProvider.notifier)
                         .setLayout(value),
                   ),
+                ),
+                _SettingsItem(
+                  icon: FLucideIcons.aperture,
+                  title: '背景模糊',
+                  value: ref.watch(backdropBlurProvider).round().toString(),
+                  showChevron: true,
+                  onTap: () => showBackdropBlurSheet(context),
                 ),
                 _SettingsItem(
                   icon: FLucideIcons.smartphone,
@@ -195,14 +203,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _SettingsItem(
                   icon: FLucideIcons.upload,
                   title: '导出数据',
-                  subtitle: '打包账单、图片与分类图标，可设密码',
                   showChevron: !_busy,
                   onTap: _busy ? null : _exportBackup,
                 ),
                 _SettingsItem(
                   icon: FLucideIcons.download,
                   title: '导入数据',
-                  subtitle: '从备份文件恢复，覆盖当前数据',
                   showChevron: !_busy,
                   trailing: _busy ? const _RowSpinner() : null,
                   onTap: _busy ? null : _restoreBackup,
