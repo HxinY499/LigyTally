@@ -346,6 +346,7 @@ class _CollapsibleHeader extends StatefulWidget {
     required this.builder,
     required this.collapsible,
     required this.child,
+    this.background = AppColors.canvas,
   });
 
   /// 按折叠进度 t 构建页头内容。
@@ -353,6 +354,9 @@ class _CollapsibleHeader extends StatefulWidget {
 
   /// false 时恒为折叠态（[content] 搜索框模式）。
   final bool collapsible;
+
+  /// 页头条底色。透明时页面自身的背景（如记账页的图片背板）会透上来。
+  final Color background;
 
   /// 页头下方的滚动内容。
   final Widget child;
@@ -391,7 +395,7 @@ class _CollapsibleHeaderState extends State<_CollapsibleHeader> {
             height: height,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: AppColors.canvas,
+                color: widget.background,
                 border: Border(
                   bottom: BorderSide(
                     // 分隔线随折叠淡入：静止时页头与内容同色无缝，
@@ -482,11 +486,16 @@ class AppTopBar extends StatelessWidget {
     required this.body,
     this.subtitle,
     this.actions,
+    this.backgroundColor = AppColors.canvas,
   });
 
   final String title;
   final String? subtitle;
   final List<Widget>? actions;
+
+  /// 整页底色。传 [Colors.transparent] 可让页面在本组件之下自绘背景
+  /// （记账页把账单图片铺在这一层）。
+  final Color backgroundColor;
 
   /// 页头下方的滚动内容。
   final Widget body;
@@ -494,11 +503,12 @@ class AppTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.canvas,
+      color: backgroundColor,
       child: SafeArea(
         bottom: false,
         child: _CollapsibleHeader(
           collapsible: true,
+          background: backgroundColor,
           builder: (t) => _HeaderContent(
             t: t,
             title: title,

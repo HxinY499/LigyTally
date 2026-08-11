@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import 'package:forui/forui.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/media/image_storage.dart';
 import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/last_category.dart';
 import '../../../core/preferences/money_grouped.dart';
@@ -94,6 +96,29 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           .where((image) => !_removedImageIds.contains(image.id))
           .length +
       _pendingImages.length;
+
+  /// 铺在页面背板上的图片，与顶栏缩略图取同一张（最新待上传 > 最后一张已有）。
+  ///
+  /// 解码宽度压到 [_kBackdropDecodeWidth]：这一层会被高斯模糊 + 渐隐吃掉细节，
+  /// 按原始分辨率解码只是白白占内存。已有图片走 [ImageStorage.resolveSyncPath]
+  /// 的同步缓存，避免异步 resolve 让背板晚一帧闪进来。
+  ImageProvider? get _backdropImage {
+    if (_pendingImages.isNotEmpty) {
+      return _resized(File(_pendingImages.last.path));
+    }
+    for (final image in _existingImages.reversed) {
+      if (_removedImageIds.contains(image.id)) continue;
+      final path = ImageStorage.resolveSyncPath(image.thumbnailPath);
+      return path == null ? null : _resized(File(path));
+    }
+    return null;
+  }
+
+  ImageProvider _resized(File file) => ResizeImage(
+    FileImage(file),
+    width: _kBackdropDecodeWidth,
+    allowUpscaling: false,
+  );
 
   /// 新建账单时预选「上次在该收支类型下选的分类」。
   void _prefillLastCategory(List<CategoryEntry> categories) {
@@ -438,90 +463,168 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     }
 
     return Scaffold(
-      body: AppTopBar(
-        title: _isEditing ? '编辑账单' : '记一笔',
-        body: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  children: [
-                    _KindSwitch(
-                      kind: _kind,
-                      onChanged: (value) {
-                        HapticFeedback.selectionClick();
-                        setState(() {
-                          _kind = value;
-                          _categoryId = null;
-                          _prefilledCategory = false;
-                        });
-                      },
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          _ImageBackdrop(image: _backdropImage),
+          AppTopBar(
+            backgroundColor: Colors.transparent,
+            title: _isEditing ? '编辑账单' : '记一笔',
+            body: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      children: [
+                        _KindSwitch(
+                          kind: _kind,
+                          onChanged: (value) {
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              _kind = value;
+                              _categoryId = null;
+                              _prefilledCategory = false;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                        _AmountCard(
+                          expression: _amountExpr,
+                          amountValue: _amountValue,
+                          kind: _kind,
+                          grouped: grouped,
+                        ),
+                        const SizedBox(height: 22),
+                        const _SectionTitle(title: '分类'),
+                        const SizedBox(height: 10),
+                        StreamBuilder<List<CategoryEntry>>(
+                          stream: database.watchCategories(_kind),
+                          builder: (context, snapshot) {
+                            final categories =
+                                snapshot.data ?? const <CategoryEntry>[];
+                            if (categories.isEmpty) {
+                              return const SizedBox(
+                                height: 72,
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              );
+                            }
+                            _prefillLastCategory(categories);
+                            return _CategoryPicker(
+                              categories: categories,
+                              selectedId: _categoryId,
+                              accent: accent,
+                              onSelected: _onCategorySelected,
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                     ),
-                    const SizedBox(height: 14),
-                    _AmountCard(
-                      expression: _amountExpr,
-                      amountValue: _amountValue,
-                      kind: _kind,
-                      grouped: grouped,
-                    ),
-                    const SizedBox(height: 22),
-                    const _SectionTitle(title: '分类'),
-                    const SizedBox(height: 10),
-                    StreamBuilder<List<CategoryEntry>>(
-                      stream: database.watchCategories(_kind),
-                      builder: (context, snapshot) {
-                        final categories =
-                            snapshot.data ?? const <CategoryEntry>[];
-                        if (categories.isEmpty) {
-                          return const SizedBox(
-                            height: 72,
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-                        _prefillLastCategory(categories);
-                        return _CategoryPicker(
-                          categories: categories,
-                          selectedId: _categoryId,
-                          accent: accent,
-                          onSelected: _onCategorySelected,
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                ),
+                  ),
+                  // 日期/时刻 + 备注/图片条 + 自定义键盘常驻底部，不随焦点消失；
+                  // 备注框聚焦时系统键盘会把整个面板顶上去。
+                  _NumericKeypad(
+                    accent: accent,
+                    canSave: _canSave,
+                    saving: _saving,
+                    noteController: _noteController,
+                    date: _date,
+                    time: _time,
+                    onPickDate: _selectDate,
+                    onPickTime: _selectTime,
+                    imageCount: _visibleImageCount,
+                    imagePreview: imagePreview,
+                    onImageTap: _showImageSheet,
+                    onInput: _onKeypadInput,
+                    onClear: _clearAmount,
+                    onSave: _canSave && !_saving ? () => _save() : null,
+                    onSaveContinue: _canSave && !_saving && !_isEditing
+                        ? () => _save(continueAfter: true)
+                        : null,
+                  ),
+                ],
               ),
-              // 日期/时刻 + 备注/图片条 + 自定义键盘常驻底部，不随焦点消失；
-              // 备注框聚焦时系统键盘会把整个面板顶上去。
-              _NumericKeypad(
-                accent: accent,
-                canSave: _canSave,
-                saving: _saving,
-                noteController: _noteController,
-                date: _date,
-                time: _time,
-                onPickDate: _selectDate,
-                onPickTime: _selectTime,
-                imageCount: _visibleImageCount,
-                imagePreview: imagePreview,
-                onImageTap: _showImageSheet,
-                onInput: _onKeypadInput,
-                onClear: _clearAmount,
-                onSave: _canSave && !_saving ? () => _save() : null,
-                onSaveContinue: _canSave && !_saving && !_isEditing
-                    ? () => _save(continueAfter: true)
-                    : null,
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 }
+
+/// 账单图片铺成的页面背板。
+///
+/// 不直接把照片当墙纸：先按 [_kBackdropBlurSigma] 做高斯模糊，再用竖直方向的
+/// 透明度渐变把它从顶部化开、在页面中段完全隐入 canvas 底色。照片只留下色调
+/// 与光影，深色正文与白色卡片的可读性不受它影响；底部键盘区仍是纯色。
+class _ImageBackdrop extends StatelessWidget {
+  const _ImageBackdrop({required this.image});
+
+  /// 为 null 时不画任何东西，露出 Scaffold 的 canvas 底色。
+  final ImageProvider? image;
+
+  @override
+  Widget build(BuildContext context) {
+    final image = this.image;
+    return IgnorePointer(
+      // 换图与首帧都走淡入，避免编辑页异步读出图片后背板突然砸下来。
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 280),
+        // 默认 layoutBuilder 给的是松约束，图会缩成固有大小杵在页面正中。
+        // 背板必须吃满整页，渐变的起止位置才对得上页面。
+        layoutBuilder: (current, previous) => Stack(
+          fit: StackFit.expand,
+          children: [...previous, ?current],
+        ),
+        child: image == null
+            ? const SizedBox.shrink()
+            // 键盘每按一下都会重建整页；隔离出去省掉背板的模糊重绘。
+            : RepaintBoundary(
+                key: ValueKey(image),
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (rect) => LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withValues(alpha: _kBackdropMaxOpacity),
+                      Colors.white.withValues(
+                        alpha: _kBackdropMaxOpacity * 0.5,
+                      ),
+                      Colors.white.withValues(alpha: 0),
+                    ],
+                    stops: const [0, 0.34, 0.66],
+                  ).createShader(rect),
+                  child: ImageFiltered(
+                    imageFilter: ui.ImageFilter.blur(
+                      sigmaX: _kBackdropBlurSigma,
+                      sigmaY: _kBackdropBlurSigma,
+                    ),
+                    child: Image(
+                      image: image,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.topCenter,
+                    ),
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+/// 背板图的解码宽度。模糊后细节全丢，再高只是多占内存。
+const int _kBackdropDecodeWidth = 480;
+
+/// 背板图顶部的最大不透明度。再高会压掉 [AppColors.ink] 正文的对比度。
+const double _kBackdropMaxOpacity = 0.4;
+
+const double _kBackdropBlurSigma = 24;
 
 class _CategoryPicker extends ConsumerStatefulWidget {
   const _CategoryPicker({
