@@ -278,6 +278,56 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
     }
   }
 
+  /// 面板里除图标区之外的固定高度合计（抓手 + 标题 + 副标题 + 名称行 + 按钮行）。
+  ///
+  /// 8 抓手上距 + 4 抓手 + 12 + 20 标题 + 18 副标题 + 18 +
+  /// 70 名称行（46 预览圆片 + 20 恒定报错位 + 4） + 16 + 68 按钮行（12+48+8）。
+  static const _chromeHeight = 234.0;
+
+  /// 编辑态额外多出的「在记账时可选」开关行 + 分隔线。
+  static const _activeRowHeight = 57.0;
+
+  /// 面板最多占屏幕的比例。
+  ///
+  /// 留 15% 给上方背景：底部面板得让人看见「后面还有页面」，
+  /// 铺满整屏就变成一个全屏页了，下滑关闭的手势也失去了落点。
+  static const _maxHeightRatio = 0.85;
+
+  /// 图标区的理想下限（约四行格子）。空间不够时会被牺牲，见 [_pickerHeight]。
+  static const _preferredMinPickerHeight = 208.0;
+
+  /// 图标区的绝对下限：一行格子。再小就不是「选择器」了。
+  static const _hardMinPickerHeight = 56.0;
+
+  /// 图标区高度：按当前可用空间算，而不是写死。
+  ///
+  /// 原来固定 208（约三行半），120 个图标要翻七八屏。改成吃满可用空间后，
+  /// 常见手机上能一次看到七八行。
+  ///
+  /// 三条约束，**优先级从高到低**：
+  /// 1. **不能溢出**。上限恒为「可用高度 − 面板其余部分」。这条压倒一切：
+  ///    小屏 + 键盘弹起（名称框 autofocus，一打开就是这个状态）时可用空间
+  ///    可能只剩三百多，硬守 208 的下限会让 Column 溢出 —— 底部的「创建」
+  ///    按钮被挤出屏幕，用户根本没法提交。
+  /// 2. 上限也不超过「全部图标的总高度」——再高只是在底下拖出一片空白。
+  /// 3. 空间宽裕时至少给 [_preferredMinPickerHeight]，别压成一条缝。
+  double _pickerHeight(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final available =
+        media.size.height - media.viewInsets.bottom - media.padding.top;
+    final chrome = _chromeHeight + (_isEditing ? _activeRowHeight : 0);
+    // 硬上限：面板整体（chrome + 图标区）不得超过可用高度。
+    // 这里不打 _maxHeightRatio 的折扣——空间紧张时「留白给背景」是奢侈品，
+    // 「按钮还在屏幕里」才是必需品。
+    final ceiling = available - chrome;
+    if (ceiling <= _hardMinPickerHeight) return _hardMinPickerHeight;
+    final ideal = (available * _maxHeightRatio - chrome).clamp(
+      _preferredMinPickerHeight,
+      _IconPickerState.contentHeight,
+    );
+    return ideal.clamp(_hardMinPickerHeight, ceiling);
+  }
+
   @override
   Widget build(BuildContext context) {
     // viewInsets：键盘高度。加在底部让整块面板浮在键盘之上。
@@ -332,9 +382,8 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
                 ),
               ),
               const SizedBox(height: 16),
-              // 图标很多，给一块定高滚动区：面板整体高度稳定，
-              // 不会因为图标表变长就顶到屏幕顶部。
-              // 分组标题在这块区域内粘性吸顶，滚到哪一组都知道自己在哪。
+              // 图标区吃满可用空间（见 _pickerHeight）：面板整体高度仍然可控，
+              // 但能一次看到尽可能多的图标，不用为了找一个图标翻七八屏。
               _IconPicker(
                 selected: _iconKey,
                 accent: _accent,
@@ -345,6 +394,7 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
                 },
                 onUpload: _busy ? null : _chooseIconImageSource,
                 revealSelected: _isEditing,
+                height: _pickerHeight(context),
               ),
               if (_isEditing) ...[
                 const Divider(
@@ -500,11 +550,19 @@ class _NameRow extends StatelessWidget {
   }
 }
 
-/// 图标选择器：分组标题吸顶 + 6 列网格，定高滚动。
+/// 图标选择器：分组标题分段 + 6 列网格，定高滚动。
 ///
 /// 用 [CustomScrollView] 而不是单个 [GridView]：需要「标题 + 该组网格」
-/// 交替排布，且标题要粘在滚动区顶部。滚过 119 个图标时，用户随时知道
-/// 自己在「出行」还是「居家」——一片连续网格是做不到这件事的。
+/// 交替排布。滚过 120 个图标时，用户随时知道自己在「出行」还是「居家」——
+/// 一片连续网格是做不到这件事的。
+///
+/// ## 分组标题不吸顶
+///
+/// 曾经每个标题都是 `SliverPersistentHeader(pinned: true)`。**一个滚动区里
+/// 有十一个 pinned header，它们会一个个堆起来**：往下滚时前面的标题全都赖在
+/// 顶上不走，十行文字压掉整个视口，图标反而被挤得看不见（那时视口只有 208）。
+/// pinned 适合「一屏只有一个吸顶标题」的长列表，不适合这种十几组挤在小视口里
+/// 的场景。现在标题就是普通的一行，跟着内容滚出去。
 ///
 /// 第一组固定是「自己的图片」：上传入口必须在面板打开时就能看到，
 /// 放在末尾等于藏起来（下面还有 120 个格子要滚）。这一组只有一到两个格子，
@@ -517,6 +575,7 @@ class _IconPicker extends StatefulWidget {
     required this.onSelected,
     required this.onUpload,
     required this.revealSelected,
+    required this.height,
   });
 
   final String selected;
@@ -535,6 +594,9 @@ class _IconPicker extends StatefulWidget {
   /// 也会误以为「其他」是自己选的。
   final bool revealSelected;
 
+  /// 滚动区高度。由面板按可用空间算出（见 `_pickerHeight`）。
+  final double height;
+
   @override
   State<_IconPicker> createState() => _IconPickerState();
 }
@@ -546,11 +608,22 @@ class _IconPickerState extends State<_IconPicker> {
   static const _columns = 6;
   static const _cellExtent = 48.0;
   static const _headerExtent = 30.0;
-  static const _viewportHeight = 208.0;
   static const _inset = 16.0;
 
   /// 「自己的图片」组的高度：标题 + 一行格子。
   static const _customGroupExtent = _headerExtent + _cellExtent;
+
+  /// 全部内容的总高度（含「自己的图片」组与末尾留白）。
+  ///
+  /// 面板拿它当图标区高度的**上限**：再高也只是在底下拖出一片空白。
+  static final double contentHeight = () {
+    var total = _customGroupExtent + 8;
+    for (final group in categoryIconGroups) {
+      total +=
+          _headerExtent + (group.keys.length / _columns).ceil() * _cellExtent;
+    }
+    return total;
+  }();
 
   @override
   void initState() {
@@ -574,7 +647,7 @@ class _IconPickerState extends State<_IconPicker> {
   ///
   /// 逐组累加「标题高 + 该组行数 × 行高」即可精确算出，
   /// 因为两者都是固定值（不像可变高度列表那样只能靠 key 定位）。
-  /// 命中后回退半个格子，让目标行不贴着吸顶标题的下沿。
+  /// 命中后回退半个格子，让目标行不贴着上一组的内容。
   ///
   /// 目标本来就在首屏内时**返回 0，一格都不滚**：滚动的目的只是「让用户
   /// 看见自己选的那个」，目标已经看得见就没有理由动。硬滚会把顶上的
@@ -587,7 +660,7 @@ class _IconPickerState extends State<_IconPicker> {
     for (final group in categoryIconGroups) {
       if (group.keys.contains(key)) {
         final row = offset + _headerExtent;
-        if (row + _cellExtent <= _viewportHeight) return 0;
+        if (row + _cellExtent <= widget.height) return 0;
         return (offset - _cellExtent / 2).clamp(0.0, double.infinity);
       }
       final rows = (group.keys.length / _columns).ceil();
@@ -600,16 +673,12 @@ class _IconPickerState extends State<_IconPicker> {
   Widget build(BuildContext context) {
     final custom = widget.selected;
     return SizedBox(
-      height: _viewportHeight,
+      height: widget.height,
       child: CustomScrollView(
         controller: _controller,
         slivers: [
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _IconGroupHeaderDelegate(
-              label: '自己的图片',
-              extent: _headerExtent,
-            ),
+          const SliverToBoxAdapter(
+            child: _IconGroupLabel('自己的图片', extent: _headerExtent),
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: _inset),
@@ -639,12 +708,8 @@ class _IconPickerState extends State<_IconPicker> {
             ),
           ),
           for (final group in categoryIconGroups) ...[
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _IconGroupHeaderDelegate(
-                label: group.label,
-                extent: _headerExtent,
-              ),
+            SliverToBoxAdapter(
+              child: _IconGroupLabel(group.label, extent: _headerExtent),
             ),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: _inset),
@@ -780,47 +845,39 @@ class _UploadIconCell extends StatelessWidget {
   }
 }
 
-/// 吸顶的分组标题。
+/// 分组标题。
 ///
-/// 必须自己铺不透明底色：pinned 的 header 悬在网格之上，
-/// 透明底会让下面滚动的图标从字缝里穿过去。
-class _IconGroupHeaderDelegate extends SliverPersistentHeaderDelegate {
-  _IconGroupHeaderDelegate({required this.label, required this.extent});
+/// 普通一行文字，跟着内容滚出视口——**刻意不吸顶**。
+/// 这里有十一个分组，若每个都做成 `SliverPersistentHeader(pinned: true)`，
+/// 往下滚时它们会一个个堆在顶上不走，十来行文字压掉整个视口，
+/// 图标反被挤得看不见。pinned 只适合「一屏最多一个吸顶标题」的长列表。
+class _IconGroupLabel extends StatelessWidget {
+  const _IconGroupLabel(this.label, {required this.extent});
 
   final String label;
   final double extent;
 
   @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-      alignment: Alignment.bottomLeft,
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: AppColors.inactive,
-          letterSpacing: 0.4,
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: extent,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+        child: Align(
+          alignment: Alignment.bottomLeft,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.inactive,
+              letterSpacing: 0.4,
+            ),
+          ),
         ),
       ),
     );
   }
-
-  @override
-  double get maxExtent => extent;
-
-  @override
-  double get minExtent => extent;
-
-  @override
-  bool shouldRebuild(covariant _IconGroupHeaderDelegate oldDelegate) =>
-      oldDelegate.label != label || oldDelegate.extent != extent;
 }
 
 /// 编辑态的「启用」开关行。

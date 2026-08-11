@@ -228,6 +228,31 @@ void main() {
       await tester.pump(Duration.zero);
     }
 
+    testWidgets('小屏 + 键盘弹起时面板不溢出，图标区自动缩小', (tester) async {
+      // 面板高度是算出来的，算错就会 RenderFlex overflow。最容易出事的组合是
+      // 「小屏 + 键盘」——名称框是 autofocus 的，一打开就是这个状态。
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 3;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+      addTearDown(tester.view.reset);
+
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await pump(tester, database);
+
+      await tester.tap(find.text('添加子分类').first);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+
+      // 键盘占掉 300 逻辑像素后，可用高度只剩 340。图标区必须缩到下限，
+      // 而不是硬撑出一个溢出的面板。
+      expect(tester.takeException(), isNull, reason: '面板不该溢出');
+      expect(find.byIcon(FLucideIcons.imagePlus), findsOneWidget);
+
+      await teardown(tester);
+    });
+
     testWidgets('一级分类各占一张卡，卡片阴影与首页日卡一致', (tester) async {
       final database = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(database.close);
@@ -370,7 +395,7 @@ void main() {
       await teardown(tester);
     });
 
-    testWidgets('图标网格按组分段，标题吸顶且底色不透明', (tester) async {
+    testWidgets('图标网格按组分段，且分组标题不吸顶', (tester) async {
       final database = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(database.close);
       await pump(tester, database);
@@ -380,21 +405,36 @@ void main() {
         await tester.pump(const Duration(milliseconds: 150));
       }
 
-      // 119 个图标无序平铺就是图标海。分组标题是这块区域的导航，
-      // 用户扫的是七八个词而不是一百多个图形。
+      // 120 个图标无序平铺就是图标海。分组标题是这块区域的导航，
+      // 用户扫的是十来个词而不是一百多个图形。
       expect(find.text('吃喝'), findsOneWidget);
 
-      // 吸顶 header 悬在网格之上，底色必须不透明，
-      // 否则下面滚动的图标会从字缝里穿过去。
-      final headerBox = tester
-          .widgetList<Container>(
-            find.ancestor(
-              of: find.text('吃喝'),
-              matching: find.byType(Container),
-            ),
-          )
-          .first;
-      expect(headerBox.color, AppColors.surface);
+      // 但标题**不能吸顶**。这里有十一个分组，每个都 pinned 的话，
+      // 往下滚时它们会一个个堆在顶上不走，十来行文字压掉整个视口，
+      // 图标反被挤得看不见（真实踩过：满屏只剩一列灰色组名）。
+      //
+      // 只查分组标题自己的祖先链：页面上还有个合法的吸顶条
+      // （背后分类管理页的收支切换），不能一竿子打死。
+      expect(
+        find.ancestor(
+          of: find.text('吃喝'),
+          matching: find.byType(SliverPersistentHeader),
+        ),
+        findsNothing,
+      );
+
+      // 往下滚一段，第一组的标题必须跟着滚出去。
+      // 拖「吃喝」这个标题本身：背后的分类卡片上也有同名文字，
+      // 按文字找会撞上（「购物」同时是组名和一级分类名）。
+      final label = find.text('吃喝');
+      final before = tester.getRect(label);
+      await tester.drag(label, const Offset(0, -120));
+      await tester.pump();
+      expect(
+        tester.getRect(label).top,
+        lessThan(before.top),
+        reason: '标题应随内容上移，而不是钉在原处',
+      );
 
       await teardown(tester);
     });
@@ -474,6 +514,36 @@ void main() {
       expect(find.byIcon(FLucideIcons.imagePlus), findsOneWidget);
       // 第一组在最上面，所以内置图标的第一组标题也还在视口里。
       expect(find.text('吃喝'), findsOneWidget);
+
+      await teardown(tester);
+    });
+
+    testWidgets('图标区吃满可用空间，不再是写死的 208', (tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await pump(tester, database);
+
+      await tester.tap(find.text('添加子分类').first);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+
+      // 原来图标区写死 208（约三行半格子），120 个图标要翻七八屏才看完。
+      // 改成按可用空间算：测试屏只有 600 逻辑像素高都能拿到 276，
+      // 真机（950+）上会宽裕得多。
+      //
+      // 找图标区的 CustomScrollView：页面上另有一个（分类管理页本身），
+      // 所以从「自己的图片」这个只存在于图标区的标题往上找祖先。
+      final picker = tester.getRect(
+        find.ancestor(
+          of: find.text('自己的图片'),
+          matching: find.byType(CustomScrollView),
+        ),
+      );
+      expect(picker.height, greaterThan(208), reason: '图标区应吃满可用空间，而不是固定 208');
+      // 但不能吃满整屏：底部面板要露出上方背景，否则就成了全屏页，
+      // 下滑关闭的手势也没了落点。
+      expect(picker.height, lessThan(600));
 
       await teardown(tester);
     });
