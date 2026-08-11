@@ -19,6 +19,7 @@ library;
 
 export 'app_button.dart';
 export 'app_card.dart';
+export 'app_confirm_dialog.dart';
 export 'app_page_header.dart';
 export 'app_picker_sheet.dart';
 export 'app_switch.dart';

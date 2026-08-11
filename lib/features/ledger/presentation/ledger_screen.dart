@@ -68,78 +68,13 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     });
   }
 
-  // 长按弹强确认框：圆角白卡 + 红色描边胶囊「确定」+ 无边框「取消」。
+  // 长按弹强确认框（共享的 showAppConfirmDialog：红描边胶囊「确定」+「取消」）。
   Future<void> _confirmDelete(LedgerItem item) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                '确定要删除该条账单吗？删除后不可恢复',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.ink,
-                ),
-              ),
-              const SizedBox(height: 24),
-              // 两个按钮同宽：都用 double.infinity 撑满弹窗内容区。
-              // 原来「取消」是裸 TextButton，宽度只跟着文字走，
-              // 和撑满的「确定」并排时一长一短，看着像没对齐。
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.expense,
-                    side: const BorderSide(
-                      color: AppColors.expense,
-                      width: 1.5,
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                  ),
-                  child: const Text(
-                    '确定',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.ink,
-                    // 与「确定」同一组内边距和圆角，两颗按钮才等高等宽。
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                  ),
-                  child: const Text(
-                    '取消',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      message: '确定要删除该条账单吗？删除后不可恢复',
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     try {
       await ref.read(ledgerServiceProvider).delete(item);
     } catch (error) {

@@ -69,3 +69,34 @@ const categoryIcons = <String, IconData>{
 };
 
 IconData categoryIcon(String key) => categoryIcons[key] ?? FLucideIcons.receipt;
+
+/// 图标选择器里可供挑选的 key（按主题分组、去掉图形重复项）。
+///
+/// [categoryIcons] 是「历史 key → 图标」的映射表，里面有一批同图不同名的
+/// 别名（`meal` 与 `restaurant` 都是餐具、`travel` 与 `flight` 都是飞机）。
+/// 直接把它的 keys 铺进选择网格，用户会看到十几对一模一样的格子，
+/// 完全没法选。所以选择器用这份**人工去重**的清单，
+/// 顺序也按「吃穿行住 → 娱乐健康 → 人情教育 → 收入理财」排，
+/// 让人扫一眼就能定位，而不是在无序的图标海里找。
+const categoryIconChoices = <String>[
+  // 吃
+  'restaurant', 'fine_dining', 'drink', 'snack', 'fruit', 'vegetable', 'water',
+  'delivery',
+  // 穿 / 买
+  'shopping', 'clothes', 'haircut', 'beauty', 'digital', 'membership',
+  // 行
+  'transport', 'subway', 'taxi', 'bike', 'train', 'flight', 'car',
+  // 住
+  'home', 'rent', 'utilities', 'electricity', 'gas', 'heating', 'network',
+  'property',
+  // 娱乐 / 健康
+  'fun', 'movie', 'puzzle', 'sport', 'medical', 'medicine', 'clinic',
+  // 人情 / 教育 / 家庭
+  'gift', 'favor', 'parents', 'family', 'baby', 'study', 'course', 'book',
+  'pet', 'pet_food', 'fish',
+  // 收入 / 理财
+  'salary', 'part_time', 'finance', 'living_expense', 'allowance',
+  'family_income', 'refund', 'repayment',
+  // 兜底
+  'other',
+];

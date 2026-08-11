@@ -147,6 +147,7 @@ class AppDatabase extends _$AppDatabase {
     required String id,
     required int kind,
     required String name,
+    String iconKey = 'other',
     String? parentId,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -164,7 +165,7 @@ class AppDatabase extends _$AppDatabase {
         id: id,
         kind: kind,
         name: name,
-        iconKey: 'other',
+        iconKey: iconKey,
         parentId: Value(parentId),
         level: Value(parentId == null ? 1 : 2),
         sortOrder: Value((result.read(maxSort) ?? 0) + 1),
@@ -174,12 +175,72 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  Future<void> setCategoryActive(String id, bool active) {
+  /// 改分类的名称与图标。层级和归属不可改——分类一旦被账单引用，
+  /// 换父级等于悄悄改写历史账单的归类，统计口径会前后不一致。
+  Future<void> updateCategory({
+    required String id,
+    required String name,
+    required String iconKey,
+  }) {
+    return (update(categories)..where((row) => row.id.equals(id))).write(
+      CategoriesCompanion(
+        name: Value(name),
+        iconKey: Value(iconKey),
+        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
+  /// 同一层级下是否已有同名分类（[excludeId] 用于编辑时排除自己）。
+  ///
+  /// 放在数据层而不是界面层去 `_categories.any(...)`：界面手里只有当前
+  /// kind 的列表，且停用项是否参与判重容易各处写法不一。重名会让记账时
+  /// 的分类选择器出现两个一模一样的格子，必须统一在入口拦住。
+  Future<bool> categoryNameExists({
+    required int kind,
+    required String name,
+    String? parentId,
+    String? excludeId,
+  }) async {
+    final query = select(categories)
+      ..where(
+        (row) =>
+            row.kind.equals(kind) &
+            row.name.equals(name) &
+            (parentId == null
+                ? row.parentId.isNull()
+                : row.parentId.equals(parentId)),
+      );
+    final rows = await query.get();
+    return rows.any((row) => row.id != excludeId);
+  }
+
+  /// 启用 / 停用分类。
+  ///
+  /// 返回 [CategoryToggleResult.lastRoot] 表示这次停用会让该收支类型
+  /// 一个可用的一级分类都不剩——记账页的分类选择器会直接空掉，没法记账，
+  /// 所以拦在这里。删除路径上早有同样的约束（[CategoryDeleteResult.lastRoot]），
+  /// 停用只是「软删除」，不该能绕过它。
+  Future<CategoryToggleResult> setCategoryActive(String id, bool active) {
     final now = DateTime.now().millisecondsSinceEpoch;
     return transaction(() async {
       final category = await (select(
         categories,
       )..where((row) => row.id.equals(id))).getSingle();
+      if (!active && category.level == 1) {
+        final rootCount = categories.id.count();
+        final activeRoots =
+            await (selectOnly(categories)
+                  ..addColumns([rootCount])
+                  ..where(
+                    categories.kind.equals(category.kind) &
+                        categories.level.equals(1) &
+                        categories.isActive.equals(true),
+                  ))
+                .map((row) => row.read(rootCount) ?? 0)
+                .getSingle();
+        if (activeRoots <= 1) return CategoryToggleResult.lastRoot;
+      }
       await (update(categories)..where((row) => row.id.equals(id))).write(
         CategoriesCompanion(isActive: Value(active), updatedAt: Value(now)),
       );
@@ -203,6 +264,7 @@ class AppDatabase extends _$AppDatabase {
           ),
         );
       }
+      return CategoryToggleResult.ok;
     });
   }
 
@@ -509,6 +571,9 @@ class AppDatabase extends _$AppDatabase {
 }
 
 enum CategoryDeleteResult { deleted, inUse, lastRoot }
+
+/// 停用/启用的结果。[lastRoot] 表示停用后该收支类型没有可用一级分类了。
+enum CategoryToggleResult { ok, lastRoot }
 
 class LedgerItem {
   const LedgerItem({required this.transaction, required this.category});
