@@ -24,12 +24,18 @@ enum AppToastLevel {
 ///
 /// 业务页一律用 [showAppToast]，不裸用 `showFToast`——
 /// 以后要统一换图标、加触感、加埋点，只改这里。
+///
+/// [persist] 为 true 时不自动消失、不可滑动关闭，只能由按钮里的
+/// [FToasterEntry.dismiss] 收起。forui 把 `duration: null` 当成常驻，
+/// 但本函数的 [duration] 缺省也是 null（表示用语义默认时长），
+/// 所以常驻必须走这个开关，不能靠传 null。
 void showAppToast(
   BuildContext context, {
   required String message,
   String? description,
   AppToastLevel level = AppToastLevel.info,
   Duration? duration,
+  bool persist = false,
   Widget Function(BuildContext context, FToasterEntry entry)? suffixBuilder,
 }) {
   final isError = level == AppToastLevel.error;
@@ -48,7 +54,8 @@ void showAppToast(
     title: Text(message),
     description: description == null ? null : Text(description),
     suffixBuilder: suffixBuilder,
-    duration: duration ?? _defaultDuration(level),
+    duration: persist ? null : (duration ?? _defaultDuration(level)),
+    swipeToDismiss: persist ? const [] : null,
   );
 }
 

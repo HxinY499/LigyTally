@@ -74,7 +74,7 @@ class _UpdateNotificationLayerState
           ),
         ],
       ),
-      duration: null, // 不自动消失：等用户主动交互
+      persist: true,
     );
   }
 
