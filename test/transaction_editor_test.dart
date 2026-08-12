@@ -1,5 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
@@ -193,6 +194,99 @@ void main() {
       await tester.tap(find.text('0.00'));
       await tester.pump();
       expect(tester.testTextInput.isVisible, isFalse, reason: '金额条要能收起系统键盘');
+
+      await teardown(tester);
+    });
+  });
+
+  group('日期/时间浮层关闭后不抢备注焦点', () {
+    Future<void> pumpLocalized(WidgetTester tester, AppDatabase database) async {
+      final forui = buildForuiTheme();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [databaseProvider.overrideWithValue(database)],
+          child: MaterialApp(
+            locale: const Locale('zh', 'CN'),
+            supportedLocales: const [Locale('zh', 'CN')],
+            localizationsDelegates: const [
+              FLocalizations.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            theme: forui.toApproximateMaterialTheme(),
+            builder: (context, child) =>
+                FTheme(data: forui, child: FToaster(child: child!)),
+            home: const TransactionEditor(),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+    }
+
+    Future<void> closePickerWithoutFocusingNote(
+      WidgetTester tester, {
+      required Finder openChip,
+      required String sheetTitle,
+    }) async {
+      await tester.tap(openChip);
+      // 不用 pumpAndSettle：记账页有持续动画。
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text(sheetTitle), findsOneWidget);
+
+      await tester.tap(find.text('取消'));
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      // 再给一帧，让关浮层后的 post-frame unfocus 跑完。
+      await tester.pump();
+
+      expect(find.text(sheetTitle), findsNothing);
+      final note = tester.widget<TextField>(find.byType(TextField));
+      expect(note.focusNode?.hasFocus, isFalse, reason: '关浮层后备注不该获焦');
+      expect(
+        tester.testTextInput.isVisible,
+        isFalse,
+        reason: '关浮层后不该弹出系统键盘',
+      );
+    }
+
+    testWidgets('关闭日期浮层后备注不获焦', (tester) async {
+      usePhoneViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await pumpLocalized(tester, database);
+
+      await closePickerWithoutFocusingNote(
+        tester,
+        openChip: find.text('今天'),
+        sheetTitle: '选择日期',
+      );
+
+      await teardown(tester);
+    });
+
+    testWidgets('关闭时间浮层后备注不获焦', (tester) async {
+      usePhoneViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await pumpLocalized(tester, database);
+
+      final now = TimeOfDay.now();
+      final clock =
+          '${now.hour.toString().padLeft(2, '0')}:'
+          '${now.minute.toString().padLeft(2, '0')}';
+
+      await closePickerWithoutFocusingNote(
+        tester,
+        openChip: find.text(clock),
+        sheetTitle: '选择时间',
+      );
 
       await teardown(tester);
     });

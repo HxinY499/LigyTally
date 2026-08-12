@@ -6,6 +6,7 @@ import '../../../core/preferences/app_icon.dart';
 import '../../../core/preferences/backdrop_blur.dart';
 import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/money_grouped.dart';
+import '../../../core/preferences/transaction_image_style.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/update/update_controller.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -96,6 +97,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final imageStyle = ref.watch(transactionImageStyleProvider);
     return SafeArea(
       bottom: false,
       child: AppPageHeader(
@@ -127,12 +129,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
                 _SettingsItem(
-                  icon: FLucideIcons.aperture,
-                  title: '背景模糊',
-                  value: ref.watch(backdropBlurProvider).round().toString(),
-                  showChevron: true,
-                  onTap: () => showBackdropBlurSheet(context),
+                  icon: FLucideIcons.image,
+                  title: '记账页图片',
+                  trailing: _ImageStyleToggle(
+                    value: imageStyle,
+                    onChanged: (value) => ref
+                        .read(transactionImageStyleProvider.notifier)
+                        .setStyle(value),
+                  ),
                 ),
+                // 模糊是背板独有的参数，贴纸模式下怎么调都不会有变化。
+                // 与其置灰摆在那里让人猜它归谁管，不如跟着背板一起收起来。
+                if (imageStyle == TransactionImageStyle.backdrop)
+                  _SettingsItem(
+                    icon: FLucideIcons.aperture,
+                    title: '背景模糊',
+                    value: ref.watch(backdropBlurProvider).round().toString(),
+                    showChevron: true,
+                    onTap: () => showBackdropBlurSheet(context),
+                  ),
                 _SettingsItem(
                   icon: FLucideIcons.smartphone,
                   title: '应用图标',
@@ -616,12 +631,12 @@ class _LayoutToggle extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _LayoutIcon(
+          _ToggleIcon(
             icon: FLucideIcons.list,
             selected: value == CategoryPickerLayout.list,
             onTap: () => onChanged(CategoryPickerLayout.list),
           ),
-          _LayoutIcon(
+          _ToggleIcon(
             icon: FLucideIcons.layoutGrid,
             selected: value == CategoryPickerLayout.grid,
             onTap: () => onChanged(CategoryPickerLayout.grid),
@@ -632,8 +647,45 @@ class _LayoutToggle extends StatelessWidget {
   }
 }
 
-class _LayoutIcon extends StatelessWidget {
-  const _LayoutIcon({
+/// 记账页账单图片展示方式的二态切换器：整页背板 / 拍立得贴纸。
+///
+/// 与 [_LayoutToggle] 同一副胶囊长相，两行控件的右边缘才落在同一条线上。
+class _ImageStyleToggle extends StatelessWidget {
+  const _ImageStyleToggle({required this.value, required this.onChanged});
+
+  final TransactionImageStyle value;
+  final ValueChanged<TransactionImageStyle> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F3F2),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ToggleIcon(
+            icon: FLucideIcons.wallpaper,
+            selected: value == TransactionImageStyle.backdrop,
+            onTap: () => onChanged(TransactionImageStyle.backdrop),
+          ),
+          _ToggleIcon(
+            icon: FLucideIcons.sticker,
+            selected: value == TransactionImageStyle.polaroid,
+            onTap: () => onChanged(TransactionImageStyle.polaroid),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 设置行右侧胶囊切换器里的单枚图标按钮，被上面两个切换器共用。
+class _ToggleIcon extends StatelessWidget {
+  const _ToggleIcon({
     required this.icon,
     required this.selected,
     required this.onTap,

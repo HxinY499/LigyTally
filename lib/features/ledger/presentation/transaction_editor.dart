@@ -13,11 +13,13 @@ import '../../../core/preferences/backdrop_blur.dart';
 import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/last_category.dart';
 import '../../../core/preferences/money_grouped.dart';
+import '../../../core/preferences/transaction_image_style.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/image_backdrop.dart';
 import '../../../shared/widgets/local_image.dart';
+import '../../../shared/widgets/photo_viewer.dart';
 import '../application/amount_expression.dart';
 import '../application/providers.dart';
 
@@ -140,6 +142,30 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     allowUpscaling: false,
   );
 
+  /// 贴纸上要摆出来的照片，顺序与图片面板一致（已有图在前，新选的在后）。
+  ///
+  /// 与 [_backdropImages] 同源但另走一份：背板要的是模糊后的色调，这里要的是
+  /// 看得清的原样，两边的解码尺寸与容错表现都不一样，合并反而要处处分叉。
+  List<Widget> _polaroidPhotos(ImageStorage storage) {
+    final photos = <Widget>[];
+    for (final image in _existingImages) {
+      if (_removedImageIds.contains(image.id)) continue;
+      photos.add(
+        LocalImage(storage: storage, relativePath: image.thumbnailPath),
+      );
+    }
+    for (final image in _pendingImages) {
+      photos.add(
+        Image.file(
+          File(image.path),
+          fit: BoxFit.cover,
+          cacheWidth: _kPolaroidDecodeWidth,
+        ),
+      );
+    }
+    return photos;
+  }
+
   /// 图片增删后重排背板轮播：只有一张不转，多张从第一张重新开始。
   ///
   /// 索引只增不回绕，取图时再对当前张数取模——这样删图导致张数变化时
@@ -149,6 +175,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     _backdropTimer = null;
     _backdropIndex = 0;
     if (_visibleImageCount < 2) return;
+    // 贴纸模式下没有背板可轮播，定时器只会每 4 秒白刷一次页面。
+    // 本页是 push 出来的路由，设置页此刻不可能开着，读一次就够。
+    if (ref.read(transactionImageStyleProvider) !=
+        TransactionImageStyle.backdrop) {
+      return;
+    }
     _backdropTimer = Timer.periodic(_kBackdropRotateInterval, (_) {
       if (mounted) setState(() => _backdropIndex++);
     });
@@ -332,14 +364,15 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                     spacing: 12,
                     runSpacing: 12,
                     children: [
-                      for (final image in visibleExisting)
+                      for (var i = 0; i < visibleExisting.length; i++)
                         _SheetImageTile(
                           child: LocalImage(
                             storage: storage,
-                            relativePath: image.thumbnailPath,
+                            relativePath: visibleExisting[i].thumbnailPath,
                           ),
+                          onTap: () => _openPhotoViewer(context, i),
                           onRemove: () => setSheetState(
-                            () => _removedImageIds.add(image.id),
+                            () => _removedImageIds.add(visibleExisting[i].id),
                           ),
                         ),
                       for (var i = 0; i < _pendingImages.length; i++)
@@ -347,6 +380,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                           child: Image.file(
                             File(_pendingImages[i].path),
                             fit: BoxFit.cover,
+                          ),
+                          onTap: () => _openPhotoViewer(
+                            context,
+                            visibleExisting.length + i,
                           ),
                           onRemove: () =>
                               setSheetState(() => _pendingImages.removeAt(i)),
@@ -389,14 +426,52 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     if (mounted) setState(_restartBackdropRotation);
   }
 
+  /// 从图片面板点开某张图，进全屏查看器。
+  ///
+  /// 送进去的是原图而不是缩略图：缩略图只有 320px，双击放大后是一团马赛克。
+  /// 已有图片拼绝对路径要过一次异步 resolve，所以在点击时才现算——面板每次
+  /// 重建都预先把三张的路径都 resolve 一遍不值当。
+  ///
+  /// 顺序与面板里的排列一致（已有图在前，新选的在后），[index] 直接就是面板
+  /// 里的位置；仍然夹一次 clamp，避免 await 期间图片被删导致越界。
+  Future<void> _openPhotoViewer(BuildContext context, int index) async {
+    final storage = ref.read(imageStorageProvider);
+    final images = <ImageProvider>[];
+    for (final image in _existingImages) {
+      if (_removedImageIds.contains(image.id)) continue;
+      images.add(FileImage(await storage.resolve(image.imagePath)));
+    }
+    for (final image in _pendingImages) {
+      images.add(FileImage(File(image.path)));
+    }
+    if (!context.mounted || images.isEmpty) return;
+    await showPhotoViewer(
+      context,
+      images: images,
+      initialIndex: index.clamp(0, images.length - 1),
+    );
+  }
+
   Future<void> _selectDate() async {
     final value = await showAppDatePicker(context, initial: _date);
+    if (!mounted) return;
     if (value != null) setState(() => _date = dateOnly(value));
+    // 浮层是 PopupRoute，关闭后会恢复焦点；本页常驻可编辑焦点只有备注，
+    // 恢复失败时会落到备注并弹出系统键盘。等本帧恢复完成后再清掉。
+    _clearFocusAfterPicker();
   }
 
   Future<void> _selectTime() async {
     final value = await showAppTimePicker(context, initial: _time);
+    if (!mounted) return;
     if (value != null) setState(() => _time = value);
+    _clearFocusAfterPicker();
+  }
+
+  void _clearFocusAfterPicker() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) FocusManager.instance.primaryFocus?.unfocus();
+    });
   }
 
   /// 保存。[continueAfter] 为 true 时保存后不关闭页面，清空金额继续记账。
@@ -476,11 +551,19 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final accent = _kind == 0 ? AppColors.expense : AppColors.income;
     // 金额卡的千分位跟随全局偏好，与明细页 / 统计页的 formatMoney 保持一致。
     final grouped = ref.watch(moneyGroupedProvider);
+    // 背板与贴纸互斥，由设置页的偏好二选一；只算用得上的那份，
+    // 另一份的解码是白花的内存。
+    final useBackdrop =
+        ref.watch(transactionImageStyleProvider) ==
+        TransactionImageStyle.backdrop;
     // 多图时轮流当背板：索引由定时器推进，这里对当前张数取模。
-    final backdrops = _backdropImages;
+    final backdrops = useBackdrop ? _backdropImages : const <ImageProvider>[];
     final backdrop = backdrops.isEmpty
         ? null
         : backdrops[_backdropIndex % backdrops.length];
+    // 贴纸把所有图一次摊开，不跟着 _backdropIndex 走：它模拟的是几张实体照片，
+    // 自己会动就不像贴上去的了。
+    final polaroids = useBackdrop ? const <Widget>[] : _polaroidPhotos(storage);
 
     // 顶栏图片入口的缩略图：优先最新待上传，其次已有图片。
     Widget? imagePreview;
@@ -525,6 +608,16 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                         controller: _scrollController,
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                         children: [
+                          // 图片贴纸摆在最上面：一进页面第一眼就能看见自己拍的
+                          // 那张照片，这是它在本页唯一的作用。无图时整块不渲染，
+                          // 布局与没有图片功能时完全一致。
+                          if (polaroids.isNotEmpty) ...[
+                            _PolaroidStack(
+                              photos: polaroids,
+                              onTap: _showImageSheet,
+                            ),
+                            const SizedBox(height: 4),
+                          ],
                           // 收支开关与「分类」同行：它切的就是下面这张网格，
                           // 摆在一起从属关系自明，也省下独占一行的高度。
                           Row(
@@ -616,6 +709,109 @@ const int _kBackdropDecodeWidth = 480;
 
 /// 多图时每张背板停留的时长。
 const _kBackdropRotateInterval = Duration(seconds: 4);
+
+/// 贴纸里照片的解码宽度：照片区 72pt，按 3x 屏留到 216 已经够清晰。
+/// 相册原图动辄几千像素宽，直接解码进来一张就是几十兆。
+const int _kPolaroidDecodeWidth = 216;
+
+/// 账单图片的「拍立得贴纸」：几张带白边的小照片微微歪着、向左错开摊成一把。
+///
+/// 与整页背板是二选一的关系（见 [TransactionImageStyle]）。背板经过高斯模糊
+/// 与渐隐之后只剩一层认不出来源的色雾，用户感知到的是氛围而不是「我拍的那张
+/// 照片」；贴纸走另一条路——清晰、有边界、可点开，情绪落点是「翻账本时夹着
+/// 的照片」。两种都只为观感存在，不承担信息展示的职责。
+///
+/// 独占一行走布局流、不浮在分类网格上：贴纸压住任何一个分类格子都会吃掉它的
+/// 点击区，而分类是本页唯一的必选项，不能为装饰让路。
+class _PolaroidStack extends StatelessWidget {
+  const _PolaroidStack({required this.photos, required this.onTap});
+
+  final List<Widget> photos;
+  final VoidCallback onTap;
+
+  /// 从左到右的倾角（弧度）。角度全一致会像印刷出来的图案，逐帧随机又会自己
+  /// 抖，固定成手摆过的样子；最右那张压在最上面，倾角也最小，最像被摆正的主角。
+  /// 长度同时兼作贴纸的张数上限——正好等于单笔账单的图片上限 3。
+  static const _kTilts = [-0.14, 0.09, -0.035];
+
+  /// 照片区边长。
+  static const double _kPhoto = 72;
+
+  /// 相框白边：下边故意比其余三边宽，这是拍立得的辨识特征，
+  /// 少了它就只是一张加了白框的普通缩略图。
+  static const _kFrame = EdgeInsets.fromLTRB(5, 5, 5, 13);
+
+  /// 单张相框的尺寸，由 [_kPhoto] 加 [_kFrame] 得出（72+5+5 / 72+5+13）。
+  /// 写成常量而不是现算，因为外框尺寸要靠它推导。
+  static const double _kCardWidth = 82;
+  static const double _kCardHeight = 90;
+
+  /// 相邻两张的水平错位。
+  ///
+  /// 早先几张相框同心叠放、只差旋转角，相邻不到 7° 的角度差让下面那些只从边角
+  /// 露出几像素白边——露出来的还是相框而不是照片，传了 3 张和传 1 张看起来
+  /// 没有区别。错开小半张（40 约为相框宽的一半）每张才都露得出内容；
+  /// 再小会退回一摞，再大就散成三张不相干的图。
+  static const double _kSpread = 40;
+
+  /// 旋转余量。[Transform.rotate] 只改绘制不改布局，82×90 转 8° 后包围盒
+  /// 约 94×101，四边各留 6 才不会被 [Stack] 裁掉角。
+  static const double _kRotationMargin = 6;
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = photos.take(_kTilts.length).toList();
+    if (shown.isEmpty) return const SizedBox.shrink();
+    // 后添加的照片摆在最右、盖在最上面，倾角也从数组末尾往回取。
+    final tilts = _kTilts.sublist(_kTilts.length - shown.length);
+    // 整把在外框里居中：最左那张往左推多少，最右那张就往右推多少。
+    final origin = (shown.length - 1) / 2;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width:
+              _kCardWidth +
+              (shown.length - 1) * _kSpread +
+              _kRotationMargin * 2,
+          height: _kCardHeight + _kRotationMargin * 2,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              for (var i = 0; i < shown.length; i++)
+                Transform.translate(
+                  offset: Offset((i - origin) * _kSpread, 0),
+                  child: Transform.rotate(
+                    angle: tilts[i],
+                    child: _frame(shown[i]),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _frame(Widget photo) => Container(
+    padding: _kFrame,
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(3),
+      boxShadow: AppShadows.card,
+    ),
+    child: SizedBox(
+      width: _kPhoto,
+      height: _kPhoto,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(2),
+        child: photo,
+      ),
+    ),
+  );
+}
 
 class _CategoryPicker extends ConsumerStatefulWidget {
   const _CategoryPicker({
@@ -1578,6 +1774,9 @@ class _DateTimeChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(9),
       child: InkWell(
         onTap: onTap,
+        // 胶囊本身不该进焦点树：否则 PopupRoute 关闭时会把焦点交回这里，
+        // 重建后再落到旁边的备注 TextField，系统键盘跟着弹出。
+        canRequestFocus: false,
         borderRadius: BorderRadius.circular(9),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -1654,9 +1853,17 @@ class _CategoryCell extends StatelessWidget {
 
 /// 图片面板里的已选图片瓷贴：88x88 圆角图 + 右上角黑色删除钮。
 class _SheetImageTile extends StatelessWidget {
-  const _SheetImageTile({required this.child, required this.onRemove});
+  const _SheetImageTile({
+    required this.child,
+    required this.onTap,
+    required this.onRemove,
+  });
 
   final Widget child;
+
+  /// 点缩略图进全屏查看。删除钮是 [Stack] 里的兄弟节点且画在更上层，
+  /// 不会被这层点击区吃掉。
+  final VoidCallback onTap;
   final VoidCallback onRemove;
 
   @override
@@ -1668,9 +1875,13 @@ class _SheetImageTile extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Positioned.fill(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: child,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: child,
+              ),
             ),
           ),
           Positioned(
