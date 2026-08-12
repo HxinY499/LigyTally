@@ -182,24 +182,55 @@ void main() {
   });
 
   group('卡片阴影全应用统一', () {
-    test('统计页的卡片阴影就是 AppShadows 本身', () {
+    testWidgets('统计页的卡片阴影就是全局色板那一份', (tester) async {
       // 统计页早先在 StatsTokens 里自带一份阴影常量。这里断言它是**同一个
       // 对象**（identical 而非 ==），确保是「转发」而不是「抄了一份数值」——
-      // 抄一份的话，以后改 AppShadows 统计页不会跟着变，两屏就漂移了。
-      expect(identical(StatsTokens.shadowCard, AppShadows.card), isTrue);
-      expect(identical(StatsTokens.shadowHero, AppShadows.heroPrimary), isTrue);
+      // 抄一份的话，以后改色板里的阴影统计页不会跟着变，两屏就漂移了。
+      //
+      // 深浅两套都要验：转发关系只要在某一套里被写成硬取 light，
+      // 深色模式下统计页就会挂着一份浅色阴影。
+      for (final brightness in Brightness.values) {
+        late StatsTokens stats;
+        late AppColors colors;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildMaterialTheme(brightness),
+            home: Builder(
+              builder: (context) {
+                stats = StatsTokens.of(context);
+                colors = context.colors;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        );
+        // MaterialApp 换主题会走 200ms 淡变，首帧拿到的还是插值中的旧亮度，
+        // 必须等它落定再取值。
+        await tester.pumpAndSettle();
+        expect(colors.brightness, brightness);
+        expect(identical(stats.shadowCard, colors.shadowCard), isTrue);
+        expect(identical(stats.shadowHero, colors.shadowHeroPrimary), isTrue);
+      }
     });
 
     test('卡片阴影是两层叠加：近距离收边 + 远距离柔光', () {
       // 单层阴影要么硬得像描边，要么糊成一团灰。这条锁住「两层」这个设计决定。
-      expect(AppShadows.card, hasLength(2));
-      final near = AppShadows.card.first;
-      final far = AppShadows.card.last;
-      // 近层负责压边界：偏移小、模糊小。
-      expect(near.offset.dy, lessThan(far.offset.dy));
-      expect(near.blurRadius, lessThan(far.blurRadius));
-      // 阴影不是纯黑——纯黑压在浅灰底上会发脏，要带一点冷色调（蓝 > 红）。
-      expect(near.color.b, greaterThan(near.color.r));
+      for (final colors in [AppColors.light, AppColors.dark]) {
+        expect(colors.shadowCard, hasLength(2));
+        final near = colors.shadowCard.first;
+        final far = colors.shadowCard.last;
+        // 近层负责压边界：偏移小、模糊小。
+        expect(near.offset.dy, lessThan(far.offset.dy));
+        expect(near.blurRadius, lessThan(far.blurRadius));
+      }
+      // 浅色下阴影不是纯黑——纯黑压在浅灰底上会发脏，要带一点冷色调（蓝 > 红）。
+      final light = AppColors.light.shadowCard.first;
+      expect(light.color.b, greaterThan(light.color.r));
+      // 深色下反过来要更黑更重：浅色那套 4% 的灰压在深底上等于没有。
+      expect(
+        AppColors.dark.shadowCard.first.color.a,
+        greaterThan(AppColors.light.shadowCard.first.color.a),
+      );
     });
 
     testWidgets('记账页的日卡带上了统一阴影', (tester) async {
@@ -230,7 +261,7 @@ void main() {
         ProviderScope(
           overrides: [databaseProvider.overrideWithValue(database)],
           child: MaterialApp(
-            theme: forui.toApproximateMaterialTheme(),
+            theme: buildMaterialTheme(Brightness.light),
             builder: (context, child) => FTheme(
               data: forui,
               child: FToaster(child: child!),
@@ -264,7 +295,7 @@ void main() {
           .toList();
       expect(dayCards, isNotEmpty);
       for (final card in dayCards) {
-        expect(card.boxShadow, AppShadows.card);
+        expect(card.boxShadow, AppColors.light.shadowCard);
       }
 
       // drift 取消订阅时会排一个 0ms 的清理定时器，测试结束前要放掉它。
@@ -298,7 +329,7 @@ void main() {
           .where((decoration) => decoration.gradient != null)
           .toList();
       expect(band, hasLength(1));
-      expect(band.single.boxShadow, AppShadows.heroWarm);
+      expect(band.single.boxShadow, AppColors.light.shadowHeroWarm);
     });
   });
 
@@ -333,7 +364,7 @@ void main() {
         ProviderScope(
           overrides: [databaseProvider.overrideWithValue(database)],
           child: MaterialApp(
-            theme: forui.toApproximateMaterialTheme(),
+            theme: buildMaterialTheme(Brightness.light),
             builder: (context, child) => FTheme(
               data: forui,
               child: FToaster(child: child!),
@@ -361,7 +392,7 @@ void main() {
           .widgetList<Material>(find.byType(Material))
           .where(
             (material) =>
-                material.color == AppColors.surface &&
+                material.color == AppColors.light.surface &&
                 material.borderRadius ==
                     const BorderRadius.all(Radius.circular(18)),
           )
@@ -382,16 +413,16 @@ void main() {
 
       final inks = tester
           .widgetList<InkWell>(find.byType(InkWell))
-          .where((ink) => ink.highlightColor == AppColors.pressed)
+          .where((ink) => ink.highlightColor == AppColors.light.pressed)
           .toList();
       // 至少三处：卡片头、账单行、吸顶月份按钮。
       expect(inks.length, greaterThanOrEqualTo(3));
       for (final ink in inks) {
         // 水波比按下底色更淡——水波是动态扩散的，同色会显得炸开一朵蓝花。
-        expect(ink.splashColor, AppColors.ripple);
-        expect(ink.hoverColor, AppColors.ripple);
+        expect(ink.splashColor, AppColors.light.ripple);
+        expect(ink.hoverColor, AppColors.light.ripple);
       }
-      expect(AppColors.ripple.a, lessThan(AppColors.pressed.a));
+      expect(AppColors.light.ripple.a, lessThan(AppColors.light.pressed.a));
 
       // 带长按的那个才是账单行（卡片头只有 onTap）。
       final rows = tester
@@ -399,7 +430,7 @@ void main() {
           .where((ink) => ink.onLongPress != null)
           .toList();
       expect(rows, hasLength(1));
-      expect(rows.single.highlightColor, AppColors.pressed);
+      expect(rows.single.highlightColor, AppColors.light.pressed);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(Duration.zero);
@@ -415,15 +446,15 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(
-              backgroundColor: AppColors.canvas,
+              backgroundColor: AppColors.light.canvas,
               body: Center(
                 child: RepaintBoundary(
                   key: key,
                   child: wrap(
                     InkWell(
                       onTap: () {},
-                      highlightColor: AppColors.pressed,
-                      splashColor: AppColors.ripple,
+                      highlightColor: AppColors.light.pressed,
+                      splashColor: AppColors.light.ripple,
                       child: const SizedBox(height: 60, width: 200),
                     ),
                   ),
@@ -474,9 +505,9 @@ void main() {
       final oldDiff = await pressDiff(
         (child) => Container(
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: AppColors.light.surface,
             borderRadius: BorderRadius.circular(18),
-            boxShadow: AppShadows.card,
+            boxShadow: AppColors.light.shadowCard,
           ),
           clipBehavior: Clip.antiAlias,
           child: child,
@@ -487,12 +518,12 @@ void main() {
       // 新结构：卡片自己就是 Material，于是它成了水波画布。
       final newDiff = await pressDiff(
         (child) => DecoratedBox(
-          decoration: const BoxDecoration(
-            borderRadius: BorderRadius.all(Radius.circular(18)),
-            boxShadow: AppShadows.card,
+          decoration: BoxDecoration(
+            borderRadius: const BorderRadius.all(Radius.circular(18)),
+            boxShadow: AppColors.light.shadowCard,
           ),
           child: Material(
-            color: AppColors.surface,
+            color: AppColors.light.surface,
             borderRadius: BorderRadius.circular(18),
             clipBehavior: Clip.antiAlias,
             child: child,
@@ -530,7 +561,7 @@ void main() {
         ProviderScope(
           overrides: [databaseProvider.overrideWithValue(database)],
           child: MaterialApp(
-            theme: forui.toApproximateMaterialTheme(),
+            theme: buildMaterialTheme(Brightness.light),
             builder: (context, child) => FTheme(
               data: forui,
               child: FToaster(child: child!),

@@ -135,6 +135,7 @@ class AppDatabase extends _$AppDatabase {
       ..where((row) => row.kind.equals(kind))
       ..orderBy([
         (row) => OrderingTerm.asc(row.level),
+        (row) => OrderingTerm.asc(row.parentId),
         (row) => OrderingTerm.asc(row.sortOrder),
       ]);
     if (activeOnly) {
@@ -173,6 +174,58 @@ class AppDatabase extends _$AppDatabase {
         updatedAt: now,
       ),
     );
+  }
+
+  /// 按 [ids] 的顺序，把同一 scope 内的 `sortOrder` 重写成 `0..n-1`。
+  ///
+  /// scope 由列表里每一项共同决定：一级是 `(kind, parent_id IS NULL)`，
+  /// 二级是 `(kind, parent_id = 该项的父级)`。不能跨层级、不能跨父级，
+  /// 也不能漏掉同 scope 里的停用项——漏掉的那条会带着旧序号留在原位，
+  /// 下次拖拽又会插回来。
+  ///
+  /// [ids] 少于 2 个是空操作：一张卡、一个格子没有可交换的位置。
+  Future<void> reorderCategories(List<String> ids) async {
+    if (ids.length < 2) return;
+    await transaction(() async {
+      final rows = await (select(
+        categories,
+      )..where((row) => row.id.isIn(ids))).get();
+      if (rows.length != ids.length) {
+        throw StateError('分类已变化，请重试');
+      }
+      final byId = {for (final row in rows) row.id: row};
+      final first = byId[ids.first]!;
+      for (final id in ids) {
+        final row = byId[id]!;
+        if (row.kind != first.kind ||
+            row.parentId != first.parentId ||
+            row.level != first.level) {
+          throw StateError('不能跨层级排序');
+        }
+      }
+      final scope =
+          await (select(categories)..where(
+                (row) =>
+                    row.kind.equals(first.kind) &
+                    (first.parentId == null
+                        ? row.parentId.isNull()
+                        : row.parentId.equals(first.parentId!)),
+              ))
+              .get();
+      if (scope.length != ids.length) {
+        throw StateError('分类已变化，请重试');
+      }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await batch((batch) {
+        for (var i = 0; i < ids.length; i++) {
+          batch.update(
+            categories,
+            CategoriesCompanion(sortOrder: Value(i), updatedAt: Value(now)),
+            where: (row) => row.id.equals(ids[i]),
+          );
+        }
+      });
+    });
   }
 
   /// 改分类的名称与图标。层级和归属不可改——分类一旦被账单引用，
@@ -364,6 +417,40 @@ class AppDatabase extends _$AppDatabase {
           )
           .toList(),
     );
+  }
+
+  /// 区间内账单的一次性快照，按记账日、发生时间升序。
+  ///
+  /// [range] 为 null 表示全部账单——「导出全部」不该用 2000–2100 这种假区间
+  /// 去碰运气，记账日一旦落在窗外就会被静默丢掉。
+  ///
+  /// 给 CSV 导出用：表格软件从上往下读应该是时间线，不是明细页那种最新在上。
+  /// 和 [watchTransactions] 分开，是因为那边是 Stream、倒序，硬扭成升序快照会
+  /// 让调用方看起来像在「订阅一份不会再变的列表」。
+  Future<List<LedgerItem>> transactionsIn([LedgerDateRange? range]) async {
+    final query = select(transactions).join([
+      innerJoin(categories, categories.id.equalsExp(transactions.categoryId)),
+    ]);
+    if (range != null) {
+      query.where(
+        transactions.accountingDate.isBiggerOrEqualValue(dateKey(range.start)) &
+            transactions.accountingDate.isSmallerThanValue(
+              dateKey(range.endExclusive),
+            ),
+      );
+    }
+    query.orderBy([
+      OrderingTerm.asc(transactions.accountingDate),
+      OrderingTerm.asc(transactions.occurredAt),
+    ]);
+    final rows = await query.get();
+    return [
+      for (final row in rows)
+        LedgerItem(
+          transaction: row.readTable(transactions),
+          category: row.readTable(categories),
+        ),
+    ];
   }
 
   /// 某个一级分类在区间内的账单明细，按发生时间倒序。
@@ -563,6 +650,22 @@ class AppDatabase extends _$AppDatabase {
           ..where((row) => row.transactionId.equals(transactionId))
           ..orderBy([(row) => OrderingTerm.asc(row.sortOrder)]))
         .get();
+  }
+
+  /// 一批账单各自挂了几张图。CSV 只记数量、不带文件。
+  Future<Map<String, int>> imageCountsFor(List<String> transactionIds) async {
+    if (transactionIds.isEmpty) return const {};
+    final count = transactionImages.id.count();
+    final rows =
+        await (selectOnly(transactionImages)
+              ..addColumns([transactionImages.transactionId, count])
+              ..where(transactionImages.transactionId.isIn(transactionIds))
+              ..groupBy([transactionImages.transactionId]))
+            .get();
+    return {
+      for (final row in rows)
+        row.read(transactionImages.transactionId)!: row.read(count) ?? 0,
+    };
   }
 
   /// [range] 内每条账单首图的缩略图相对路径，键为账单 id。

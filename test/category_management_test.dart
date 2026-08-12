@@ -82,6 +82,80 @@ void main() {
       expect(updated.level, meals.level);
     });
 
+    test('拖拽排序把同一 scope 重写成 0..n-1，不影响其它父级', () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      final all = await database.exportCategories();
+      final roots =
+          all.where((item) => item.kind == 0 && item.level == 1).toList()
+            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      expect(roots.first.name, '餐饮');
+
+      await database.reorderCategories([
+        roots.last.id,
+        ...roots.take(roots.length - 1).map((item) => item.id),
+      ]);
+      final reorderedRoots =
+          (await database.exportCategories())
+              .where((item) => item.kind == 0 && item.level == 1)
+              .toList()
+            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      expect(reorderedRoots.first.id, roots.last.id);
+      expect(
+        reorderedRoots.map((item) => item.sortOrder).toList(),
+        List.generate(reorderedRoots.length, (i) => i),
+      );
+
+      final foodChildren =
+          all.where((item) => item.parentId == 'expense_food').toList()
+            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      final childIds = foodChildren.map((item) => item.id).toList();
+      await database.reorderCategories(childIds.reversed.toList());
+      final afterChildren =
+          (await database.exportCategories())
+              .where((item) => item.parentId == 'expense_food')
+              .toList()
+            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      expect(
+        afterChildren.map((item) => item.id).toList(),
+        childIds.reversed.toList(),
+      );
+      expect(
+        afterChildren.map((item) => item.sortOrder).toList(),
+        List.generate(afterChildren.length, (i) => i),
+      );
+
+      // 其它一级下的二级序号没被带跑。
+      final transportBefore =
+          all.where((item) => item.parentId == 'expense_transport').toList()
+            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      final transportAfter =
+          (await database.exportCategories())
+              .where((item) => item.parentId == 'expense_transport')
+              .toList()
+            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      expect(
+        transportAfter.map((item) => '${item.id}:${item.sortOrder}').toList(),
+        transportBefore.map((item) => '${item.id}:${item.sortOrder}').toList(),
+      );
+    });
+
+    test('排序必须覆盖整个 scope，不能跨父级', () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      await expectLater(
+        database.reorderCategories(['expense_food', 'expense_food_meals']),
+        throwsA(isA<StateError>()),
+      );
+      await expectLater(
+        database.reorderCategories(['expense_food', 'expense_transport']),
+        throwsA(isA<StateError>()),
+      );
+      // 少于 2 个是空操作，不能当成失败。
+      await database.reorderCategories(['expense_food_meals']);
+    });
+
     test('停用不能把一侧的可用一级分类清空', () async {
       final database = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(database.close);
@@ -207,7 +281,7 @@ void main() {
         ProviderScope(
           overrides: [databaseProvider.overrideWithValue(database)],
           child: MaterialApp(
-            theme: forui.toApproximateMaterialTheme(),
+            theme: buildMaterialTheme(Brightness.light),
             builder: (context, child) => FTheme(
               data: forui,
               child: FToaster(child: child!),
@@ -261,6 +335,7 @@ void main() {
       expect(find.text('餐饮'), findsOneWidget);
       // 子分类直接铺在卡里，不用再点进去。
       expect(find.text('三餐'), findsOneWidget);
+      expect(find.byIcon(FLucideIcons.gripVertical), findsWidgets);
 
       // 卡片必须自己是 Material（白底 + 18 圆角 + 裁剪），
       // 否则水波会被不透明白底盖住，点击毫无反馈（首页踩过这个坑）。
@@ -268,7 +343,7 @@ void main() {
           .widgetList<Material>(find.byType(Material))
           .where(
             (material) =>
-                material.color == AppColors.surface &&
+                material.color == AppColors.light.surface &&
                 material.borderRadius ==
                     const BorderRadius.all(Radius.circular(18)),
           )
@@ -291,7 +366,7 @@ void main() {
           .toList();
       expect(shadowed, isNotEmpty);
       for (final card in shadowed) {
-        expect(card.boxShadow, AppShadows.card);
+        expect(card.boxShadow, AppColors.light.shadowCard);
       }
 
       await teardown(tester);

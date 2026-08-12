@@ -314,11 +314,12 @@ class _KindToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     return Container(
       height: 28,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: StatsTokens.fillMuted,
+        color: stats.fillMuted,
         borderRadius: BorderRadius.circular(StatsTokens.radiusPill),
       ),
       child: Row(
@@ -352,6 +353,7 @@ class _KindChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -361,7 +363,7 @@ class _KindChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: active ? StatsTokens.surface : Colors.transparent,
+          color: active ? stats.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(StatsTokens.radiusPill),
           boxShadow: active
               ? const [
@@ -378,7 +380,7 @@ class _KindChip extends StatelessWidget {
           style: TextStyle(
             fontSize: 12,
             fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-            color: active ? StatsTokens.primary : StatsTokens.textMuted,
+            color: active ? stats.primary : stats.textMuted,
           ),
         ),
       ),

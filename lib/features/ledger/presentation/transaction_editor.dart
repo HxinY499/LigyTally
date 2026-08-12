@@ -306,10 +306,11 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   /// 关闭后再刷新编辑器，更新顶栏缩略图与角标。
   Future<void> _showImageSheet() async {
     final storage = ref.read(imageStorageProvider);
-    final accent = _kind == 0 ? AppColors.expense : AppColors.income;
+    final colors = context.colors;
+    final accent = _kind == 0 ? colors.expense : colors.income;
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -332,13 +333,13 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                     height: 32,
                     child: Stack(
                       children: [
-                        const Center(
+                        Center(
                           child: Text(
                             '添加图片',
                             style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.ink,
+                              color: colors.ink,
                             ),
                           ),
                         ),
@@ -349,10 +350,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () => Navigator.pop(context),
-                            child: const Icon(
+                            child: Icon(
                               FLucideIcons.x,
                               size: 22,
-                              color: AppColors.ink,
+                              color: colors.ink,
                             ),
                           ),
                         ),
@@ -452,6 +453,31 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
   }
 
+  /// 删除当前正在编辑的账单，成功后退回上一页。
+  ///
+  /// 之前删除只有「在明细列表长按那一行」一条路径：没有图标、没有 chevron、
+  /// 也没有滑动露出的红块，等于藏起来了。想删的人会点进本页四处找，
+  /// 找不到再退出去，最后以为这个应用不能删。列表长按保留，作为熟手的快捷方式。
+  Future<void> _deleteTransaction() async {
+    final existing = widget.existing;
+    if (existing == null) return;
+    final confirmed = await showAppConfirmDialog(
+      context,
+      message: '确定要删除该条账单吗？删除后不可恢复',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(ledgerServiceProvider).delete(existing);
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _saving = false);
+        _showError('删除失败：$error');
+      }
+    }
+  }
+
   Future<void> _selectDate() async {
     final value = await showAppDatePicker(context, initial: _date);
     if (!mounted) return;
@@ -545,10 +571,11 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final database = ref.watch(databaseProvider);
     final storage = ref.watch(imageStorageProvider);
     // 收支语义色：支出红 / 收入绿，贯穿金额卡与键盘按键。
-    final accent = _kind == 0 ? AppColors.expense : AppColors.income;
+    final accent = _kind == 0 ? colors.expense : colors.income;
     // 金额卡的千分位跟随全局偏好，与明细页 / 统计页的 formatMoney 保持一致。
     final grouped = ref.watch(moneyGroupedProvider);
     // 背板与贴纸互斥，由设置页的偏好二选一；只算用得上的那份，
@@ -596,6 +623,17 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           AppTopBar(
             backgroundColor: Colors.transparent,
             title: _isEditing ? '编辑账单' : '记一笔',
+            // 只有编辑既有账单时才有得删；新建态放一颗永远灰着的垃圾桶
+            // 只会让人猜它什么时候能点。
+            actions: _isEditing
+                ? [
+                    AppHeaderAction(
+                      icon: FLucideIcons.trash2,
+                      tooltip: '删除账单',
+                      onTap: _saving ? null : _deleteTransaction,
+                    ),
+                  ]
+                : null,
             body: SafeArea(
               top: false,
               // 键盘区显示与否由两个条件把关，各管一头，见 _NumericKeypad 类文档：
@@ -614,7 +652,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                           if (polaroids.isNotEmpty) ...[
                             _PolaroidStack(
                               photos: polaroids,
-                              onTap: _showImageSheet,
+                              onTapPhoto: (index) =>
+                                  _openPhotoViewer(context, index),
                             ),
                             const SizedBox(height: 4),
                           ],
@@ -723,11 +762,25 @@ const int _kPolaroidDecodeWidth = 216;
 ///
 /// 独占一行走布局流、不浮在分类网格上：贴纸压住任何一个分类格子都会吃掉它的
 /// 点击区，而分类是本页唯一的必选项，不能为装饰让路。
-class _PolaroidStack extends StatelessWidget {
-  const _PolaroidStack({required this.photos, required this.onTap});
+class _PolaroidStack extends StatefulWidget {
+  const _PolaroidStack({required this.photos, required this.onTapPhoto});
 
   final List<Widget> photos;
-  final VoidCallback onTap;
+
+  /// 松手时打开全屏查看器，参数是抬起的那张在图片面板里的位置。
+  ///
+  /// 不是打开图片管理面板：看图和管图是两个意图，而贴纸整个存在的理由就是
+  /// 「让人再看一眼这张照片」，中间插一层增删界面等于把它挡在门外。
+  /// 增删仍走键盘区的相机入口。
+  final ValueChanged<int> onTapPhoto;
+
+  @override
+  State<_PolaroidStack> createState() => _PolaroidStackState();
+}
+
+class _PolaroidStackState extends State<_PolaroidStack> {
+  /// 当前被抬起的那张。null 表示手指没落在任何一张上（也包括没在按）。
+  int? _lifted;
 
   /// 从左到右的倾角（弧度）。角度全一致会像印刷出来的图案，逐帧随机又会自己
   /// 抖，固定成手摆过的样子；最右那张压在最上面，倾角也最小，最像被摆正的主角。
@@ -758,35 +811,109 @@ class _PolaroidStack extends StatelessWidget {
   /// 约 94×101，四边各留 6 才不会被 [Stack] 裁掉角。
   static const double _kRotationMargin = 6;
 
+  /// 抬起的位移。外框高度为它另留一份、静止时整把再下沉半份，
+  /// 抬到顶也不会顶出 [Stack] 被裁掉。
+  static const double _kLift = 12;
+
+  List<Widget> get _shown => widget.photos.take(_kTilts.length).toList();
+
+  double get _boxWidth =>
+      _kCardWidth + (_shown.length - 1) * _kSpread + _kRotationMargin * 2;
+
+  /// 横坐标 [dx] 处压在最上面的那张；落在空白处返回 null。
+  ///
+  /// 从末尾往回找：绘制顺序里后面的盖在前面之上，倒着取到的第一个命中项
+  /// 就是肉眼看到的那张。
+  int? _indexAt(double dx) {
+    final count = _shown.length;
+    final origin = (count - 1) / 2;
+    final center = _boxWidth / 2;
+    for (var i = count - 1; i >= 0; i--) {
+      if ((dx - (center + (i - origin) * _kSpread)).abs() <= _kCardWidth / 2) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  void _liftAt(double dx) {
+    final next = _indexAt(dx);
+    if (next == _lifted) return;
+    // 只在真的抬起某张时震一下：拨过空白不该也有反馈。
+    if (next != null) HapticFeedback.selectionClick();
+    setState(() => _lifted = next);
+  }
+
+  /// 松手：抬着谁就看谁。手指停在空白处则什么也不做。
+  void _release() {
+    final index = _lifted;
+    setState(() => _lifted = null);
+    if (index != null) widget.onTapPhoto(index);
+  }
+
+  void _cancel() {
+    if (_lifted == null) return;
+    setState(() => _lifted = null);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final shown = photos.take(_kTilts.length).toList();
+    final colors = context.colors;
+    final shown = _shown;
     if (shown.isEmpty) return const SizedBox.shrink();
     // 后添加的照片摆在最右、盖在最上面，倾角也从数组末尾往回取。
     final tilts = _kTilts.sublist(_kTilts.length - shown.length);
     // 整把在外框里居中：最左那张往左推多少，最右那张就往右推多少。
     final origin = (shown.length - 1) / 2;
+    // 被抬起的那张挪到最后画。它在一把里可能压在别人下面，只往上抬 12
+    // 也就露出一条边，得整张浮到最前面才看得出是「把它抽出来了」。
+    final order = [
+      for (var i = 0; i < shown.length; i++)
+        if (i != _lifted) i,
+      ?_lifted,
+    ];
     return Align(
       alignment: Alignment.centerRight,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        // 按下即抬起，松手才打开：这样「点一张」和「按住左右拨」是同一套
+        // 动作的两端，不用分别解释。
+        onTapDown: (details) => _liftAt(details.localPosition.dx),
+        onTapUp: (_) => _release(),
+        onTapCancel: _cancel,
+        // 横向拖走的是水平识别器，与外层 ListView 的纵向滚动在竞技场里按
+        // 方向分胜负：横着拨是挑照片，竖着划仍然是滚页面。
+        onHorizontalDragStart: (details) => _liftAt(details.localPosition.dx),
+        onHorizontalDragUpdate: (details) => _liftAt(details.localPosition.dx),
+        onHorizontalDragEnd: (_) => _release(),
+        onHorizontalDragCancel: _cancel,
         child: SizedBox(
-          width:
-              _kCardWidth +
-              (shown.length - 1) * _kSpread +
-              _kRotationMargin * 2,
-          height: _kCardHeight + _kRotationMargin * 2,
+          width: _boxWidth,
+          height: _kCardHeight + _kRotationMargin * 2 + _kLift,
           child: Stack(
             alignment: Alignment.center,
             children: [
-              for (var i = 0; i < shown.length; i++)
-                Transform.translate(
-                  offset: Offset((i - origin) * _kSpread, 0),
-                  child: Transform.rotate(
-                    angle: tilts[i],
-                    child: _frame(shown[i]),
+              for (final i in order)
+                TweenAnimationBuilder<double>(
+                  // 重排绘制顺序后元素是按位置复用的，没有 key 会让抬起动画
+                  // 跟错张。
+                  key: ValueKey(i),
+                  tween: Tween(begin: 0, end: i == _lifted ? 1.0 : 0.0),
+                  duration: const Duration(milliseconds: 260),
+                  // 冲过头再回落，就是那下弹簧感；线性或 easeOut 都只是「移上去」。
+                  curve: Curves.easeOutBack,
+                  builder: (context, t, child) => Transform.translate(
+                    offset: Offset(
+                      (i - origin) * _kSpread,
+                      _kLift / 2 - t * _kLift,
+                    ),
+                    child: Transform.rotate(
+                      // 抬起时顺手摆正：像从一摞里抽出一张端到眼前看。
+                      angle: tilts[i] * (1 - t),
+                      child: Transform.scale(scale: 1 + t * 0.06, child: child),
+                    ),
                   ),
+                  child: _frame(shown[i], colors),
                 ),
             ],
           ),
@@ -795,20 +922,17 @@ class _PolaroidStack extends StatelessWidget {
     );
   }
 
-  Widget _frame(Widget photo) => Container(
+  Widget _frame(Widget photo, AppColors colors) => Container(
     padding: _kFrame,
     decoration: BoxDecoration(
-      color: AppColors.surface,
+      color: colors.surface,
       borderRadius: BorderRadius.circular(3),
-      boxShadow: AppShadows.card,
+      boxShadow: colors.shadowCard,
     ),
     child: SizedBox(
       width: _kPhoto,
       height: _kPhoto,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(2),
-        child: photo,
-      ),
+      child: ClipRRect(borderRadius: BorderRadius.circular(2), child: photo),
     ),
   );
 }
@@ -1019,7 +1143,8 @@ class _ParentCategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? accent : AppColors.muted;
+    final colors = context.colors;
+    final color = selected ? accent : colors.muted;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1036,7 +1161,7 @@ class _ParentCategoryTile extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: selected ? AppColors.ink : AppColors.muted,
+                  color: selected ? colors.ink : colors.muted,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
@@ -1049,7 +1174,7 @@ class _ParentCategoryTile extends StatelessWidget {
                 child: Icon(
                   Icons.expand_more_rounded,
                   size: 18,
-                  color: selected ? accent : AppColors.line,
+                  color: selected ? accent : colors.line,
                 ),
               ),
           ],
@@ -1080,7 +1205,8 @@ class _ParentGridCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? accent : AppColors.muted;
+    final colors = context.colors;
+    final color = selected ? accent : colors.muted;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1114,7 +1240,7 @@ class _ParentGridCell extends StatelessWidget {
                           height: 14,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: selected ? accent : AppColors.line,
+                            color: selected ? accent : colors.line,
                           ),
                           child: const Icon(
                             Icons.expand_more_rounded,
@@ -1136,7 +1262,7 @@ class _ParentGridCell extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 height: 1.1,
-                color: selected ? AppColors.ink : AppColors.muted,
+                color: selected ? colors.ink : colors.muted,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
@@ -1247,6 +1373,7 @@ class _ChildrenPanelState extends State<_ChildrenPanel>
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     if (widget.children.isEmpty) {
       return const SizedBox(width: double.infinity, height: 0);
     }
@@ -1260,7 +1387,7 @@ class _ChildrenPanelState extends State<_ChildrenPanel>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: colors.surface,
               borderRadius: BorderRadius.circular(18),
             ),
             child: Column(children: _childRows()),
@@ -1342,13 +1469,14 @@ class _KindSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selectedColor = kind == 0 ? AppColors.expense : AppColors.income;
+    final colors = context.colors;
+    final selectedColor = kind == 0 ? colors.expense : colors.income;
     return SizedBox(
       height: _kHeight,
       width: _kSegmentWidth * 2 + _kPadding * 2,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: AppColors.line.withValues(alpha: 0.35),
+          color: colors.line.withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(_kHeight / 2),
         ),
         child: Stack(
@@ -1368,7 +1496,7 @@ class _KindSwitch extends StatelessWidget {
                   curve: Curves.easeOut,
                   width: _kSegmentWidth,
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: colors.surface,
                     borderRadius: BorderRadius.circular(
                       (_kHeight - _kPadding * 2) / 2,
                     ),
@@ -1387,13 +1515,13 @@ class _KindSwitch extends StatelessWidget {
               children: [
                 _KindSegment(
                   label: '支出',
-                  color: AppColors.expense,
+                  color: colors.expense,
                   selected: kind == 0,
                   onTap: () => onChanged(0),
                 ),
                 _KindSegment(
                   label: '收入',
-                  color: AppColors.income,
+                  color: colors.income,
                   selected: kind == 1,
                   onTap: () => onChanged(1),
                 ),
@@ -1422,6 +1550,7 @@ class _KindSegment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Expanded(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -1434,7 +1563,7 @@ class _KindSegment extends StatelessWidget {
               fontSize: 13,
               height: 1.1,
               letterSpacing: 0.2,
-              color: selected ? color : AppColors.inactive,
+              color: selected ? color : colors.inactive,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             ),
             child: Text(label),
@@ -1526,7 +1655,8 @@ class _AmountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final amountColor = kind == 0 ? AppColors.expense : AppColors.income;
+    final colors = context.colors;
+    final amountColor = kind == 0 ? colors.expense : colors.income;
     final hasExpr = expression.isNotEmpty;
     final showEquals = AmountExpression.hasOperator(expression);
     // 负数（如 `5-8`）保存按钮本来就是灰的，但旧版界面不解释为什么。
@@ -1539,13 +1669,13 @@ class _AmountCard extends StatelessWidget {
               ? AmountExpression.format(expression, grouped: grouped)
               : '');
     final mainColor = isNegative
-        ? AppColors.expense
-        : (hasExpr ? amountColor : AppColors.line);
+        ? colors.expense
+        : (hasExpr ? amountColor : colors.line);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      color: AppColors.surface,
+      color: colors.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -1562,7 +1692,7 @@ class _AmountCard extends StatelessWidget {
                         fontSize: 12,
                         height: 1.1,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.expense.withValues(alpha: 0.85),
+                        color: colors.expense.withValues(alpha: 0.85),
                       ),
                     )
                   : (showEquals
@@ -1573,11 +1703,13 @@ class _AmountCard extends StatelessWidget {
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               height: 1.1,
-                              color: AppColors.muted,
-                              fontFeatures: [FontFeature.tabularFigures()],
+                              color: colors.muted,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
                             ),
                           )
                         : const SizedBox.shrink()),
@@ -1591,7 +1723,7 @@ class _AmountCard extends StatelessWidget {
                 Text(
                   '¥',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: AppColors.muted,
+                    color: colors.muted,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1769,8 +1901,9 @@ class _DateTimeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Material(
-      color: AppColors.surface,
+      color: colors.surface,
       borderRadius: BorderRadius.circular(9),
       child: InkWell(
         onTap: onTap,
@@ -1783,15 +1916,15 @@ class _DateTimeChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 14, color: AppColors.primary),
+              Icon(icon, size: 14, color: colors.primary),
               const SizedBox(width: 6),
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   height: 1.1,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.ink,
+                  color: colors.ink,
                 ),
               ),
             ],
@@ -1821,7 +1954,8 @@ class _CategoryCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? accent : AppColors.muted;
+    final colors = context.colors;
+    final color = selected ? accent : colors.muted;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1840,7 +1974,7 @@ class _CategoryCell extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 height: 1.1,
-                color: selected ? AppColors.ink : AppColors.muted,
+                color: selected ? colors.ink : colors.muted,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
@@ -1893,8 +2027,8 @@ class _SheetImageTile extends StatelessWidget {
               child: Container(
                 width: 24,
                 height: 24,
-                decoration: const BoxDecoration(
-                  color: AppColors.ink,
+                decoration: BoxDecoration(
+                  color: context.colors.ink,
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -1919,6 +2053,7 @@ class _SheetAddTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1926,11 +2061,11 @@ class _SheetAddTile extends StatelessWidget {
         width: 88,
         height: 88,
         decoration: BoxDecoration(
-          color: AppColors.canvas,
+          color: colors.canvas,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: const Center(
-          child: Icon(FLucideIcons.camera, size: 26, color: AppColors.muted),
+        child: Center(
+          child: Icon(FLucideIcons.camera, size: 26, color: colors.muted),
         ),
       ),
     );
@@ -1950,6 +2085,7 @@ class _NoteField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     const border = OutlineInputBorder(
       borderRadius: BorderRadius.all(Radius.circular(12)),
       borderSide: BorderSide.none,
@@ -1961,15 +2097,18 @@ class _NoteField extends StatelessWidget {
       onSubmitted: (_) => FocusScope.of(context).unfocus(),
       maxLength: 200,
       maxLines: 1,
-      style: const TextStyle(fontSize: 14, color: AppColors.ink),
-      decoration: const InputDecoration(
+      style: TextStyle(fontSize: 14, color: colors.ink),
+      decoration: InputDecoration(
         hintText: '点击填写备注',
-        hintStyle: TextStyle(fontSize: 14, color: AppColors.muted),
+        hintStyle: TextStyle(fontSize: 14, color: colors.muted),
         filled: true,
-        fillColor: AppColors.surface,
+        fillColor: colors.surface,
         counterText: '',
         isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ),
         border: border,
         enabledBorder: border,
         focusedBorder: border,
@@ -1992,6 +2131,7 @@ class _ImageEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -2001,14 +2141,10 @@ class _ImageEntry extends StatelessWidget {
         child: preview == null
             ? Container(
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
+                  color: colors.surface,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  FLucideIcons.camera,
-                  size: 20,
-                  color: AppColors.muted,
-                ),
+                child: Icon(FLucideIcons.camera, size: 20, color: colors.muted),
               )
             : Stack(
                 clipBehavior: Clip.none,
@@ -2026,8 +2162,8 @@ class _ImageEntry extends StatelessWidget {
                       width: 18,
                       height: 18,
                       alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primary,
+                      decoration: BoxDecoration(
+                        color: colors.primary,
                         shape: BoxShape.circle,
                       ),
                       child: Text(
@@ -2157,10 +2293,11 @@ class _NumericKeypad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.canvas,
-        border: Border(top: BorderSide(color: AppColors.line)),
+      decoration: BoxDecoration(
+        color: colors.canvas,
+        border: Border(top: BorderSide(color: colors.line)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2310,10 +2447,11 @@ class _NumKey extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final isBack = value == 'back';
     final isSymbol = value == '+' || value == '-';
     return Material(
-      color: AppColors.surface,
+      color: colors.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -2321,14 +2459,14 @@ class _NumKey extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Center(
           child: isBack
-              ? const Icon(FLucideIcons.delete, size: 22, color: AppColors.ink)
+              ? Icon(FLucideIcons.delete, size: 22, color: colors.ink)
               : Text(
                   value == '-' ? '−' : value,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: isSymbol
-                        ? (symbolColor ?? AppColors.primary)
-                        : AppColors.ink,
+                        ? (symbolColor ?? colors.primary)
+                        : colors.ink,
                   ),
                 ),
         ),
@@ -2345,9 +2483,10 @@ class _AgainKey extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final enabled = onTap != null;
     return Material(
-      color: AppColors.surface,
+      color: colors.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -2358,7 +2497,7 @@ class _AgainKey extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: enabled ? AppColors.muted : AppColors.line,
+              color: enabled ? colors.muted : colors.line,
             ),
           ),
         ),
@@ -2383,8 +2522,9 @@ class _SaveKey extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Material(
-      color: enabled ? accent : AppColors.surface,
+      color: enabled ? accent : colors.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -2403,7 +2543,7 @@ class _SaveKey extends StatelessWidget {
                   '保存',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: enabled ? Colors.white : AppColors.muted,
+                    color: enabled ? Colors.white : colors.muted,
                   ),
                 ),
         ),

@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 /// 把一张账单图片化成版面的背板。
 ///
 /// 不直接拿照片当墙纸：先高斯模糊，再用一道透明度渐变把它从 [begin] 一侧化开、
-/// 到 [end] 一侧完全隐入底色。照片只留下色调与光影，压在上面的深色正文照样读
-/// 得清。记账页铺满整页、明细列表铺单行，区别只在渐变方向与浓度。
+/// 到 [end] 一侧完全隐入底色。照片只留下色调与光影，压在上面的正文照样读得
+/// 清。记账页铺满整页、明细列表铺单行，区别只在渐变方向与浓度。
 class ImageBackdrop extends StatelessWidget {
   const ImageBackdrop({
     super.key,
@@ -24,8 +24,12 @@ class ImageBackdrop extends StatelessWidget {
 
   final double blurSigma;
 
-  /// [begin] 一侧的浓度。0.4 是深色正文压在最暗的照片上仍能达到 WCAG AA
+  /// [begin] 一侧的浓度。0.4 是正文压在最坏那张照片上仍能勉强达到 WCAG AA
   /// 的上限，再浓就得让正文改色了。
+  ///
+  /// 「最坏」在两套皮肤下是反的：浅色皮肤怕深色照片压住深色正文，深色皮肤
+  /// 怕亮色照片压住浅色正文。40% 叠加后两边的对比度落在同一档，所以这个
+  /// 上限不需要按皮肤分开取值。
   final double maxOpacity;
 
   final AlignmentGeometry begin;
@@ -56,6 +60,10 @@ class ImageBackdrop extends StatelessWidget {
                 // 宿主每次重建都重跑一遍模糊太贵，隔离出去。
                 child: RepaintBoundary(
                   child: ShaderMask(
+                    // dstIn 只取 src 的 alpha，色彩通道整条丢弃：下面这三档白
+                    // 是纯粹的遮罩载体，不是往图上盖一层白。图片被抹到透明后
+                    // 露出的是它下面那层页面底色，因此深浅两套皮肤都自动成立，
+                    // 不要把它改成 canvas —— 换成任何颜色渲染结果都一模一样。
                     blendMode: BlendMode.dstIn,
                     shaderCallback: (rect) => LinearGradient(
                       begin: begin,

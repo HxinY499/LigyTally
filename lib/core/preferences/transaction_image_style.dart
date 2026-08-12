@@ -42,7 +42,6 @@ class TransactionImageStyleController extends Notifier<TransactionImageStyle> {
 }
 
 final transactionImageStyleProvider =
-    NotifierProvider<
-      TransactionImageStyleController,
-      TransactionImageStyle
-    >(TransactionImageStyleController.new);
+    NotifierProvider<TransactionImageStyleController, TransactionImageStyle>(
+      TransactionImageStyleController.new,
+    );

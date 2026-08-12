@@ -65,6 +65,7 @@ class _CategoryTransactionsSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final stats = StatsTokens.of(context);
     final database = ref.watch(databaseProvider);
     final grouped = ref.watch(moneyGroupedProvider);
 
@@ -73,7 +74,7 @@ class _CategoryTransactionsSheet extends ConsumerWidget {
         maxHeight: MediaQuery.sizeOf(context).height * _maxHeightRatio,
       ),
       child: Material(
-        color: StatsTokens.surface,
+        color: stats.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         clipBehavior: Clip.antiAlias,
         child: SafeArea(
@@ -109,11 +110,7 @@ class _CategoryTransactionsSheet extends ConsumerWidget {
                     entryCount: entryCount,
                     grouped: grouped,
                   ),
-                  const Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: StatsTokens.divider,
-                  ),
+                  Divider(height: 1, thickness: 1, color: stats.divider),
                   Flexible(
                     child: _Body(
                       items: items,
@@ -136,13 +133,14 @@ class _Grabber extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
       child: Container(
         width: 36,
         height: 4,
         decoration: BoxDecoration(
-          color: AppColors.line,
+          color: colors.line,
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -183,6 +181,8 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
+    final colors = context.colors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 6, 20, 16),
       child: Column(
@@ -205,11 +205,11 @@ class _Header extends StatelessWidget {
                   category.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     height: 1.3,
                     fontWeight: FontWeight.w700,
-                    color: StatsTokens.textStrong,
+                    color: stats.textStrong,
                   ),
                 ),
               ),
@@ -220,7 +220,7 @@ class _Header extends StatelessWidget {
             '$rangeLabel · 共 $entryCount 笔',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: StatsTokens.rowMeta,
+            style: stats.rowMeta,
           ),
           const SizedBox(height: 5),
           // 金额位数多时整体缩小而不是换行或被截断——合计数字断掉最难接受。
@@ -233,7 +233,7 @@ class _Header extends StatelessWidget {
                 height: 1.15,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0.3,
-                color: kind == 0 ? AppColors.expense : AppColors.income,
+                color: kind == 0 ? colors.expense : colors.income,
               ),
             ),
           ),
@@ -259,6 +259,7 @@ class _Body extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     if (error != null) {
       return StatsError(body: '$error', height: _stateHeight);
     }
@@ -283,12 +284,12 @@ class _Body extends StatelessWidget {
       shrinkWrap: true,
       padding: const EdgeInsets.only(top: 4, bottom: 8),
       itemCount: items.length,
-      separatorBuilder: (_, _) => const Divider(
+      separatorBuilder: (_, _) => Divider(
         height: 1,
         thickness: 1,
         indent: 18,
         endIndent: 18,
-        color: StatsTokens.divider,
+        color: stats.divider,
       ),
       itemBuilder: (context, index) =>
           _TransactionRow(item: items[index], grouped: grouped),
@@ -317,9 +318,11 @@ class _TransactionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
+    final colors = context.colors;
     final isExpense = item.transaction.kind == 0;
-    final color = isExpense ? AppColors.expense : AppColors.income;
-    final soft = isExpense ? AppColors.expenseSoft : AppColors.incomeSoft;
+    final color = isExpense ? colors.expense : colors.income;
+    final soft = isExpense ? colors.expenseSoft : colors.incomeSoft;
     final day = dateFromKey(item.transaction.accountingDate);
     final occurredAt = DateTime.fromMillisecondsSinceEpoch(
       item.transaction.occurredAt,
@@ -329,9 +332,9 @@ class _TransactionRow extends StatelessWidget {
 
     return InkWell(
       onTap: () => _openEditor(context),
-      highlightColor: AppColors.pressed,
-      splashColor: AppColors.ripple,
-      hoverColor: AppColors.ripple,
+      highlightColor: colors.pressed,
+      splashColor: colors.ripple,
+      hoverColor: colors.ripple,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
         child: Row(
@@ -358,14 +361,14 @@ class _TransactionRow extends StatelessWidget {
                     item.category.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: StatsTokens.rowTitle,
+                    style: stats.rowTitle,
                   ),
                   const SizedBox(height: 3),
                   Text(
                     note.isEmpty ? meta : '$meta · $note',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: StatsTokens.rowMeta,
+                    style: stats.rowMeta,
                   ),
                 ],
               ),

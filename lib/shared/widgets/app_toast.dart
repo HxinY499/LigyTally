@@ -40,7 +40,9 @@ void showAppToast(
     style: isError
         ? const FToastStyleDelta.context()
         : FToastStyleDelta.delta(
-            iconStyle: IconThemeDataDelta.delta(color: _accent(level)),
+            iconStyle: IconThemeDataDelta.delta(
+              color: _accent(level, context.colors),
+            ),
           ),
     icon: Icon(_icon(level)),
     title: Text(message),
@@ -56,10 +58,10 @@ IconData _icon(AppToastLevel level) => switch (level) {
   AppToastLevel.error => FLucideIcons.circleAlert,
 };
 
-Color _accent(AppToastLevel level) => switch (level) {
-  AppToastLevel.info => AppColors.primary,
-  AppToastLevel.success => AppColors.income,
-  AppToastLevel.error => AppColors.expense,
+Color _accent(AppToastLevel level, AppColors colors) => switch (level) {
+  AppToastLevel.info => colors.primary,
+  AppToastLevel.success => colors.income,
+  AppToastLevel.error => colors.expense,
 };
 
 /// 成功提示看一眼就够，错误要留足阅读时间。

@@ -151,8 +151,7 @@ class _ZoomablePhotoState extends State<_ZoomablePhoto>
   /// 双击落点（相对视口）。放大要以它为锚，手指底下的内容才不会跑掉。
   Offset _anchor = Offset.zero;
 
-  bool get _isZoomed =>
-      _transform.value.getMaxScaleOnAxis() > _kZoomedEpsilon;
+  bool get _isZoomed => _transform.value.getMaxScaleOnAxis() > _kZoomedEpsilon;
 
   @override
   void initState() {
@@ -205,9 +204,10 @@ class _ZoomablePhotoState extends State<_ZoomablePhoto>
         )
         ..scaleByDouble(scale, scale, 1, 1);
     }
-    _zoomTween = Matrix4Tween(begin: _transform.value, end: end).animate(
-      CurvedAnimation(parent: _animation, curve: Curves.easeOutCubic),
-    );
+    _zoomTween = Matrix4Tween(
+      begin: _transform.value,
+      end: end,
+    ).animate(CurvedAnimation(parent: _animation, curve: Curves.easeOutCubic));
     _animation.forward(from: 0);
   }
 
@@ -230,7 +230,9 @@ class _ZoomablePhotoState extends State<_ZoomablePhoto>
         transformationController: _transform,
         minScale: 1,
         maxScale: _kMaxScale,
-        child: Center(child: Image(image: widget.image, fit: BoxFit.contain)),
+        child: Center(
+          child: Image(image: widget.image, fit: BoxFit.contain),
+        ),
       ),
     );
   }

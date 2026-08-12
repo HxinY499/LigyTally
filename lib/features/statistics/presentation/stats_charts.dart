@@ -42,6 +42,7 @@ class TrendLineChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     final maxCents = points.fold<int>(
       0,
       (value, point) => math.max(value, point.expenseCents),
@@ -75,10 +76,10 @@ class TrendLineChart extends StatelessWidget {
             gridData: FlGridData(
               drawVerticalLine: false,
               horizontalInterval: step,
-              getDrawingHorizontalLine: (_) => const FlLine(
-                color: StatsTokens.gridLine,
+              getDrawingHorizontalLine: (_) => FlLine(
+                color: stats.gridLine,
                 strokeWidth: 1,
-                dashArray: [4, 4],
+                dashArray: const [4, 4],
               ),
             ),
             borderData: FlBorderData(show: false),
@@ -101,7 +102,7 @@ class TrendLineChart extends StatelessWidget {
                     child: Text(
                       formatAxisMoney((value * 100).round()),
                       textAlign: TextAlign.right,
-                      style: StatsTokens.axisLabel,
+                      style: stats.axisLabel,
                     ),
                   ),
                 ),
@@ -126,7 +127,7 @@ class TrendLineChart extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 10),
                       child: Text(
                         _axisLabel(points[index].bucket),
-                        style: StatsTokens.axisLabel,
+                        style: stats.axisLabel,
                       ),
                     );
                   },
@@ -138,24 +139,26 @@ class TrendLineChart extends StatelessWidget {
               getTouchedSpotIndicator: (barData, indexes) => [
                 for (final _ in indexes)
                   TouchedSpotIndicatorData(
-                    const FlLine(
-                      color: StatsTokens.primary,
+                    FlLine(
+                      color: stats.primary,
                       strokeWidth: 1.5,
-                      dashArray: [3, 3],
+                      dashArray: const [3, 3],
                     ),
                     FlDotData(
                       getDotPainter: (spot, percent, bar, index) =>
                           FlDotCirclePainter(
                             radius: 5,
-                            color: Colors.white,
+                            // 圆点填的是卡面色而不是纯白：它要看起来像从卡片上
+                            // 「挖」出来的空心点，深色卡上填白会比数据本身更抢眼。
+                            color: stats.surface,
                             strokeWidth: 3,
-                            strokeColor: StatsTokens.primary,
+                            strokeColor: stats.primary,
                           ),
                     ),
                   ),
               ],
               touchTooltipData: LineTouchTooltipData(
-                getTooltipColor: (_) => StatsTokens.tooltip,
+                getTooltipColor: (_) => stats.tooltip,
                 tooltipBorderRadius: BorderRadius.circular(10),
                 tooltipPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -168,16 +171,16 @@ class TrendLineChart extends StatelessWidget {
                   for (final spot in touched)
                     LineTooltipItem(
                       formatMoney((spot.y * 100).round()),
-                      StatsTokens.tooltipText,
+                      stats.tooltipText,
                       children: [
                         TextSpan(
                           text:
                               '\n${_tooltipLabel(points[spot.x.round().clamp(0, points.length - 1)].bucket)}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
                             height: 1.5,
                             fontWeight: FontWeight.w400,
-                            color: Color(0xB3FFFFFF),
+                            color: stats.onTooltip.withValues(alpha: 0.7),
                           ),
                         ),
                       ],
@@ -197,7 +200,7 @@ class TrendLineChart extends StatelessWidget {
                 isCurved: true,
                 curveSmoothness: 0.28,
                 preventCurveOverShooting: true,
-                gradient: StatsTokens.trendLineGradient,
+                gradient: stats.trendLineGradient,
                 barWidth: 2.5,
                 isStrokeCapRound: true,
                 isStrokeJoinRound: true,
@@ -208,14 +211,14 @@ class TrendLineChart extends StatelessWidget {
                   getDotPainter: (spot, percent, bar, index) =>
                       FlDotCirclePainter(
                         radius: 3,
-                        color: Colors.white,
+                        color: stats.surface,
                         strokeWidth: 2,
-                        strokeColor: StatsTokens.primary,
+                        strokeColor: stats.primary,
                       ),
                 ),
                 belowBarData: BarAreaData(
                   show: true,
-                  gradient: StatsTokens.trendAreaGradient,
+                  gradient: stats.trendAreaGradient,
                 ),
               ),
             ],
@@ -242,6 +245,7 @@ class PeriodBarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     final maxCents = bars.fold<int>(
       0,
       (value, bar) => math.max(value, bar.expenseCents),
@@ -265,10 +269,10 @@ class PeriodBarChart extends StatelessWidget {
         gridData: FlGridData(
           drawVerticalLine: false,
           horizontalInterval: maxY / 3,
-          getDrawingHorizontalLine: (_) => const FlLine(
-            color: StatsTokens.gridLine,
+          getDrawingHorizontalLine: (_) => FlLine(
+            color: stats.gridLine,
             strokeWidth: 1,
-            dashArray: [4, 4],
+            dashArray: const [4, 4],
           ),
         ),
         borderData: FlBorderData(show: false),
@@ -279,14 +283,14 @@ class PeriodBarChart extends StatelessWidget {
             if (nonZero.length >= 2)
               HorizontalLine(
                 y: averageCents / 100,
-                color: StatsTokens.textFaint.withValues(alpha: 0.55),
+                color: stats.textFaint.withValues(alpha: 0.55),
                 strokeWidth: 1,
                 dashArray: const [5, 5],
                 label: HorizontalLineLabel(
                   show: true,
                   alignment: Alignment.topRight,
                   padding: const EdgeInsets.only(right: 2, bottom: 3),
-                  style: StatsTokens.axisLabel,
+                  style: stats.axisLabel,
                   labelResolver: (_) => '均值 ${formatAxisMoney(averageCents)}',
                 ),
               ),
@@ -294,7 +298,7 @@ class PeriodBarChart extends StatelessWidget {
         ),
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
-            getTooltipColor: (_) => StatsTokens.tooltip,
+            getTooltipColor: (_) => stats.tooltip,
             tooltipBorderRadius: BorderRadius.circular(10),
             tooltipPadding: const EdgeInsets.symmetric(
               horizontal: 12,
@@ -306,15 +310,15 @@ class PeriodBarChart extends StatelessWidget {
               final bar = bars[groupIndex.clamp(0, lastIndex)];
               return BarTooltipItem(
                 formatMoney(bar.expenseCents),
-                StatsTokens.tooltipText,
+                stats.tooltipText,
                 children: [
                   TextSpan(
                     text: '\n${groupIndex == lastIndex ? '本期' : bar.label}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       height: 1.5,
                       fontWeight: FontWeight.w400,
-                      color: Color(0xB3FFFFFF),
+                      color: stats.onTooltip.withValues(alpha: 0.7),
                     ),
                   ),
                 ],
@@ -340,7 +344,7 @@ class PeriodBarChart extends StatelessWidget {
                 child: Text(
                   formatAxisMoney((value * 100).round()),
                   textAlign: TextAlign.right,
-                  style: StatsTokens.axisLabel,
+                  style: stats.axisLabel,
                 ),
               ),
             ),
@@ -360,9 +364,7 @@ class PeriodBarChart extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 10),
                   child: Text(
                     isLast ? '本期' : bars[index].label,
-                    style: isLast
-                        ? StatsTokens.axisLabelActive
-                        : StatsTokens.axisLabel,
+                    style: isLast ? stats.axisLabelActive : stats.axisLabel,
                   ),
                 );
               },
@@ -377,10 +379,8 @@ class PeriodBarChart extends StatelessWidget {
                 BarChartRodData(
                   toY: bars[i].expenseCents / 100,
                   width: 18,
-                  gradient: i == lastIndex
-                      ? StatsTokens.barActiveGradient
-                      : null,
-                  color: i == lastIndex ? null : StatsTokens.barIdle,
+                  gradient: i == lastIndex ? stats.barActiveGradient : null,
+                  color: i == lastIndex ? null : stats.barIdle,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(6),
                   ),
@@ -388,15 +388,15 @@ class PeriodBarChart extends StatelessWidget {
                   backDrawRodData: BackgroundBarChartRodData(
                     show: true,
                     toY: maxY,
-                    color: StatsTokens.barTrack,
+                    color: stats.barTrack,
                   ),
                   label: BarChartRodLabel(
                     // 金额为 0 时不标（标个「0」纯属噪音）。
                     show: bars[i].expenseCents > 0,
                     text: formatAxisMoney(bars[i].expenseCents),
                     style: i == lastIndex
-                        ? StatsTokens.axisLabelActive
-                        : StatsTokens.axisLabel,
+                        ? stats.axisLabelActive
+                        : stats.axisLabel,
                     offset: const Offset(0, -6),
                   ),
                 ),
@@ -452,6 +452,7 @@ class CategoryDonut extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     final hasSelection = selectedIndex >= 0 && selectedIndex < slices.length;
     final selected = hasSelection ? slices[selectedIndex] : null;
     final centerTitle = selected?.label ?? centerLabel;
@@ -491,10 +492,7 @@ class CategoryDonut extends StatelessWidget {
                         : slices[i].color,
                     radius: i == selectedIndex ? 26 : 20,
                     showTitle: false,
-                    borderSide: const BorderSide(
-                      color: StatsTokens.surface,
-                      width: 1.5,
-                    ),
+                    borderSide: BorderSide(color: stats.surface, width: 1.5),
                   ),
               ],
             ),
@@ -515,10 +513,10 @@ class CategoryDonut extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: StatsTokens.captionSection.copyWith(
+                    style: stats.captionSection.copyWith(
                       fontWeight: FontWeight.w500,
                       color: selected == null
-                          ? StatsTokens.textFaint
+                          ? stats.textFaint
                           : selected.color,
                     ),
                   ),
@@ -527,14 +525,14 @@ class CategoryDonut extends StatelessWidget {
                     fit: BoxFit.scaleDown,
                     child: Text(
                       formatMoney(centerCents),
-                      style: StatsTokens.donutCenterAmount,
+                      style: stats.donutCenterAmount,
                     ),
                   ),
                   if (centerRatio != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       '占比 ${centerRatio.toStringAsFixed(1)}%',
-                      style: StatsTokens.rowMeta,
+                      style: stats.rowMeta,
                     ),
                   ],
                 ],

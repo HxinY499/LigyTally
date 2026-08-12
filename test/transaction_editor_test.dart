@@ -38,8 +38,10 @@ void main() {
         overrides: [databaseProvider.overrideWithValue(database)],
         child: MaterialApp(
           theme: forui.toApproximateMaterialTheme(),
-          builder: (context, child) =>
-              FTheme(data: forui, child: FToaster(child: child!)),
+          builder: (context, child) => FTheme(
+            data: forui,
+            child: FToaster(child: child!),
+          ),
           home: const TransactionEditor(),
         ),
       ),
@@ -70,11 +72,7 @@ void main() {
 
       // 曾经金额卡在滚动区顶部、键盘钉在底部，眼睛要在屏幕两头来回跑。
       // 现在它必须落在分类下面 —— 也就是离开了滚动区。
-      expect(
-        amount.top,
-        greaterThan(category.top),
-        reason: '金额显示条还留在滚动区里',
-      );
+      expect(amount.top, greaterThan(category.top), reason: '金额显示条还留在滚动区里');
       expect(amount.bottom, lessThan(sevenKey.top), reason: '金额显示条必须在键盘之上');
       // 中间只隔着日期条和备注行。距离一旦拉大，就是又被塞回内容流了。
       expect(
@@ -200,7 +198,10 @@ void main() {
   });
 
   group('日期/时间浮层关闭后不抢备注焦点', () {
-    Future<void> pumpLocalized(WidgetTester tester, AppDatabase database) async {
+    Future<void> pumpLocalized(
+      WidgetTester tester,
+      AppDatabase database,
+    ) async {
       final forui = buildForuiTheme();
       await tester.pumpWidget(
         ProviderScope(
@@ -215,8 +216,10 @@ void main() {
               GlobalCupertinoLocalizations.delegate,
             ],
             theme: forui.toApproximateMaterialTheme(),
-            builder: (context, child) =>
-                FTheme(data: forui, child: FToaster(child: child!)),
+            builder: (context, child) => FTheme(
+              data: forui,
+              child: FToaster(child: child!),
+            ),
             home: const TransactionEditor(),
           ),
         ),
@@ -249,11 +252,7 @@ void main() {
       expect(find.text(sheetTitle), findsNothing);
       final note = tester.widget<TextField>(find.byType(TextField));
       expect(note.focusNode?.hasFocus, isFalse, reason: '关浮层后备注不该获焦');
-      expect(
-        tester.testTextInput.isVisible,
-        isFalse,
-        reason: '关浮层后不该弹出系统键盘',
-      );
+      expect(tester.testTextInput.isVisible, isFalse, reason: '关浮层后不该弹出系统键盘');
     }
 
     testWidgets('关闭日期浮层后备注不获焦', (tester) async {

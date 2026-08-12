@@ -6,14 +6,17 @@ import '../../../core/preferences/app_icon.dart';
 import '../../../core/preferences/backdrop_blur.dart';
 import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/money_grouped.dart';
+import '../../../core/preferences/theme_mode.dart';
 import '../../../core/preferences/transaction_image_style.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/update/update_controller.dart';
+import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
 import 'app_icon_picker_sheet.dart';
 import 'backdrop_blur_sheet.dart';
 import 'category_management_screen.dart';
+import 'csv_export_sheet.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -27,6 +30,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<String?> _askPassword(String title) =>
       showAppPasswordDialog(context, title: title);
+
+  Future<void> _exportCsv() async {
+    final preset = await showCsvExportSheet(context);
+    if (preset == null || !mounted) return;
+    final now = DateTime.now();
+    final LedgerDateRange? range;
+    switch (preset) {
+      case CsvExportPreset.month:
+        range = monthRange(now);
+      case CsvExportPreset.year:
+        range = yearRange(now);
+      case CsvExportPreset.all:
+        range = null;
+      case CsvExportPreset.custom:
+        final picked = await showAppDateRangePicker(
+          context,
+          initial: monthRange(now),
+        );
+        if (picked == null || !mounted) return;
+        range = picked;
+    }
+    setState(() => _busy = true);
+    try {
+      final count = await ref
+          .read(csvExportServiceProvider)
+          .exportAndShare(range);
+      if (!mounted) return;
+      if (count == 0) {
+        _showMessage('没有账单可导出');
+      }
+    } catch (error) {
+      if (mounted) _showMessage('导出失败：$error', level: AppToastLevel.error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _exportBackup() async {
     final password = await _askPassword('导出完整备份');
@@ -109,6 +148,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _SettingsCard(
               children: [
                 _SettingsItem(
+                  icon: FLucideIcons.sunMoon,
+                  title: '外观',
+                  trailing: _ThemeModeToggle(
+                    value: ref.watch(appThemeModeProvider),
+                    onChanged: (value) =>
+                        ref.read(appThemeModeProvider.notifier).setMode(value),
+                  ),
+                ),
+                _SettingsItem(
                   icon: FLucideIcons.tags,
                   title: '分类管理',
                   showChevron: true,
@@ -173,18 +221,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
             const SizedBox(height: 18),
-            const _SectionLabel('数据备份'),
+            const _SectionLabel('数据'),
             _SettingsCard(
               children: [
                 _SettingsItem(
+                  icon: FLucideIcons.fileSpreadsheet,
+                  title: '导出 CSV',
+                  showChevron: !_busy,
+                  onTap: _busy ? null : _exportCsv,
+                ),
+                _SettingsItem(
                   icon: FLucideIcons.upload,
-                  title: '导出数据',
+                  title: '导出完整备份',
                   showChevron: !_busy,
                   onTap: _busy ? null : _exportBackup,
                 ),
                 _SettingsItem(
                   icon: FLucideIcons.download,
-                  title: '导入数据',
+                  title: '导入完整备份',
                   showChevron: !_busy,
                   trailing: _busy ? const _RowSpinner() : null,
                   onTap: _busy ? null : _restoreBackup,
@@ -302,6 +356,7 @@ class _BrandRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: ConstrainedBox(
@@ -312,7 +367,7 @@ class _BrandRow extends StatelessWidget {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: AppColors.primarySoft,
+                color: colors.primarySoft,
                 borderRadius: BorderRadius.circular(10),
               ),
               alignment: Alignment.center,
@@ -321,7 +376,7 @@ class _BrandRow extends StatelessWidget {
                 width: 19,
                 height: 19,
                 // 图标是单色透明底，直接染成品牌蓝
-                color: AppColors.primary,
+                color: colors.primary,
               ),
             ),
             const SizedBox(width: 12),
@@ -330,21 +385,21 @@ class _BrandRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text(
+                  Text(
                     'Ligy Tally',
                     style: TextStyle(
                       fontSize: 15.5,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.ink,
+                      color: colors.ink,
                       height: 1.25,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     version == null ? '正在读取版本…' : '版本 $version',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.inactive,
+                      color: colors.inactive,
                       height: 1.3,
                     ),
                   ),
@@ -367,18 +422,19 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.primarySoft,
+        color: colors.primarySoft,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11.5,
           fontWeight: FontWeight.w700,
-          color: AppColors.primary,
+          color: colors.primary,
           height: 1.1,
         ),
       ),
@@ -398,10 +454,10 @@ class _SectionLabel extends StatelessWidget {
       padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12.5,
           fontWeight: FontWeight.w600,
-          color: AppColors.inactive,
+          color: context.colors.inactive,
           letterSpacing: 0.3,
         ),
       ),
@@ -431,9 +487,10 @@ class _SettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(16),
       ),
       clipBehavior: Clip.antiAlias,
@@ -444,11 +501,11 @@ class _SettingsCard extends StatelessWidget {
             // 分割线从标题文字起始处开始（左 16 + 图标 32 + 间距 12），
             // 不切到左侧图标，视觉上更整齐。
             if (i > 0)
-              const Divider(
+              Divider(
                 height: 1,
                 thickness: 1,
                 indent: 60,
-                color: Color(0xFFEEF2F0),
+                color: colors.lineSoft,
               ),
             children[i],
           ],
@@ -489,6 +546,7 @@ class _SettingsItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -503,14 +561,14 @@ class _SettingsItem extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: accent ? AppColors.primary : AppColors.primarySoft,
+                  color: accent ? colors.primary : colors.primarySoft,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 alignment: Alignment.center,
                 child: Icon(
                   icon,
                   size: 17,
-                  color: accent ? Colors.white : AppColors.primary,
+                  color: accent ? Colors.white : colors.primary,
                 ),
               ),
               const SizedBox(width: 12),
@@ -524,7 +582,7 @@ class _SettingsItem extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15.5,
                         fontWeight: FontWeight.w600,
-                        color: accent ? AppColors.primary : AppColors.ink,
+                        color: accent ? colors.primary : colors.ink,
                         height: 1.25,
                       ),
                     ),
@@ -532,9 +590,9 @@ class _SettingsItem extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         subtitle!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.inactive,
+                          color: colors.inactive,
                           height: 1.3,
                         ),
                       ),
@@ -546,17 +604,13 @@ class _SettingsItem extends StatelessWidget {
                 const SizedBox(width: 12),
                 Text(
                   value!,
-                  style: const TextStyle(fontSize: 14, color: AppColors.muted),
+                  style: TextStyle(fontSize: 14, color: colors.muted),
                 ),
               ],
               if (trailing != null) ...[const SizedBox(width: 12), trailing!],
               if (showChevron) ...[
                 const SizedBox(width: 6),
-                const Icon(
-                  FLucideIcons.chevronRight,
-                  size: 18,
-                  color: Color(0xFFC2CBC6),
-                ),
+                Icon(FLucideIcons.chevronRight, size: 18, color: colors.faint),
               ],
             ],
           ),
@@ -602,7 +656,7 @@ class _AppIconPreview extends StatelessWidget {
       height: 30,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: AppColors.line, width: 1),
+        border: Border.all(color: context.colors.line, width: 1),
       ),
       clipBehavior: Clip.antiAlias,
       child: Image.asset(asset, fit: BoxFit.cover),
@@ -625,7 +679,7 @@ class _LayoutToggle extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F3F2),
+        color: context.colors.fill,
         borderRadius: BorderRadius.circular(11),
       ),
       child: Row(
@@ -661,7 +715,7 @@ class _ImageStyleToggle extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F3F2),
+        color: context.colors.fill,
         borderRadius: BorderRadius.circular(11),
       ),
       child: Row(
@@ -683,7 +737,50 @@ class _ImageStyleToggle extends StatelessWidget {
   }
 }
 
-/// 设置行右侧胶囊切换器里的单枚图标按钮，被上面两个切换器共用。
+/// 外观的三态切换器：跟随系统 / 浅色 / 深色。
+///
+/// 沿用 [_LayoutToggle] 的胶囊长相而不是另开一个二级弹窗——只有三个互斥
+/// 选项，摊平在行尾一眼就能看清当前档位，还省掉一次跳转；三枚 38 宽的格子
+/// 比同列的开关轨道宽一点，但右边缘仍对齐在同一条 16 内边距线上。
+///
+/// 每一档都是「显式指定」，没有「关闭」这种隐含态：用户选了浅色，就算系统
+/// 入夜也不该被翻成深色。
+class _ThemeModeToggle extends StatelessWidget {
+  const _ThemeModeToggle({required this.value, required this.onChanged});
+
+  final AppThemeMode value;
+  final ValueChanged<AppThemeMode> onChanged;
+
+  static const _icons = {
+    AppThemeMode.system: FLucideIcons.sunMoon,
+    AppThemeMode.light: FLucideIcons.sun,
+    AppThemeMode.dark: FLucideIcons.moon,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: context.colors.fill,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final mode in AppThemeMode.values)
+            _ToggleIcon(
+              icon: _icons[mode]!,
+              selected: value == mode,
+              onTap: () => onChanged(mode),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 设置行右侧胶囊切换器里的单枚图标按钮，被上面几个切换器共用。
 class _ToggleIcon extends StatelessWidget {
   const _ToggleIcon({
     required this.icon,
@@ -697,6 +794,7 @@ class _ToggleIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -705,7 +803,7 @@ class _ToggleIcon extends StatelessWidget {
         width: 38,
         height: 28,
         decoration: BoxDecoration(
-          color: selected ? AppColors.surface : Colors.transparent,
+          color: selected ? colors.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           boxShadow: selected
               ? const [
@@ -721,7 +819,7 @@ class _ToggleIcon extends StatelessWidget {
         child: Icon(
           icon,
           size: 16,
-          color: selected ? AppColors.primary : AppColors.inactive,
+          color: selected ? colors.primary : colors.inactive,
         ),
       ),
     );

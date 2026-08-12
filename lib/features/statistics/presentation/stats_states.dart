@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
+import '../../../core/theme/app_theme.dart';
 import 'stats_design.dart';
 
 /// 骨架屏色块：底色 + 左右扫过的高光。
@@ -45,6 +46,7 @@ class _StatsSkeletonState extends State<StatsSkeleton>
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.radius),
       child: SizedBox(
@@ -60,10 +62,10 @@ class _StatsSkeletonState extends State<StatsSkeleton>
                 gradient: LinearGradient(
                   begin: Alignment(shift - 1, 0),
                   end: Alignment(shift, 0),
-                  colors: const [
-                    StatsTokens.fillMuted,
-                    Color(0xFFFAFBFD),
-                    StatsTokens.fillMuted,
+                  colors: [
+                    stats.fillMuted,
+                    stats.skeletonHighlight,
+                    stats.fillMuted,
                   ],
                 ),
               ),
@@ -152,11 +154,12 @@ class StatsEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     return _StatsPlaceholder(
       height: height,
       icon: icon,
-      iconColor: StatsTokens.textFaint,
-      iconBackground: StatsTokens.fillMuted,
+      iconColor: stats.textFaint,
+      iconBackground: stats.fillMuted,
       title: title,
       body: body,
     );
@@ -180,11 +183,13 @@ class StatsError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
+    final colors = context.colors;
     return _StatsPlaceholder(
       height: height,
       icon: FLucideIcons.triangleAlert,
-      iconColor: StatsTokens.expense,
-      iconBackground: const Color(0xFFFDECEA),
+      iconColor: stats.expense,
+      iconBackground: colors.expenseSoft,
       title: title,
       body: body,
       action: onRetry == null
@@ -192,7 +197,7 @@ class StatsError extends StatelessWidget {
           : TextButton(
               onPressed: onRetry,
               style: TextButton.styleFrom(
-                foregroundColor: StatsTokens.primary,
+                foregroundColor: stats.primary,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 6,
@@ -233,6 +238,7 @@ class _StatsPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     return SizedBox(
       height: height,
       width: double.infinity,
@@ -249,7 +255,7 @@ class _StatsPlaceholder extends StatelessWidget {
             child: Icon(icon, size: 21, color: iconColor),
           ),
           const SizedBox(height: 12),
-          Text(title, style: StatsTokens.emptyTitle),
+          Text(title, style: stats.emptyTitle),
           if (body != null) ...[
             const SizedBox(height: 5),
             Padding(
@@ -257,7 +263,7 @@ class _StatsPlaceholder extends StatelessWidget {
               child: Text(
                 body!,
                 textAlign: TextAlign.center,
-                style: StatsTokens.emptyBody,
+                style: stats.emptyBody,
               ),
             ),
           ],

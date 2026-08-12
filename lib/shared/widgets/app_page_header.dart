@@ -82,21 +82,21 @@ const double _kTitleLeftCollapsedWithBack = 56;
 ///
 /// - w700：比 w800 更透气，大字重在中文黑体上容易糊成一坨
 /// - letterSpacing -0.2：中文标题收紧一点更精致（现代 App 的通用手法）
-const kAppHeaderTitleStyle = TextStyle(
+TextStyle kAppHeaderTitleStyle(AppColors colors) => TextStyle(
   fontSize: _kTitleSizeCollapsed,
   fontWeight: FontWeight.w700,
   height: _kTitleHeight,
   letterSpacing: -0.2,
-  color: AppColors.ink,
+  color: colors.ink,
 );
 
 /// 页头副标题（可选，如「共 12 笔」）。仅展开态显示。
-const _kAppHeaderSubtitleStyle = TextStyle(
+TextStyle _kAppHeaderSubtitleStyle(AppColors colors) => TextStyle(
   fontSize: 12,
   fontWeight: FontWeight.w500,
   height: 1.25,
   letterSpacing: -0.1,
-  color: AppColors.inactive,
+  color: colors.inactive,
 );
 
 /// 折叠后页头底部的分隔线。
@@ -132,6 +132,7 @@ class AppHeaderAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final active = onTap != null;
     final button = InkResponse(
       onTap: onTap,
@@ -144,7 +145,7 @@ class AppHeaderAction extends StatelessWidget {
           child: Icon(
             icon,
             size: kAppHeaderIconSize,
-            color: active ? AppColors.ink : AppColors.inactive,
+            color: active ? colors.ink : colors.inactive,
           ),
         ),
       ),
@@ -301,14 +302,14 @@ class _TitleBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final titleText = Text(
       title,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: kAppHeaderTitleStyle.copyWith(
-        fontSize: fontSize,
-        letterSpacing: letterSpacing,
-      ),
+      style: kAppHeaderTitleStyle(
+        colors,
+      ).copyWith(fontSize: fontSize, letterSpacing: letterSpacing),
     );
     if (subtitle == null) return titleText;
     // 副标题只在展开态出现：折叠条里塞两行字会拥挤。
@@ -326,7 +327,7 @@ class _TitleBlock extends StatelessWidget {
                 subtitle!,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: _kAppHeaderSubtitleStyle,
+                style: _kAppHeaderSubtitleStyle(colors),
               ),
             ),
           ),
@@ -346,7 +347,7 @@ class _CollapsibleHeader extends StatefulWidget {
     required this.builder,
     required this.collapsible,
     required this.child,
-    this.background = AppColors.canvas,
+    this.background,
   });
 
   /// 按折叠进度 t 构建页头内容。
@@ -356,7 +357,8 @@ class _CollapsibleHeader extends StatefulWidget {
   final bool collapsible;
 
   /// 页头条底色。透明时页面自身的背景（如记账页的图片背板）会透上来。
-  final Color background;
+  /// null 表示取页面底色。
+  final Color? background;
 
   /// 页头下方的滚动内容。
   final Widget child;
@@ -381,6 +383,7 @@ class _CollapsibleHeaderState extends State<_CollapsibleHeader> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final t = widget.collapsible ? _t : 1.0;
 
     final height = kAppHeaderExpandedHeight - _kCollapseDistance * t;
@@ -395,12 +398,12 @@ class _CollapsibleHeaderState extends State<_CollapsibleHeader> {
             height: height,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: widget.background,
+                color: widget.background ?? colors.canvas,
                 border: Border(
                   bottom: BorderSide(
                     // 分隔线随折叠淡入：静止时页头与内容同色无缝，
                     // 一滚才分层 —— iOS / Notion 的通用手法。
-                    color: AppColors.lineSoft.withValues(alpha: t),
+                    color: colors.lineSoft.withValues(alpha: t),
                     width: _kDividerThickness,
                   ),
                 ),
@@ -486,7 +489,7 @@ class AppTopBar extends StatelessWidget {
     required this.body,
     this.subtitle,
     this.actions,
-    this.backgroundColor = AppColors.canvas,
+    this.backgroundColor,
   });
 
   final String title;
@@ -494,21 +497,22 @@ class AppTopBar extends StatelessWidget {
   final List<Widget>? actions;
 
   /// 整页底色。传 [Colors.transparent] 可让页面在本组件之下自绘背景
-  /// （记账页把账单图片铺在这一层）。
-  final Color backgroundColor;
+  /// （记账页把账单图片铺在这一层）。null 表示取页面底色。
+  final Color? backgroundColor;
 
   /// 页头下方的滚动内容。
   final Widget body;
 
   @override
   Widget build(BuildContext context) {
+    final background = backgroundColor ?? context.colors.canvas;
     return Material(
-      color: backgroundColor,
+      color: background,
       child: SafeArea(
         bottom: false,
         child: _CollapsibleHeader(
           collapsible: true,
-          background: backgroundColor,
+          background: background,
           builder: (t) => _HeaderContent(
             t: t,
             title: title,

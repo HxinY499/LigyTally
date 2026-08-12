@@ -68,7 +68,7 @@ class _HomeShellState extends State<HomeShell> {
             ? FloatingActionButton(
                 key: const ValueKey('add'),
                 onPressed: _addTransaction,
-                backgroundColor: AppColors.primary,
+                backgroundColor: context.colors.primary,
                 foregroundColor: Colors.white,
                 elevation: 3,
                 shape: const CircleBorder(),
@@ -102,11 +102,12 @@ class _BottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final bottomInset = MediaQuery.of(context).padding.bottom;
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.lineSoft)),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border(top: BorderSide(color: colors.lineSoft)),
       ),
       child: SizedBox(
         height: _barHeight + bottomInset,
@@ -198,6 +199,7 @@ class _NavItemState extends State<_NavItem>
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: widget.onTap,
@@ -205,7 +207,7 @@ class _NavItemState extends State<_NavItem>
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
         tween: ColorTween(
-          end: widget.selected ? AppColors.primary : AppColors.inactive,
+          end: widget.selected ? colors.primary : colors.inactive,
         ),
         builder: (context, color, _) => Column(
           mainAxisAlignment: MainAxisAlignment.center,

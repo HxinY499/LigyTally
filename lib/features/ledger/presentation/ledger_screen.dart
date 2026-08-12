@@ -257,6 +257,7 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     // 高38 而非 40：让搜索框在 56 的页头里上下各留 9，
     // 视觉重心与静态标题一致，切换时不会有「页头变胖」的错觉。
     return SizedBox(
@@ -265,28 +266,28 @@ class _SearchField extends StatelessWidget {
         controller: controller,
         autofocus: true,
         onChanged: onChanged,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 15,
           height: 1.2,
           letterSpacing: -0.1,
-          color: AppColors.ink,
+          color: colors.ink,
         ),
-        cursorColor: AppColors.primary,
+        cursorColor: colors.primary,
         cursorRadius: const Radius.circular(2),
         decoration: InputDecoration(
           filled: true,
-          fillColor: AppColors.surface,
+          fillColor: colors.surface,
           hintText: '搜索备注或分类',
-          hintStyle: const TextStyle(
-            color: AppColors.inactive,
+          hintStyle: TextStyle(
+            color: colors.inactive,
             fontSize: 15,
             height: 1.2,
             letterSpacing: -0.1,
           ),
-          prefixIcon: const Icon(
+          prefixIcon: Icon(
             FLucideIcons.search,
             size: 16,
-            color: AppColors.inactive,
+            color: colors.inactive,
           ),
           prefixIconConstraints: const BoxConstraints(
             minWidth: 34,
@@ -294,9 +295,9 @@ class _SearchField extends StatelessWidget {
           ),
           isDense: true,
           contentPadding: const EdgeInsets.only(right: 12),
-          border: _searchBorder(AppColors.line),
-          enabledBorder: _searchBorder(AppColors.line),
-          focusedBorder: _searchBorder(AppColors.primary),
+          border: _searchBorder(colors.line),
+          enabledBorder: _searchBorder(colors.line),
+          focusedBorder: _searchBorder(colors.primary),
         ),
       ),
     );
@@ -332,6 +333,7 @@ class _DayCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
     final grouped = ref.watch(moneyGroupedProvider);
     final expense = items
         .where((item) => item.transaction.kind == 0)
@@ -350,11 +352,11 @@ class _DayCard extends ConsumerWidget {
       suffix = formatWeekday(day);
     }
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        borderRadius: BorderRadius.all(Radius.circular(18)),
+      decoration: BoxDecoration(
+        borderRadius: const BorderRadius.all(Radius.circular(18)),
         // 与统计页图表卡同一组阴影：两屏的卡片浮起高度必须一致，
         // 否则在底部导航来回切换时会觉得「其中一屏是平的」。
-        boxShadow: AppShadows.card,
+        boxShadow: colors.shadowCard,
       ),
       // 白底必须由 Material 提供，不能用 Container(color:)。
       //
@@ -366,7 +368,7 @@ class _DayCard extends ConsumerWidget {
       //
       // clipBehavior 让水波贴合圆角，不会在四角溢出成方块。
       child: Material(
-        color: AppColors.surface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(18),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -378,44 +380,35 @@ class _DayCard extends ConsumerWidget {
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(18),
               ),
-              highlightColor: AppColors.pressed,
-              splashColor: AppColors.ripple,
-              hoverColor: AppColors.ripple,
+              highlightColor: colors.pressed,
+              splashColor: colors.ripple,
+              hoverColor: colors.ripple,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
                 child: Row(
                   children: [
                     Text(
                       formatDay(day),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
-                        color: AppColors.ink,
+                        color: colors.ink,
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       suffix,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.muted,
-                      ),
+                      style: TextStyle(fontSize: 12, color: colors.muted),
                     ),
                     const Spacer(),
                     Text(
                       '支 ${formatMoney(expense, grouped: grouped)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.muted,
-                      ),
+                      style: TextStyle(fontSize: 12, color: colors.muted),
                     ),
                     const SizedBox(width: 12),
                     Text(
                       '收 ${formatMoney(income, grouped: grouped)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.muted,
-                      ),
+                      style: TextStyle(fontSize: 12, color: colors.muted),
                     ),
                   ],
                 ),
@@ -423,12 +416,12 @@ class _DayCard extends ConsumerWidget {
             ),
             for (var index = 0; index < items.length; index++) ...[
               if (index > 0)
-                const Divider(
+                Divider(
                   height: 1,
                   thickness: 1,
                   indent: 18,
                   endIndent: 18,
-                  color: Color(0xFFF1F4F2),
+                  color: colors.fill,
                 ),
               _LedgerRow(
                 item: items[index],
@@ -464,9 +457,10 @@ class _LedgerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final isExpense = item.transaction.kind == 0;
-    final color = isExpense ? AppColors.expense : AppColors.income;
-    final soft = isExpense ? AppColors.expenseSoft : AppColors.incomeSoft;
+    final color = isExpense ? colors.expense : colors.income;
+    final soft = isExpense ? colors.expenseSoft : colors.incomeSoft;
     final occurredAt = DateTime.fromMillisecondsSinceEpoch(
       item.transaction.occurredAt,
     );
@@ -478,9 +472,9 @@ class _LedgerRow extends StatelessWidget {
       //
       // 不设 borderRadius：行是卡片中间的一段，四角都不该圆
       // （首行/末行的圆角由外层 Material 的 clipBehavior 统一裁）。
-      highlightColor: AppColors.pressed,
-      splashColor: AppColors.ripple,
-      hoverColor: AppColors.ripple,
+      highlightColor: colors.pressed,
+      splashColor: colors.ripple,
+      hoverColor: colors.ripple,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         child: Row(
@@ -508,10 +502,10 @@ class _LedgerRow extends StatelessWidget {
                     item.category.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.ink,
+                      color: colors.ink,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -521,10 +515,7 @@ class _LedgerRow extends StatelessWidget {
                         : '${formatClock(occurredAt)} · $note',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.muted,
-                    ),
+                    style: TextStyle(fontSize: 12, color: colors.muted),
                   ),
                 ],
               ),
@@ -594,12 +585,13 @@ class _MessageState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(32, 60, 32, 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 42, color: AppColors.muted),
+          Icon(icon, size: 42, color: colors.muted),
           const SizedBox(height: 14),
           Text(
             title,
@@ -613,7 +605,7 @@ class _MessageState extends StatelessWidget {
             textAlign: TextAlign.center,
             style: Theme.of(
               context,
-            ).textTheme.bodyMedium?.copyWith(color: AppColors.muted),
+            ).textTheme.bodyMedium?.copyWith(color: colors.muted),
           ),
         ],
       ),
@@ -645,13 +637,14 @@ class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
+    final colors = context.colors;
     return Consumer(
       builder: (context, ref, _) {
         final grouped = ref.watch(moneyGroupedProvider);
         return Material(
           // 吸顶条自己提供 Material：它铺的是页面灰底，
           // 若沿用 Container(color:) 则月份按钮的水波同样会被灰底盖掉。
-          color: AppColors.canvas,
+          color: colors.canvas,
           child: Container(
             height: _height,
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -660,9 +653,9 @@ class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
                 InkWell(
                   onTap: onPick,
                   borderRadius: BorderRadius.circular(8),
-                  highlightColor: AppColors.pressed,
-                  splashColor: AppColors.ripple,
-                  hoverColor: AppColors.ripple,
+                  highlightColor: colors.pressed,
+                  splashColor: colors.ripple,
+                  hoverColor: colors.ripple,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 4,
@@ -672,17 +665,17 @@ class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
                       children: [
                         Text(
                           formatMonth(month),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.ink,
+                            color: colors.ink,
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(
+                        Icon(
                           FLucideIcons.chevronDown,
                           size: 16,
-                          color: AppColors.ink,
+                          color: colors.ink,
                         ),
                       ],
                     ),
@@ -691,12 +684,12 @@ class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
                 const Spacer(),
                 Text(
                   '支 ${formatMoney(summary.expenseCents, grouped: grouped)}',
-                  style: const TextStyle(fontSize: 13, color: AppColors.muted),
+                  style: TextStyle(fontSize: 13, color: colors.muted),
                 ),
                 const SizedBox(width: 14),
                 Text(
                   '收 ${formatMoney(summary.incomeCents, grouped: grouped)}',
-                  style: const TextStyle(fontSize: 13, color: AppColors.muted),
+                  style: TextStyle(fontSize: 13, color: colors.muted),
                 ),
               ],
             ),
@@ -733,7 +726,7 @@ Future<DateTime?> showMonthPicker(
     context: context,
     barrierDismissible: true,
     barrierLabel: '关闭',
-    barrierColor: Colors.black45,
+    barrierColor: context.colors.barrier,
     transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (_, a, b) => _MonthPickerDialog(initial: initial),
     transitionBuilder: (context, animation, _, child) {
@@ -795,11 +788,12 @@ class _MonthPickerDialogState extends State<_MonthPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 340),
         child: Material(
-          color: AppColors.surface,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(28),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 26, 24, 12),
@@ -808,10 +802,10 @@ class _MonthPickerDialogState extends State<_MonthPickerDialog> {
               children: [
                 Text(
                   '$_year 年 $_month 月',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.ink,
+                    color: colors.ink,
                   ),
                 ),
                 const SizedBox(height: 18),
@@ -848,11 +842,8 @@ class _MonthPickerDialogState extends State<_MonthPickerDialog> {
                     onPressed: () =>
                         Navigator.of(context).pop(DateTime(_year, _month)),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: const BorderSide(
-                        color: AppColors.primary,
-                        width: 1.5,
-                      ),
+                      foregroundColor: colors.primary,
+                      side: BorderSide(color: colors.primary, width: 1.5),
                       padding: const EdgeInsets.symmetric(vertical: 13),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(28),
@@ -875,7 +866,7 @@ class _MonthPickerDialogState extends State<_MonthPickerDialog> {
                   child: TextButton(
                     onPressed: () => Navigator.of(context).pop(),
                     style: TextButton.styleFrom(
-                      foregroundColor: AppColors.ink,
+                      foregroundColor: colors.ink,
                       padding: const EdgeInsets.symmetric(vertical: 13),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(28),
@@ -928,6 +919,7 @@ class _WheelColumnState extends State<_WheelColumn> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return CupertinoPicker.builder(
       scrollController: widget.controller,
       itemExtent: 38,
@@ -953,7 +945,7 @@ class _WheelColumnState extends State<_WheelColumn> {
             style: TextStyle(
               fontSize: selected ? 22 : 17,
               fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-              color: AppColors.ink.withValues(alpha: alpha),
+              color: colors.ink.withValues(alpha: alpha),
             ),
           ),
         );

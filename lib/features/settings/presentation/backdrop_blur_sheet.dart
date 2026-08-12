@@ -24,11 +24,12 @@ class _BackdropBlurSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
     // 拖到哪就是哪，没有确认步骤：浮层里没有别的东西可改，
     // 再要一次「完成」纯属多一步。关闭走下滑或点遮罩。
     final sigma = ref.watch(backdropBlurProvider);
     return Material(
-      color: AppColors.surface,
+      color: colors.surface,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
@@ -41,23 +42,23 @@ class _BackdropBlurSheet extends ConsumerWidget {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.line,
+                color: colors.line,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               '背景模糊',
               style: TextStyle(
                 fontSize: 15.5,
                 fontWeight: FontWeight.w700,
-                color: AppColors.ink,
+                color: colors.ink,
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               '记账页会把账单照片虚化成背景，0 为不虚化',
-              style: TextStyle(fontSize: 12, color: AppColors.muted),
+              style: TextStyle(fontSize: 12, color: colors.muted),
             ),
             const SizedBox(height: 18),
             Padding(
@@ -69,18 +70,14 @@ class _BackdropBlurSheet extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
               child: Row(
                 children: [
-                  const Icon(
-                    FLucideIcons.image,
-                    size: 16,
-                    color: AppColors.inactive,
-                  ),
+                  Icon(FLucideIcons.image, size: 16, color: colors.inactive),
                   Expanded(
                     child: SliderTheme(
                       data: SliderTheme.of(context).copyWith(
-                        activeTrackColor: AppColors.primary,
-                        inactiveTrackColor: AppColors.line,
-                        thumbColor: AppColors.primary,
-                        overlayColor: AppColors.ripple,
+                        activeTrackColor: colors.primary,
+                        inactiveTrackColor: colors.line,
+                        thumbColor: colors.primary,
+                        overlayColor: colors.ripple,
                       ),
                       child: Slider(
                         value: sigma,
@@ -95,11 +92,7 @@ class _BackdropBlurSheet extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  const Icon(
-                    FLucideIcons.aperture,
-                    size: 16,
-                    color: AppColors.inactive,
-                  ),
+                  Icon(FLucideIcons.aperture, size: 16, color: colors.inactive),
                 ],
               ),
             ),
@@ -121,21 +114,26 @@ class _BlurPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Container(
       height: 168,
       decoration: BoxDecoration(
-        color: AppColors.canvas,
+        color: colors.canvas,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.line),
+        border: Border.all(color: colors.line),
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         fit: StackFit.expand,
         children: [
           ImageBackdrop(
-            // 挑深色那版图标当样本：浅底图虚化后跟 canvas 一个颜色，
-            // 滑杆拖到头也看不出差别，等于没有预览。
-            image: const AssetImage('assets/branding/app-icon-dark.png'),
+            // 样本图要挑和 canvas 反差最大的那版：和底色同明度的图虚化后
+            // 会糊进背景，滑杆拖到头也看不出差别，等于没有预览。
+            image: AssetImage(
+              colors.isDark
+                  ? 'assets/branding/app-icon-light.png'
+                  : 'assets/branding/app-icon-dark.png',
+            ),
             blurSigma: sigma,
           ),
           Padding(
@@ -143,12 +141,12 @@ class _BlurPreview extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   '记一笔',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.ink,
+                    color: colors.ink,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -159,35 +157,35 @@ class _BlurPreview extends StatelessWidget {
                     vertical: 12,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: colors.surface,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.line),
+                    border: Border.all(color: colors.line),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
                       Text(
                         '¥',
-                        style: TextStyle(fontSize: 13, color: AppColors.muted),
+                        style: TextStyle(fontSize: 13, color: colors.muted),
                       ),
-                      Spacer(),
+                      const Spacer(),
                       Text(
                         '128.00',
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.expense,
+                          color: colors.expense,
                         ),
                       ),
                     ],
                   ),
                 ),
                 const Spacer(),
-                const Text(
+                Text(
                   '分类',
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.muted,
+                    color: colors.muted,
                   ),
                 ),
               ],

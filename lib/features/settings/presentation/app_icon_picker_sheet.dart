@@ -27,8 +27,9 @@ class _AppIconPickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Material(
-      color: AppColors.surface,
+      color: colors.surface,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
@@ -41,23 +42,23 @@ class _AppIconPickerSheet extends StatelessWidget {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.line,
+                color: colors.line,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               '应用图标',
               style: TextStyle(
                 fontSize: 15.5,
                 fontWeight: FontWeight.w700,
-                color: AppColors.ink,
+                color: colors.ink,
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               '桌面刷新可能需要几秒',
-              style: TextStyle(fontSize: 12, color: AppColors.muted),
+              style: TextStyle(fontSize: 12, color: colors.muted),
             ),
             const SizedBox(height: 20),
             Padding(
@@ -108,7 +109,8 @@ class _IconOption extends StatelessWidget {
   Widget build(BuildContext context) {
     // 选中时用品牌色描 2px 边并加淡色光晕；未选中给一条浅灰描边，
     // 避免白底黑字那张卡片直接融进白色 sheet 背景。
-    final borderColor = selected ? AppColors.primary : AppColors.line;
+    final colors = context.colors;
+    final borderColor = selected ? colors.primary : colors.line;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -118,7 +120,7 @@ class _IconOption extends StatelessWidget {
           duration: const Duration(milliseconds: 160),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: selected ? AppColors.primarySoft : AppColors.surface,
+            color: selected ? colors.primarySoft : colors.surface,
             borderRadius: BorderRadius.circular(26),
             border: Border.all(color: borderColor, width: selected ? 2 : 1),
           ),
@@ -140,10 +142,10 @@ class _IconOption extends StatelessWidget {
                     child: Container(
                       width: 24,
                       height: 24,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primary,
+                      decoration: BoxDecoration(
+                        color: colors.primary,
                         shape: BoxShape.circle,
-                        boxShadow: [
+                        boxShadow: const [
                           BoxShadow(
                             color: Color(0x33000000),
                             offset: Offset(0, 1),

@@ -25,12 +25,13 @@ class StatsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     final content = Padding(padding: padding, child: child);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: StatsTokens.surface,
+        color: stats.surface,
         borderRadius: BorderRadius.circular(StatsTokens.radiusCard),
-        boxShadow: StatsTokens.shadowCard,
+        boxShadow: stats.shadowCard,
       ),
       child: onTap == null
           ? content
@@ -61,6 +62,7 @@ class StatsSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -69,12 +71,12 @@ class StatsSectionHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(title, style: StatsTokens.titleSection),
+              Text(title, style: stats.titleSection),
               if (caption != null) ...[
                 const SizedBox(height: 3),
                 Text(
                   caption!,
-                  style: StatsTokens.captionSection,
+                  style: stats.captionSection,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

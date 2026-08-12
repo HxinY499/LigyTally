@@ -307,12 +307,13 @@ class _SheetShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final text = Theme.of(context).textTheme;
     final subtitle = this.subtitle;
     // forui 的 sheet 不像 Material 的 bottom sheet 自带 Material 祖先，
     // 而壳内用了 InkWell，所以这里必须自己铺一层 Material。
     return Material(
-      color: AppColors.surface,
+      color: colors.surface,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
@@ -325,7 +326,7 @@ class _SheetShell extends StatelessWidget {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.line,
+                color: colors.line,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -357,7 +358,7 @@ class _SheetShell extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: text.bodySmall?.copyWith(
                               fontSize: 12,
-                              color: AppColors.muted,
+                              color: colors.muted,
                             ),
                           ),
                         ],
@@ -395,12 +396,13 @@ class _SheetAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final enabled = onTap != null;
     final Color color;
     if (!enabled) {
-      color = AppColors.inactive;
+      color = colors.inactive;
     } else {
-      color = primary ? AppColors.primary : AppColors.muted;
+      color = primary ? colors.primary : colors.muted;
     }
     return InkWell(
       onTap: onTap,

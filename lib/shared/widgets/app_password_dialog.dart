@@ -47,9 +47,10 @@ class _PasswordDialogState extends State<_PasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     const radius = BorderRadius.all(Radius.circular(14));
     return Dialog(
-      backgroundColor: AppColors.surface,
+      backgroundColor: colors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 40),
       child: Padding(
@@ -60,18 +61,18 @@ class _PasswordDialogState extends State<_PasswordDialog> {
             Text(
               widget.title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
                 height: 1.4,
-                color: AppColors.ink,
+                color: colors.ink,
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               '留空表示不加密',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12.5, color: AppColors.muted),
+              style: TextStyle(fontSize: 12.5, color: colors.muted),
             ),
             const SizedBox(height: 18),
             TextField(
@@ -80,16 +81,13 @@ class _PasswordDialogState extends State<_PasswordDialog> {
               obscureText: _obscure,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _submit(),
-              style: const TextStyle(fontSize: 15, color: AppColors.ink),
-              cursorColor: AppColors.primary,
+              style: TextStyle(fontSize: 15, color: colors.ink),
+              cursorColor: colors.primary,
               decoration: InputDecoration(
                 hintText: '密码',
-                hintStyle: const TextStyle(
-                  fontSize: 15,
-                  color: AppColors.inactive,
-                ),
+                hintStyle: TextStyle(fontSize: 15, color: colors.inactive),
                 filled: true,
-                fillColor: AppColors.canvas,
+                fillColor: colors.canvas,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 14,
@@ -103,9 +101,9 @@ class _PasswordDialogState extends State<_PasswordDialog> {
                   borderRadius: radius,
                   borderSide: BorderSide(color: Colors.transparent),
                 ),
-                focusedBorder: const OutlineInputBorder(
+                focusedBorder: OutlineInputBorder(
                   borderRadius: radius,
-                  borderSide: BorderSide(color: AppColors.primary),
+                  borderSide: BorderSide(color: colors.primary),
                 ),
                 suffixIcon: GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -113,7 +111,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
                   child: Icon(
                     _obscure ? FLucideIcons.eye : FLucideIcons.eyeOff,
                     size: 18,
-                    color: AppColors.muted,
+                    color: colors.muted,
                   ),
                 ),
                 suffixIconConstraints: const BoxConstraints(
@@ -128,8 +126,8 @@ class _PasswordDialogState extends State<_PasswordDialog> {
               child: OutlinedButton(
                 onPressed: _submit,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  side: const BorderSide(color: AppColors.primary, width: 1.5),
+                  foregroundColor: colors.primary,
+                  side: BorderSide(color: colors.primary, width: 1.5),
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(28),
@@ -150,7 +148,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
               child: TextButton(
                 onPressed: () => Navigator.pop(context),
                 style: TextButton.styleFrom(
-                  foregroundColor: AppColors.ink,
+                  foregroundColor: colors.ink,
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(28),

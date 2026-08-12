@@ -90,10 +90,11 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
   bool get _isChild => _parentId != null;
 
   /// 收支语义色：与记账页金额卡、键盘保持一致，让人一眼知道在编哪一侧。
-  Color get _accent => widget.kind == 0 ? AppColors.expense : AppColors.income;
+  Color _accent(AppColors colors) =>
+      widget.kind == 0 ? colors.expense : colors.income;
 
-  Color get _accentSoft =>
-      widget.kind == 0 ? AppColors.expenseSoft : AppColors.incomeSoft;
+  Color _accentSoft(AppColors colors) =>
+      widget.kind == 0 ? colors.expenseSoft : colors.incomeSoft;
 
   @override
   void initState() {
@@ -330,12 +331,13 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     // viewInsets：键盘高度。加在底部让整块面板浮在键盘之上。
     final keyboard = MediaQuery.of(context).viewInsets.bottom;
     return Padding(
       padding: EdgeInsets.only(bottom: keyboard),
       child: Material(
-        color: AppColors.surface,
+        color: colors.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         clipBehavior: Clip.antiAlias,
         child: SafeArea(
@@ -348,24 +350,24 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.line,
+                  color: colors.line,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               const SizedBox(height: 12),
               Text(
                 _title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15.5,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.ink,
+                  color: colors.ink,
                 ),
               ),
               if (_subtitle != null) ...[
                 const SizedBox(height: 3),
                 Text(
                   _subtitle!,
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                  style: TextStyle(fontSize: 12, color: colors.muted),
                 ),
               ],
               const SizedBox(height: 18),
@@ -374,8 +376,8 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
                 child: _NameRow(
                   controller: _nameController,
                   iconKey: _iconKey,
-                  accent: _accent,
-                  accentSoft: _accentSoft,
+                  accent: _accent(colors),
+                  accentSoft: _accentSoft(colors),
                   maxLength: _maxNameLength,
                   error: _error,
                   onSubmitted: _busy ? null : _submit,
@@ -386,8 +388,8 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
               // 但能一次看到尽可能多的图标，不用为了找一个图标翻七八屏。
               _IconPicker(
                 selected: _iconKey,
-                accent: _accent,
-                accentSoft: _accentSoft,
+                accent: _accent(colors),
+                accentSoft: _accentSoft(colors),
                 onSelected: (key) {
                   HapticFeedback.selectionClick();
                   setState(() => _iconKey = key);
@@ -419,7 +421,7 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
                     Expanded(
                       child: _ConfirmButton(
                         label: _isEditing ? '保存' : '创建',
-                        accent: _accent,
+                        accent: _accent(colors),
                         busy: _busy,
                         onTap: _busy ? null : _submit,
                       ),
@@ -460,6 +462,7 @@ class _NameRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     const radius = BorderRadius.all(Radius.circular(12));
     OutlineInputBorder border(Color color) => const OutlineInputBorder(
       borderRadius: radius,
@@ -497,16 +500,13 @@ class _NameRow extends StatelessWidget {
                 maxLength: maxLength,
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => onSubmitted?.call(),
-                style: const TextStyle(fontSize: 15, color: AppColors.ink),
+                style: TextStyle(fontSize: 15, color: colors.ink),
                 cursorColor: accent,
                 decoration: InputDecoration(
                   hintText: '分类名称',
-                  hintStyle: const TextStyle(
-                    fontSize: 15,
-                    color: AppColors.inactive,
-                  ),
+                  hintStyle: TextStyle(fontSize: 15, color: colors.inactive),
                   filled: true,
-                  fillColor: AppColors.canvas,
+                  fillColor: colors.canvas,
                   // 计数器占一整行高度却只说「3/12」，把面板撑高不值得；
                   // 超长由提交时的报错兜住。
                   counterText: '',
@@ -517,10 +517,10 @@ class _NameRow extends StatelessWidget {
                   ),
                   border: border(Colors.transparent),
                   enabledBorder: border(
-                    error == null ? Colors.transparent : AppColors.expense,
+                    error == null ? Colors.transparent : colors.expense,
                   ),
                   focusedBorder: border(
-                    error == null ? accent : AppColors.expense,
+                    error == null ? accent : colors.expense,
                   ),
                 ),
               ),
@@ -536,11 +536,11 @@ class _NameRow extends StatelessWidget {
                   padding: const EdgeInsets.only(left: 58, top: 4),
                   child: Text(
                     error!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       height: 1.1,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.expense,
+                      color: colors.expense,
                     ),
                   ),
                 ),
@@ -764,6 +764,7 @@ class _IconCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final custom = isCustomCategoryIcon(iconKey);
     return InkWell(
       onTap: onTap,
@@ -789,7 +790,7 @@ class _IconCell extends StatelessWidget {
             iconKey: iconKey,
             size: 21,
             imageSize: 42,
-            color: selected ? Colors.white : AppColors.muted,
+            color: selected ? Colors.white : colors.muted,
           ),
         ),
       ),
@@ -814,6 +815,7 @@ class _UploadIconCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final enabled = onTap != null;
     return Tooltip(
       message: '上传图片作为图标',
@@ -828,7 +830,7 @@ class _UploadIconCell extends StatelessWidget {
               color: accentSoft.withValues(alpha: 0.25),
               shape: BoxShape.circle,
               border: Border.all(
-                color: enabled ? accent : AppColors.line,
+                color: enabled ? accent : colors.line,
                 width: 1.2,
               ),
             ),
@@ -836,7 +838,7 @@ class _UploadIconCell extends StatelessWidget {
             child: Icon(
               FLucideIcons.imagePlus,
               size: 19,
-              color: enabled ? accent : AppColors.inactive,
+              color: enabled ? accent : colors.inactive,
             ),
           ),
         ),
@@ -859,6 +861,7 @@ class _IconGroupLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return SizedBox(
       height: extent,
       child: Padding(
@@ -867,10 +870,10 @@ class _IconGroupLabel extends StatelessWidget {
           alignment: Alignment.bottomLeft,
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: AppColors.inactive,
+              color: colors.inactive,
               letterSpacing: 0.4,
             ),
           ),
@@ -892,6 +895,7 @@ class _ActiveRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
       child: Row(
@@ -900,18 +904,18 @@ class _ActiveRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   '在记账时可选',
                   style: TextStyle(
                     fontSize: 14.5,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.ink,
+                    color: colors.ink,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value ? '关闭后不影响历史账单' : '已停用，记账时不再出现',
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                  style: TextStyle(fontSize: 12, color: colors.muted),
                 ),
               ],
             ),
@@ -943,13 +947,14 @@ class _ConfirmButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return SizedBox(
       height: 48,
       child: FilledButton(
         onPressed: onTap,
         style: FilledButton.styleFrom(
           backgroundColor: accent,
-          disabledBackgroundColor: AppColors.line,
+          disabledBackgroundColor: colors.line,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(28),
@@ -984,9 +989,10 @@ class _DeleteButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final enabled = onTap != null;
     return Material(
-      color: AppColors.expenseSoft,
+      color: colors.expenseSoft,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,
@@ -997,7 +1003,7 @@ class _DeleteButton extends StatelessWidget {
             child: Icon(
               FLucideIcons.trash2,
               size: 20,
-              color: enabled ? AppColors.expense : AppColors.inactive,
+              color: enabled ? colors.expense : colors.inactive,
             ),
           ),
         ),

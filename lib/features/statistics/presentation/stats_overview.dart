@@ -26,12 +26,13 @@ class StatsPeriodSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     const values = StatisticsPeriod.values;
     return Container(
       height: 40,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: StatsTokens.fillMuted,
+        color: stats.fillMuted,
         borderRadius: BorderRadius.circular(StatsTokens.radiusPill),
       ),
       child: LayoutBuilder(
@@ -50,7 +51,7 @@ class StatsPeriodSelector extends StatelessWidget {
                 width: slotWidth,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: StatsTokens.surface,
+                    color: stats.surface,
                     borderRadius: BorderRadius.circular(StatsTokens.radiusPill),
                     boxShadow: const [
                       BoxShadow(
@@ -81,8 +82,8 @@ class StatsPeriodSelector extends StatelessWidget {
                                   ? FontWeight.w700
                                   : FontWeight.w500,
                               color: value == selected
-                                  ? StatsTokens.primary
-                                  : StatsTokens.textMuted,
+                                  ? stats.primary
+                                  : stats.textMuted,
                             ),
                             child: Text(value.label),
                           ),
@@ -132,14 +133,15 @@ class StatsOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     final summary = current;
     final canGoForward = !window.includesToday;
 
     return Container(
       decoration: BoxDecoration(
-        gradient: StatsTokens.heroGradient,
+        gradient: stats.heroGradient,
         borderRadius: BorderRadius.circular(StatsTokens.radiusCard),
-        boxShadow: StatsTokens.shadowHero,
+        boxShadow: stats.shadowHero,
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),

@@ -6,6 +6,21 @@ import '../../core/preferences/money_grouped.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/ledger_date.dart';
 
+/// 暖黄卡上的文字色：固定深墨色，不随深浅皮肤变。
+///
+/// 这里刻意不用 `colors.ink`——那是「压在页面底色上的文字色」，深色皮肤下
+/// 会变成近白色。而这张卡的卡面是一条固定的暖黄渐变，两套皮肤都一样，
+/// 字色必须跟着卡面而不是跟着页面，否则深色下就是近白字压浅黄底。
+/// 与统计页 `StatsTokens.onHeroPrimary` 同一条规则：**彩色卡上的前景色
+/// 属于卡片自己的配色，不进全局色板。**
+const _onWarm = Color(0xFF17211E);
+
+/// 紧凑版摘要条的实底：同样固定，不随皮肤变。
+///
+/// 它上面压的是 `Colors.white70` 标签和三个亮色数字，底色一旦跟着
+/// `colors.ink` 在深色下翻成近白，就是白字压白底。
+const _compactSurface = Color(0xFF17211E);
+
 /// 明细页顶部大卡：本月支出（Hero 大数字）+ 本月收入 + 净收支。
 ///
 /// 视觉参照现代记账App：暖黄渐变、大圆角，本月支出用超大黑体数字撑起
@@ -22,7 +37,11 @@ class SummaryBand extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
     final grouped = ref.watch(moneyGroupedProvider);
+    // 注意这张卡的文字用 [_onWarm] 而不是 colors.ink：卡面在深浅两套皮肤下
+    // 都是同一条暖黄渐变，字色必须跟着**卡面**走，跟着页面走会在深色下
+    // 变成近白字压浅黄底。
     if (compact) return _CompactBand(summary: summary, grouped: grouped);
     return Container(
       width: double.infinity,
@@ -36,7 +55,7 @@ class SummaryBand extends ConsumerWidget {
         borderRadius: BorderRadius.circular(22),
         // 用暖色阴影而不是中性灰：灰色压在暖黄渐变下会发浊，
         // 阴影里掺入卡片自身色相才干净。与统计页 Hero 卡同一套思路。
-        boxShadow: AppShadows.heroWarm,
+        boxShadow: colors.shadowHeroWarm,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -48,7 +67,7 @@ class SummaryBand extends ConsumerWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.ink.withValues(alpha: 0.65),
+                  color: _onWarm.withValues(alpha: 0.65),
                   letterSpacing: 0.2,
                 ),
               ),
@@ -57,7 +76,7 @@ class SummaryBand extends ConsumerWidget {
                 '(元)',
                 style: TextStyle(
                   fontSize: 11,
-                  color: AppColors.ink.withValues(alpha: 0.45),
+                  color: _onWarm.withValues(alpha: 0.45),
                 ),
               ),
             ],
@@ -69,11 +88,11 @@ class SummaryBand extends ConsumerWidget {
             child: Text(
               _rawMoney(summary.expenseCents, grouped: grouped),
               maxLines: 1,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 40,
                 height: 1.1,
                 fontWeight: FontWeight.w800,
-                color: AppColors.ink,
+                color: _onWarm,
                 letterSpacing: 0.4,
               ),
             ),
@@ -145,7 +164,7 @@ class _MiniStat extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 12,
-                color: AppColors.ink.withValues(alpha: 0.6),
+                color: _onWarm.withValues(alpha: 0.6),
                 letterSpacing: 0.2,
               ),
             ),
@@ -154,7 +173,7 @@ class _MiniStat extends StatelessWidget {
               '(元)',
               style: TextStyle(
                 fontSize: 10,
-                color: AppColors.ink.withValues(alpha: 0.42),
+                color: _onWarm.withValues(alpha: 0.42),
               ),
             ),
           ],
@@ -166,10 +185,10 @@ class _MiniStat extends StatelessWidget {
           child: Text(
             value,
             maxLines: 1,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
-              color: AppColors.ink,
+              color: _onWarm,
               letterSpacing: 0.2,
             ),
           ),
@@ -191,7 +210,7 @@ class _CompactBand extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      color: AppColors.ink,
+      color: _compactSurface,
       child: Row(
         children: [
           _CompactValue(

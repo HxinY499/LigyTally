@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
 import '../../core/media/image_storage.dart';
+import '../../core/theme/app_theme.dart';
 
 class LocalImage extends StatelessWidget {
   const LocalImage({
@@ -19,23 +20,24 @@ class LocalImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return FutureBuilder<File>(
       future: storage.resolve(relativePath),
       builder: (context, snapshot) {
         final file = snapshot.data;
         if (file == null) {
-          return const ColoredBox(
-            color: Color(0xFFE7ECE9),
-            child: Center(child: Icon(FLucideIcons.image)),
+          return ColoredBox(
+            color: colors.fill,
+            child: const Center(child: Icon(FLucideIcons.image)),
           );
         }
         return Image.file(
           file,
           fit: fit,
           errorBuilder: (_, _, _) {
-            return const ColoredBox(
-              color: Color(0xFFE7ECE9),
-              child: Center(child: Icon(FLucideIcons.imageOff)),
+            return ColoredBox(
+              color: colors.fill,
+              child: const Center(child: Icon(FLucideIcons.imageOff)),
             );
           },
         );

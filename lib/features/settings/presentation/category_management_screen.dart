@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
@@ -16,7 +17,7 @@ import 'category_editor_sheet.dart';
 ///
 /// 视觉语言完全对齐首页与统计页：**一个一级分类 = 一张白色圆角大卡**
 /// （同首页的「一天一张日卡」），卡头是分类本体、卡内是它的二级分类网格、
-/// 卡底是「添加子分类」。阴影用 [AppShadows.card]，与日卡/图表卡同高度浮起；
+/// 卡底是「添加子分类」。阴影用 [AppColors.shadowCard]，与日卡/图表卡同高度浮起；
 /// 顶部收支切换用记账页那枚滑块胶囊；二级分类格子沿用记账页分类选择器的
 /// 「图标 + 下方小字」，让人在管理页看到的就是记账时会看到的样子。
 ///
@@ -29,6 +30,8 @@ import 'category_editor_sheet.dart';
 ///    现在点卡头/格子即进编辑面板，改名、换图标、停用、删除都在那里。
 /// 3. **结果一定有反馈**。旧版切开关、新建成功都是静默的；现在统一走 toast，
 ///    被拦住的操作（如删不掉、停用会清空一侧）也会说清原因和替代做法。
+/// 4. **顺序在管理页改**。一级卡头右侧手柄拖整张卡；二级格子长按拖，
+///    单击仍进编辑。记账页选择器走同一条 `watchCategories`，会自己跟上。
 class CategoryManagementScreen extends ConsumerStatefulWidget {
   const CategoryManagementScreen({super.key});
 
@@ -45,6 +48,17 @@ class _CategoryManagementScreenState
   late final FPopoverController _popoverController;
   late final AppDatabase _database;
   late final ImageStorage _storage;
+
+  /// 拖拽后、库的 Stream 还没推回来之前，用这份 id 顺序顶住画面。
+  ///
+  /// `SliverReorderableList` 的 `onReorderItem` 要求调用方立刻改列表，
+  /// 否则下一帧仍是 Stream 里的旧顺序，卡片会弹回原位。id 集合对不上
+  /// （换了收支侧、增删了分类）就丢弃，回到 Stream 的顺序。
+  ///
+  /// 它会盖住 Stream 推来的顺序，所以写库失败时必须由 [_persistOrder]
+  /// 主动清掉——否则画面会一直停在那次没写成的排法上。
+  List<String>? _parentOrder;
+  final Map<String, List<String>> _childOrder = {};
 
   @override
   void initState() {
@@ -149,6 +163,68 @@ class _CategoryManagementScreenState
     _showMessage(result.message, level: result.level);
   }
 
+  /// 把 [ids] 写成 `0..n-1`。
+  ///
+  /// 本地顺序是乐观更新，写失败就得撤掉，让 Stream 里的真实顺序重新露出来。
+  /// [parentId] 为空表示这次拖的是一级卡片。
+  Future<void> _persistOrder(List<String> ids, {String? parentId}) async {
+    try {
+      await _database.reorderCategories(ids);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        if (parentId == null) {
+          _parentOrder = null;
+        } else {
+          _childOrder.remove(parentId);
+        }
+      });
+      _showMessage('排序失败：$error', level: AppToastLevel.error);
+    }
+  }
+
+  void _onReorderParents(
+    List<CategoryEntry> parents,
+    int oldIndex,
+    int newIndex,
+  ) {
+    final ids = _movedIds(
+      parents.map((item) => item.id).toList(),
+      oldIndex,
+      newIndex,
+    );
+    if (ids == null) return;
+    HapticFeedback.selectionClick();
+    setState(() => _parentOrder = ids);
+    _persistOrder(ids);
+  }
+
+  void _onReorderChildren(
+    String parentId,
+    List<CategoryEntry> children,
+    String fromId,
+    String toId,
+  ) {
+    final ids = children.map((item) => item.id).toList();
+    final moved = _movedIds(ids, ids.indexOf(fromId), ids.indexOf(toId));
+    if (moved == null) return;
+    HapticFeedback.selectionClick();
+    setState(() => _childOrder[parentId] = moved);
+    _persistOrder(moved, parentId: parentId);
+  }
+
+  List<CategoryEntry> _orderedParents(List<CategoryEntry> categories) {
+    final parents = categories.where((item) => item.level == 1).toList();
+    return _applyOrder(parents, _parentOrder);
+  }
+
+  List<CategoryEntry> _orderedChildren(
+    String parentId,
+    List<CategoryEntry> children,
+  ) {
+    return _applyOrder(children, _childOrder[parentId]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final database = ref.watch(databaseProvider);
@@ -212,7 +288,11 @@ class _CategoryManagementScreenState
                   pinned: true,
                   delegate: _KindBarDelegate(
                     kind: _kind,
-                    onChanged: (value) => setState(() => _kind = value),
+                    onChanged: (value) => setState(() {
+                      _kind = value;
+                      _parentOrder = null;
+                      _childOrder.clear();
+                    }),
                   ),
                 ),
                 if (categories == null)
@@ -233,7 +313,7 @@ class _CategoryManagementScreenState
   }
 
   List<Widget> _buildContent(List<CategoryEntry> categories) {
-    final parents = categories.where((item) => item.level == 1).toList();
+    final parents = _orderedParents(categories);
     final childrenOf = <String, List<CategoryEntry>>{};
     for (final category in categories) {
       final parentId = category.parentId;
@@ -241,200 +321,291 @@ class _CategoryManagementScreenState
         childrenOf.putIfAbsent(parentId, () => []).add(category);
       }
     }
+    for (final parent in parents) {
+      final children = childrenOf[parent.id];
+      if (children != null) {
+        childrenOf[parent.id] = _orderedChildren(parent.id, children);
+      }
+    }
     return [
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
-        sliver: SliverList.list(
-          children: [
-            for (final parent in parents)
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+        sliver: SliverReorderableList(
+          itemCount: parents.length,
+          onReorderItem: (oldIndex, newIndex) =>
+              _onReorderParents(parents, oldIndex, newIndex),
+          itemBuilder: (context, index) {
+            final parent = parents[index];
+            return Padding(
+              key: ValueKey(parent.id),
+              padding: const EdgeInsets.only(bottom: 14),
+              child: _CategoryCard(
+                index: index,
+                reorderable: parents.length > 1,
+                parent: parent,
+                children: childrenOf[parent.id] ?? const [],
+                kind: _kind,
+                onEditParent: () => _openEditor(existing: parent),
+                onEditChild: (child) =>
+                    _openEditor(existing: child, parent: parent),
+                onAddChild: () => _openEditor(parent: parent),
+                onReorderChildren: (fromId, toId) => _onReorderChildren(
+                  parent.id,
+                  childrenOf[parent.id] ?? const [],
+                  fromId,
+                  toId,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+        sliver: SliverToBoxAdapter(
+          child: Column(
+            children: [
+              _AddParentCard(
+                kind: _kind,
+                onTap: _busy ? null : () => _openEditor(),
+              ),
+              const SizedBox(height: 10),
               Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: _CategoryCard(
-                  parent: parent,
-                  children: childrenOf[parent.id] ?? const [],
-                  kind: _kind,
-                  onEditParent: () => _openEditor(existing: parent),
-                  onEditChild: (child) =>
-                      _openEditor(existing: child, parent: parent),
-                  onAddChild: () => _openEditor(parent: parent),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  '被账单用过的分类不能删除，可以停用——停用后记账时不再出现，'
+                  '历史账单照旧显示。长按子分类可调整顺序。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.5,
+                    color: context.colors.inactive,
+                  ),
                 ),
               ),
-            _AddParentCard(
-              kind: _kind,
-              onTap: _busy ? null : () => _openEditor(),
-            ),
-            const SizedBox(height: 10),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
-                '被账单用过的分类不能删除，可以停用——停用后记账时不再出现，'
-                '历史账单照旧显示。',
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.5,
-                  color: AppColors.inactive,
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     ];
   }
 }
 
+/// 把 [from] 处的 id 挪到 [to]。非法下标或没动位置时返回 null，
+/// 调用方据此跳过 setState，避免空拖也刷一遍页面。
+List<String>? _movedIds(List<String> ids, int from, int to) {
+  if (from == to ||
+      from < 0 ||
+      to < 0 ||
+      from >= ids.length ||
+      to >= ids.length) {
+    return null;
+  }
+  final next = [...ids];
+  final id = next.removeAt(from);
+  next.insert(to, id);
+  return next;
+}
+
+/// [order] 恰好是 [items] 的一个排列时按它排，否则退回原列表。
+///
+/// 排列对不上 = 增删了分类或切了收支侧，本地覆盖已经失效。
+List<CategoryEntry> _applyOrder(
+  List<CategoryEntry> items,
+  List<String>? order,
+) {
+  if (order == null || order.length != items.length) return items;
+  final byId = {for (final item in items) item.id: item};
+  if (order.any((id) => !byId.containsKey(id))) return items;
+  return [for (final id in order) byId[id]!];
+}
+
 /// 一级分类卡：卡头（分类本体）+ 二级分类网格 + 「添加子分类」行。
 ///
-/// 结构刻意与首页日卡同构：白面 Material 提供水波画布、[AppShadows.card]
+/// 结构刻意与首页日卡同构：白面 Material 提供水波画布、[AppColors.shadowCard]
 /// 挂在外层 DecoratedBox 上。白底若用 `Container(color:)` 会把水波盖住，
 /// 点击变成毫无反馈（首页踩过这个坑，见 `_DayCard` 注释）。
 class _CategoryCard extends StatelessWidget {
   const _CategoryCard({
+    required this.index,
+    required this.reorderable,
     required this.parent,
     required this.children,
     required this.kind,
     required this.onEditParent,
     required this.onEditChild,
     required this.onAddChild,
+    required this.onReorderChildren,
   });
 
+  /// 在 [SliverReorderableList] 里的位置，手柄用它启动拖拽。
+  final int index;
+  final bool reorderable;
   final CategoryEntry parent;
   final List<CategoryEntry> children;
   final int kind;
   final VoidCallback onEditParent;
   final ValueChanged<CategoryEntry> onEditChild;
   final VoidCallback onAddChild;
+  final void Function(String fromId, String toId) onReorderChildren;
 
   static const _radius = 18.0;
   static const _columns = 5;
 
-  Color get _accent => kind == 0 ? AppColors.expense : AppColors.income;
-  Color get _accentSoft =>
-      kind == 0 ? AppColors.expenseSoft : AppColors.incomeSoft;
+  Color _accent(AppColors colors) => kind == 0 ? colors.expense : colors.income;
+  Color _accentSoft(AppColors colors) =>
+      kind == 0 ? colors.expenseSoft : colors.incomeSoft;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final active = parent.isActive;
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        borderRadius: BorderRadius.all(Radius.circular(_radius)),
-        boxShadow: AppShadows.card,
+      decoration: BoxDecoration(
+        borderRadius: const BorderRadius.all(Radius.circular(_radius)),
+        boxShadow: colors.shadowCard,
       ),
       child: Material(
-        color: AppColors.surface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(_radius),
         clipBehavior: Clip.antiAlias,
         child: Column(
           children: [
-            InkWell(
-              onTap: onEditParent,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(_radius),
-              ),
-              highlightColor: AppColors.pressed,
-              splashColor: AppColors.ripple,
-              hoverColor: AppColors.ripple,
-              child:
-                  Padding
-                  // 有子分类时下内距收窄，让卡头与下方网格成为一组。
-                  (
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      14,
-                      16,
-                      children.isEmpty ? 14 : 10,
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: onEditParent,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(_radius),
+                      topRight: reorderable
+                          ? Radius.zero
+                          : const Radius.circular(_radius),
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            // 停用的分类整体退成灰阶：一眼能从一列卡片里
-                            // 认出「这个现在不生效」，不用去读文字徽章。
-                            color: active ? _accentSoft : AppColors.canvas,
-                            shape: BoxShape.circle,
+                    highlightColor: colors.pressed,
+                    splashColor: colors.ripple,
+                    hoverColor: colors.ripple,
+                    child: Padding(
+                      // 有子分类时下内距收窄，让卡头与下方网格成为一组。
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        14,
+                        reorderable ? 8 : 16,
+                        children.isEmpty ? 14 : 10,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              // 停用的分类整体退成灰阶：一眼能从一列卡片里
+                              // 认出「这个现在不生效」，不用去读文字徽章。
+                              color: active
+                                  ? _accentSoft(colors)
+                                  : colors.canvas,
+                              shape: BoxShape.circle,
+                            ),
+                            child: CategoryIconView(
+                              iconKey: parent.iconKey,
+                              size: 21,
+                              imageSize: 40,
+                              color: active ? _accent(colors) : colors.inactive,
+                            ),
                           ),
-                          child: CategoryIconView(
-                            iconKey: parent.iconKey,
-                            size: 21,
-                            imageSize: 40,
-                            color: active ? _accent : AppColors.inactive,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      parent.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 15.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: active
-                                            ? AppColors.ink
-                                            : AppColors.inactive,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        parent.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 15.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: active
+                                              ? colors.ink
+                                              : colors.inactive,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  if (!active) ...[
-                                    const SizedBox(width: 8),
-                                    const _MutedBadge('已停用'),
+                                    if (!active) ...[
+                                      const SizedBox(width: 8),
+                                      const _MutedBadge('已停用'),
+                                    ],
                                   ],
-                                ],
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                children.isEmpty
-                                    ? '暂无子分类'
-                                    : '${children.length} 个子分类',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.muted,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 3),
+                                Text(
+                                  children.isEmpty
+                                      ? '暂无子分类'
+                                      : '${children.length} 个子分类',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colors.muted,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        // 用铅笔而不是 chevron：这一行的动作是「编辑」，
-                        // 不是「进入下一层」——chevron 会让人以为还有个子页面。
-                        const Icon(
-                          FLucideIcons.pencil,
-                          size: 16,
-                          color: Color(0xFFC2CBC6),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          // 用铅笔而不是 chevron：这一行的动作是「编辑」，
+                          // 不是「进入下一层」——chevron 会让人以为还有个子页面。
+                          Icon(
+                            FLucideIcons.pencil,
+                            size: 16,
+                            color: colors.faint,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
+                ),
+                // 手柄放在 InkWell 外面：按住它只启动拖拽，不会误开编辑面板。
+                if (reorderable)
+                  ReorderableDragStartListener(
+                    index: index,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        4,
+                        14,
+                        12,
+                        children.isEmpty ? 14 : 10,
+                      ),
+                      child: Icon(
+                        FLucideIcons.gripVertical,
+                        size: 20,
+                        color: colors.faint,
+                      ),
+                    ),
+                  ),
+              ],
             ),
             if (children.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(6, 0, 6, 4),
-                child: Column(children: _childRows()),
+                child: Column(children: _childRows(colors)),
               ),
-            const Divider(
+            Divider(
               height: 1,
               thickness: 1,
               indent: 16,
               endIndent: 16,
-              color: Color(0xFFF1F4F2),
+              color: colors.fill,
             ),
             InkWell(
               onTap: onAddChild,
               borderRadius: const BorderRadius.vertical(
                 bottom: Radius.circular(_radius),
               ),
-              highlightColor: AppColors.pressed,
-              splashColor: AppColors.ripple,
-              hoverColor: AppColors.ripple,
+              highlightColor: colors.pressed,
+              splashColor: colors.ripple,
+              hoverColor: colors.ripple,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -443,14 +614,14 @@ class _CategoryCard extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(FLucideIcons.plus, size: 15, color: _accent),
+                    Icon(FLucideIcons.plus, size: 15, color: _accent(colors)),
                     const SizedBox(width: 6),
                     Text(
                       '添加子分类',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: _accent,
+                        color: _accent(colors),
                       ),
                     ),
                   ],
@@ -465,7 +636,8 @@ class _CategoryCard extends StatelessWidget {
 
   /// 二级分类按 5 列铺开，最后一行补空位撑齐——用 Row 而不是 GridView：
   /// 卡片高度必须由内容决定，GridView 在无界高度里没法用。
-  List<Widget> _childRows() {
+  List<Widget> _childRows(AppColors colors) {
+    final siblingIds = {for (final child in children) child.id};
     final rows = <Widget>[];
     for (var start = 0; start < children.length; start += _columns) {
       rows.add(
@@ -476,8 +648,10 @@ class _CategoryCard extends StatelessWidget {
                 child: i < children.length
                     ? _ChildCell(
                         category: children[i],
-                        accent: _accent,
+                        accent: _accent(colors),
+                        siblingIds: siblingIds,
                         onTap: () => onEditChild(children[i]),
+                        onMove: children.length > 1 ? onReorderChildren : null,
                       )
                     : const SizedBox.shrink(),
               ),
@@ -497,47 +671,130 @@ class _ChildCell extends StatelessWidget {
   const _ChildCell({
     required this.category,
     required this.accent,
+    required this.siblingIds,
     required this.onTap,
+    this.onMove,
   });
 
   final CategoryEntry category;
   final Color accent;
+
+  /// 同一张卡里的所有二级分类 id。只接同卡的格子——每张卡的
+  /// [DragTarget] 收的都是 `String`，不认这一层就会接下别的一级卡拖来的
+  /// 格子，然后因为跨父级重排被静默丢掉：高亮亮了，松手却什么也没发生。
+  final Set<String> siblingIds;
   final VoidCallback onTap;
+
+  /// 非空时格子可长按拖到另一个格子上。只有一张时没有可交换的位置。
+  final void Function(String fromId, String toId)? onMove;
 
   @override
   Widget build(BuildContext context) {
+    final tile = _ChildTile(category: category, accent: accent, onTap: onTap);
+    final onMove = this.onMove;
+    if (onMove == null) return tile;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) =>
+          details.data != category.id && siblingIds.contains(details.data),
+      onAcceptWithDetails: (details) => onMove(details.data, category.id),
+      builder: (context, candidate, _) {
+        final hovering = candidate.isNotEmpty;
+        return LongPressDraggable<String>(
+          data: category.id,
+          // 不缩短 delay：长按一到时间就直接夺走手势（见
+          // _DelayedPointerState._delayPassed，不需要移动），调短会让「按得
+          // 稍久一点的点击」变成原地拖一下，编辑面板反而打不开。
+          onDragStarted: () => HapticFeedback.mediumImpact(),
+          feedback: _ChildDragFeedback(category: category, accent: accent),
+          childWhenDragging: Opacity(opacity: 0.35, child: tile),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            decoration: BoxDecoration(
+              color: hovering
+                  ? accent.withValues(alpha: 0.12)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: tile,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 拖起来跟在手指底下的那一格。必须自己定宽高——Overlay 里没有父约束，
+/// 不写死会按内容缩成一条，看起来不像格子。
+class _ChildDragFeedback extends StatelessWidget {
+  const _ChildDragFeedback({required this.category, required this.accent});
+
+  final CategoryEntry category;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Material(
+      elevation: 8,
+      color: colors.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 72,
+        height: 64,
+        child: _ChildTile(category: category, accent: accent),
+      ),
+    );
+  }
+}
+
+/// 二级分类格子：图标 + 下方小字，与记账页分类选择器同一形态。
+///
+/// 点它进编辑面板。停用态整体降到 inactive 灰，并在文字前不加任何标记——
+/// 二级分类的格子只有 60 多 px 宽，塞徽章会挤掉名字，灰度已经足够表达。
+class _ChildTile extends StatelessWidget {
+  const _ChildTile({required this.category, required this.accent, this.onTap});
+
+  final CategoryEntry category;
+  final Color accent;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
     final active = category.isActive;
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CategoryIconView(
+            iconKey: category.iconKey,
+            size: 24,
+            color: active ? accent : colors.inactive,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            category.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.1,
+              fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+              color: active ? colors.ink : colors.inactive,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (onTap == null) return content;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      highlightColor: AppColors.pressed,
-      splashColor: AppColors.ripple,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CategoryIconView(
-              iconKey: category.iconKey,
-              size: 24,
-              color: active ? accent : AppColors.inactive,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              category.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 11,
-                height: 1.1,
-                fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-                color: active ? AppColors.ink : AppColors.inactive,
-              ),
-            ),
-          ],
-        ),
-      ),
+      highlightColor: colors.pressed,
+      splashColor: colors.ripple,
+      child: content,
     );
   }
 }
@@ -550,19 +807,20 @@ class _MutedBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: AppColors.canvas,
+        color: colors.canvas,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
           height: 1.1,
-          color: AppColors.inactive,
+          color: colors.inactive,
         ),
       ),
     );
@@ -582,17 +840,18 @@ class _AddParentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = kind == 0 ? AppColors.expense : AppColors.income;
+    final colors = context.colors;
+    final accent = kind == 0 ? colors.expense : colors.income;
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-        highlightColor: AppColors.pressed,
-        splashColor: AppColors.ripple,
+        highlightColor: colors.pressed,
+        splashColor: colors.ripple,
         child: CustomPaint(
-          painter: const _DashedBorderPainter(),
+          painter: _DashedBorderPainter(colors.line),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 18),
             child: Row(
@@ -623,7 +882,9 @@ class _AddParentCard extends StatelessWidget {
 /// 用 [Path.computeMetrics] 沿圆角矩形均匀取段，四个角上的虚线才不会
 /// 因为「按边分别画」而在拐角处断得难看。
 class _DashedBorderPainter extends CustomPainter {
-  const _DashedBorderPainter();
+  const _DashedBorderPainter(this.color);
+
+  final Color color;
 
   static const _dash = 5.0;
   static const _gap = 4.0;
@@ -631,7 +892,7 @@ class _DashedBorderPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.line
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
     final path = Path()
@@ -655,7 +916,8 @@ class _DashedBorderPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DashedBorderPainter oldDelegate) => false;
+  bool shouldRepaint(_DashedBorderPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 /// 吸顶的支出/收入切换条。
@@ -676,7 +938,7 @@ class _KindBarDelegate extends SliverPersistentHeaderDelegate {
     bool overlapsContent,
   ) {
     return Material(
-      color: AppColors.canvas,
+      color: context.colors.canvas,
       child: SizedBox(
         height: _height,
         child: Center(
@@ -714,13 +976,14 @@ class _KindSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selectedColor = kind == 0 ? AppColors.expense : AppColors.income;
+    final colors = context.colors;
+    final selectedColor = kind == 0 ? colors.expense : colors.income;
     return SizedBox(
       height: _kHeight,
       width: _kSegmentWidth * 2 + _kPadding * 2,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: AppColors.line.withValues(alpha: 0.35),
+          color: colors.line.withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(_kHeight / 2),
         ),
         child: Stack(
@@ -738,7 +1001,7 @@ class _KindSwitch extends StatelessWidget {
                   curve: Curves.easeOut,
                   width: _kSegmentWidth,
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: colors.surface,
                     borderRadius: BorderRadius.circular(
                       (_kHeight - _kPadding * 2) / 2,
                     ),
@@ -757,13 +1020,13 @@ class _KindSwitch extends StatelessWidget {
               children: [
                 _KindSegment(
                   label: '支出分类',
-                  color: AppColors.expense,
+                  color: colors.expense,
                   selected: kind == 0,
                   onTap: () => onChanged(0),
                 ),
                 _KindSegment(
                   label: '收入分类',
-                  color: AppColors.income,
+                  color: colors.income,
                   selected: kind == 1,
                   onTap: () => onChanged(1),
                 ),
@@ -791,6 +1054,7 @@ class _KindSegment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Expanded(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -803,7 +1067,7 @@ class _KindSegment extends StatelessWidget {
               fontSize: 13,
               height: 1.1,
               letterSpacing: 0.2,
-              color: selected ? color : AppColors.inactive,
+              color: selected ? color : colors.inactive,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             ),
             child: Text(label),

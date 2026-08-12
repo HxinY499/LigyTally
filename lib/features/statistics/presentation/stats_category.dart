@@ -72,7 +72,7 @@ class _CategoryCompositionState extends State<CategoryComposition> {
   }
 
   /// 把分类合计折成环形图扇区（含「其他」聚合）。
-  List<CategorySlice> _buildSlices() {
+  List<CategorySlice> _buildSlices(StatsTokens stats) {
     final totals = widget.totals;
     if (totals.length <= _maxSlices) {
       return [
@@ -80,7 +80,7 @@ class _CategoryCompositionState extends State<CategoryComposition> {
           CategorySlice(
             label: totals[i].name,
             cents: totals[i].totalCents,
-            color: StatsTokens.categoryColor(i),
+            color: stats.categoryColor(i),
           ),
       ];
     }
@@ -89,7 +89,7 @@ class _CategoryCompositionState extends State<CategoryComposition> {
         CategorySlice(
           label: totals[i].name,
           cents: totals[i].totalCents,
-          color: StatsTokens.categoryColor(i),
+          color: stats.categoryColor(i),
         ),
     ];
     final rest = totals
@@ -99,7 +99,7 @@ class _CategoryCompositionState extends State<CategoryComposition> {
       CategorySlice(
         label: '其他 ${totals.length - _maxSlices} 项',
         cents: rest,
-        color: StatsTokens.categoryRest,
+        color: stats.categoryRest,
       ),
     );
     return slices;
@@ -114,7 +114,7 @@ class _CategoryCompositionState extends State<CategoryComposition> {
   ///
   /// 排行第 6 项之后也能点：它们是真实分类，只是环形图里被并进「其他」
   /// 才统一取灰色。颜色沿用排行行自身的色，面板与来源在视觉上对得上。
-  void _openDetails(int index) {
+  void _openDetails(int index, StatsTokens stats) {
     HapticFeedback.selectionClick();
     showCategoryTransactionsSheet(
       context,
@@ -123,16 +123,17 @@ class _CategoryCompositionState extends State<CategoryComposition> {
       rangeLabel: widget.rangeLabel,
       kind: widget.kind,
       color: index < _maxSlices
-          ? StatsTokens.categoryColor(index)
-          : StatsTokens.categoryRest,
+          ? stats.categoryColor(index)
+          : stats.categoryRest,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     final totals = widget.totals;
     final total = totals.fold<int>(0, (sum, item) => sum + item.totalCents);
-    final slices = _buildSlices();
+    final slices = _buildSlices(stats);
     final visibleRows = _expanded
         ? totals.length
         : (totals.length <= _collapsedRows ? totals.length : _collapsedRows);
@@ -172,14 +173,14 @@ class _CategoryCompositionState extends State<CategoryComposition> {
           ],
         ),
         const SizedBox(height: 6),
-        const Divider(height: 20, color: StatsTokens.divider, thickness: 1),
+        Divider(height: 20, color: stats.divider, thickness: 1),
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
           child: Text(
             '${widget.kind == 0 ? '支出' : '收入'}排行',
-            style: StatsTokens.captionSection.copyWith(
+            style: stats.captionSection.copyWith(
               fontWeight: FontWeight.w600,
-              color: StatsTokens.textMuted,
+              color: stats.textMuted,
             ),
           ),
         ),
@@ -190,22 +191,20 @@ class _CategoryCompositionState extends State<CategoryComposition> {
             totalCents: total,
             // 排行第 i 项与扇区第 i 片同色（超出 5 项后统一走「其他」灰），
             // 保证图例、扇区、排行三处颜色语义一致。
-            color: i < _maxSlices
-                ? StatsTokens.categoryColor(i)
-                : StatsTokens.categoryRest,
+            color: i < _maxSlices ? stats.categoryColor(i) : stats.categoryRest,
             // 选中「其他」那一片时 _selected == _maxSlices，它对应的是聚合项，
             // 不是排行第 6 行那个具体分类，两处都要挡住越界的下标。
             highlighted: _selected == i && _selected < _maxSlices,
             dimmed: _selected >= 0 && _selected != i && _selected < _maxSlices,
             grouped: widget.grouped,
-            onTap: () => _openDetails(i),
+            onTap: () => _openDetails(i, stats),
           ),
         if (totals.length > _collapsedRows)
           Center(
             child: TextButton(
               onPressed: () => setState(() => _expanded = !_expanded),
               style: TextButton.styleFrom(
-                foregroundColor: StatsTokens.primary,
+                foregroundColor: stats.primary,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 4,
@@ -243,6 +242,7 @@ class _LegendRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -267,13 +267,13 @@ class _LegendRow extends StatelessWidget {
                   slice.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: StatsTokens.legendLabel,
+                  style: stats.legendLabel,
                 ),
               ),
               const SizedBox(width: 6),
               Text(
                 '${(ratio * 100).toStringAsFixed(0)}%',
-                style: StatsTokens.legendValue,
+                style: stats.legendValue,
               ),
             ],
           ),
@@ -315,6 +315,7 @@ class CategoryRankRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     final ratio = totalCents == 0 ? 0.0 : item.totalCents / totalCents;
     return AnimatedOpacity(
       duration: StatsTokens.durTap,
@@ -359,13 +360,13 @@ class CategoryRankRow extends StatelessWidget {
                               item.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: StatsTokens.rowTitle,
+                              style: stats.rowTitle,
                             ),
                           ),
                           const SizedBox(width: 10),
                           Text(
                             formatMoney(item.totalCents, grouped: grouped),
-                            style: StatsTokens.rowAmount,
+                            style: stats.rowAmount,
                           ),
                         ],
                       ),
@@ -381,7 +382,7 @@ class CategoryRankRow extends StatelessWidget {
                           const SizedBox(width: 10),
                           Text(
                             '${(ratio * 100).toStringAsFixed(1)}% · ${item.entryCount} 笔',
-                            style: StatsTokens.rowMeta,
+                            style: stats.rowMeta,
                           ),
                         ],
                       ),
@@ -391,10 +392,10 @@ class CategoryRankRow extends StatelessWidget {
                 // 可下钻的提示。点击行为从「就地高亮」换成「弹出明细」后，
                 // 行内不再有任何即时视觉变化，没有这个箭头用户不会想到能点。
                 const SizedBox(width: 2),
-                const Icon(
+                Icon(
                   FLucideIcons.chevronRight,
                   size: 15,
-                  color: StatsTokens.textFaint,
+                  color: stats.textFaint,
                 ),
               ],
             ),
@@ -417,10 +418,11 @@ class _RatioBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     return SizedBox(
       height: 5,
       child: DecoratedBox(
-        decoration: const BoxDecoration(color: StatsTokens.fillMuted),
+        decoration: BoxDecoration(color: stats.fillMuted),
         child: TweenAnimationBuilder<double>(
           tween: Tween(begin: 0, end: ratio.clamp(0.0, 1.0)),
           duration: StatsTokens.durChart,
