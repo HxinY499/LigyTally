@@ -30,12 +30,14 @@ class StatisticsWindow {
     required this.period,
     required this.anchor,
     this.customRange,
+    this.today,
   });
 
   StatisticsWindow.now()
     : period = StatisticsPeriod.month,
       anchor = DateTime.now(),
-      customRange = null;
+      customRange = null,
+      today = null;
 
   final StatisticsPeriod period;
 
@@ -45,6 +47,13 @@ class StatisticsWindow {
   /// 自定义模式下用户选定的区间；为空时回落到锚点所在自然月。
   final LedgerDateRange? customRange;
 
+  /// 判断「区间走到哪儿了」时所用的今天；为空取系统当天。
+  ///
+  /// 存在的唯一理由是让区间口径可断言：[elapsedDayCount] 与
+  /// [comparisonRange] 的结果取决于今天是几号，直接读 [DateTime.now]
+  /// 的话同一条断言在月初和月末会得到不同答案。
+  final DateTime? today;
+
   StatisticsWindow copyWith({
     StatisticsPeriod? period,
     DateTime? anchor,
@@ -53,7 +62,10 @@ class StatisticsWindow {
     period: period ?? this.period,
     anchor: anchor ?? this.anchor,
     customRange: customRange ?? this.customRange,
+    today: today,
   );
+
+  DateTime get _today => dateOnly(today ?? DateTime.now());
 
   /// 当前统计区间。
   LedgerDateRange get range => switch (period) {
@@ -83,6 +95,40 @@ class StatisticsWindow {
       );
     }(),
   };
+
+  /// 当期已经走完的天数：区间起点到今天（含今天）。
+  ///
+  /// 区间整体落在过去时等于 [LedgerDateRange.dayCount]；整体落在未来时为 0
+  /// （自定义模式可以选到未来的区间）。
+  int get elapsedDayCount {
+    final current = range;
+    final day = _today;
+    if (day.isBefore(current.start)) return 0;
+    if (!day.isBefore(current.endExclusive)) return current.dayCount;
+    return day.difference(current.start).inDays + 1;
+  }
+
+  /// 当期是否还没走完。
+  ///
+  /// 进行中的区间不能拿去和完整的上一周期比：8 月 13 日看月视图时，
+  /// 「13 天的支出」对上「31 天的支出」几乎必然显示大幅下降，
+  /// 环比徽章会在每个月上半月稳定误报利好。
+  bool get isPartial => elapsedDayCount < range.dayCount;
+
+  /// 环比对照区间：当期进行中时只取上一周期同样长度的前缀。
+  ///
+  /// 前缀长度还要夹在上一周期自身长度内——3 月 29 日看月视图时，
+  /// 29 天的前缀会越过 2 月末尾，此时退化成整个 2 月。
+  LedgerDateRange get comparisonRange {
+    final previous = previousRange;
+    if (!isPartial) return previous;
+    final days = math.min(elapsedDayCount, previous.dayCount);
+    final start = previous.start;
+    return LedgerDateRange(
+      start,
+      DateTime(start.year, start.month, start.day + days),
+    );
+  }
 
   /// 趋势图是否按月聚合：年视图，或跨度超过 62 天的自定义区间。
   bool get groupByMonth =>
@@ -147,13 +193,16 @@ class StatisticsWindow {
     _ => '最近 6 个月',
   };
 
-  /// 环比说明里对「上一周期」的称呼。
+  /// 环比说明里对对照区间的称呼。
+  ///
+  /// 当期没走完时对照的是上一周期的等长前缀，文案必须点明「同期」，
+  /// 否则「较上月 -58%」会被读成和整个上月相比。
   String get previousLabel => switch (period) {
     StatisticsPeriod.day => '较昨日',
-    StatisticsPeriod.week => '较上周',
-    StatisticsPeriod.month => '较上月',
-    StatisticsPeriod.year => '较去年',
-    StatisticsPeriod.custom => '较上期',
+    StatisticsPeriod.week => isPartial ? '较上周同期' : '较上周',
+    StatisticsPeriod.month => isPartial ? '较上月同期' : '较上月',
+    StatisticsPeriod.year => isPartial ? '较去年同期' : '较去年',
+    StatisticsPeriod.custom => isPartial ? '较上期同期' : '较上期',
   };
 
   /// 区间切换器中间显示的文案。
@@ -175,10 +224,9 @@ class StatisticsWindow {
   /// 区间是否已经包含今天——包含时禁用「下一周期」，
   /// 避免用户一路翻到没有数据的未来区间。
   bool get includesToday {
-    final today = dateOnly(DateTime.now());
+    final day = _today;
     final current = range;
-    return !today.isBefore(current.start) &&
-        today.isBefore(current.endExclusive);
+    return !day.isBefore(current.start) && day.isBefore(current.endExclusive);
   }
 
   /// 按 [direction]（-1 上一段/ +1 下一段）平移当前窗口。
@@ -204,6 +252,7 @@ class StatisticsWindow {
             current.start.add(shift),
             current.endExclusive.add(shift),
           ),
+          today: today,
         );
     }
   }

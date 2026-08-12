@@ -558,6 +558,69 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// 一级分类在 [current] 与 [comparison] 两个区间内的金额对照。
+  ///
+  /// 归属口径与 [watchCategoryTotals] 完全一致（`COALESCE(parent_id, id)`），
+  /// 所以两张卡上同一个分类的当期金额必然相等。
+  ///
+  /// 用一条 SQL 的 CASE WHEN 同时聚合两个区间，而不是订阅两次再在内存里 join：
+  /// 只出现在其中一个区间的分类必须以「新增」或「归零」的形式出现，
+  /// 分两次查再合并的话，这类分类要靠调用方补齐 key，很容易漏掉一侧。
+  ///
+  /// 两个区间不允许重叠（[comparison] 恒在 [current] 之前），否则同一笔账单
+  /// 会被两列同时计入，差额失去意义。
+  Stream<List<CategoryDelta>> watchCategoryDeltas({
+    required LedgerDateRange current,
+    required LedgerDateRange comparison,
+    required int kind,
+  }) {
+    final currentStart = dateKey(current.start);
+    final currentEnd = dateKey(current.endExclusive);
+    final comparisonStart = dateKey(comparison.start);
+    final comparisonEnd = dateKey(comparison.endExclusive);
+    return customSelect(
+      '''
+      SELECT root.id AS id, root.name AS name, root.icon_key AS icon_key,
+        COALESCE(SUM(CASE WHEN t.accounting_date >= ? AND t.accounting_date < ?
+          THEN t.amount_cents ELSE 0 END), 0) AS current_total,
+        COALESCE(SUM(CASE WHEN t.accounting_date >= ? AND t.accounting_date < ?
+          THEN t.amount_cents ELSE 0 END), 0) AS comparison_total
+      FROM transactions t
+      JOIN categories c ON c.id = t.category_id
+      JOIN categories root ON root.id = COALESCE(c.parent_id, c.id)
+      WHERE t.kind = ?
+        AND ((t.accounting_date >= ? AND t.accounting_date < ?)
+          OR (t.accounting_date >= ? AND t.accounting_date < ?))
+      GROUP BY root.id, root.name, root.icon_key
+      ''',
+      // 顺序必须与 SQL 中 `?` 的出现顺序一致。
+      variables: [
+        Variable.withString(currentStart),
+        Variable.withString(currentEnd),
+        Variable.withString(comparisonStart),
+        Variable.withString(comparisonEnd),
+        Variable.withInt(kind),
+        Variable.withString(currentStart),
+        Variable.withString(currentEnd),
+        Variable.withString(comparisonStart),
+        Variable.withString(comparisonEnd),
+      ],
+      readsFrom: {transactions, categories},
+    ).watch().map(
+      (rows) => rows
+          .map(
+            (row) => CategoryDelta(
+              categoryId: row.read<String>('id'),
+              name: row.read<String>('name'),
+              iconKey: row.read<String>('icon_key'),
+              currentCents: row.read<int>('current_total'),
+              comparisonCents: row.read<int>('comparison_total'),
+            ),
+          )
+          .toList(),
+    );
+  }
+
   Stream<List<TrendPoint>> watchTrend(
     LedgerDateRange range, {
     required bool groupByMonth,
@@ -790,6 +853,31 @@ class CategoryTotal {
   final String iconKey;
   final int totalCents;
   final int entryCount;
+}
+
+/// 一个一级分类在「本期」与「对照期」的金额对照。
+class CategoryDelta {
+  const CategoryDelta({
+    required this.categoryId,
+    required this.name,
+    required this.iconKey,
+    required this.currentCents,
+    required this.comparisonCents,
+  });
+
+  final String categoryId;
+  final String name;
+  final String iconKey;
+  final int currentCents;
+  final int comparisonCents;
+
+  /// 正数表示本期比对照期多花（或多收）。
+  int get deltaCents => currentCents - comparisonCents;
+
+  /// 变化幅度。对照期为 0 时算不出比例，返回 null——
+  /// 这种情况该显示「新增」而不是 100% 或 ∞。
+  double? get ratio =>
+      comparisonCents == 0 ? null : deltaCents / comparisonCents;
 }
 
 class TrendPoint {

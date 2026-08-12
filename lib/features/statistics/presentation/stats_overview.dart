@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
@@ -136,6 +134,7 @@ class StatsOverviewCard extends StatelessWidget {
     final stats = StatsTokens.of(context);
     final summary = current;
     final canGoForward = !window.includesToday;
+    final elapsed = window.elapsedDayCount;
 
     return Container(
       decoration: BoxDecoration(
@@ -218,11 +217,15 @@ class StatsOverviewCard extends StatelessWidget {
                 Expanded(
                   child: _HeroMiniStat(
                     label: '日均支出',
+                    // 除数是「已经走完的天数」而不是区间总长：8 月 13 日看月视图
+                    // 时除以 31 会把日均系统性压低六成，而这个数字正是用来
+                    // 和上个月的日均横向比较的。
                     value: summary == null
                         ? null
+                        : elapsed == 0
+                        ? '—'
                         : _heroMoney(
-                            summary.expenseCents ~/
-                                math.max(1, window.range.dayCount),
+                            summary.expenseCents ~/ elapsed,
                             grouped: grouped,
                           ),
                   ),
@@ -241,7 +244,8 @@ class StatsOverviewCard extends StatelessWidget {
                 Text(
                   summary == null
                       ? '统计中…'
-                      : '共${summary.entryCount} 笔记录 · 跨 ${window.range.dayCount} 天',
+                      : '共${summary.entryCount} 笔记录 · '
+                            '${window.isPartial ? '已过' : '跨'} $elapsed 天',
                   style: StatsTokens.heroLabel.copyWith(
                     fontSize: 11,
                     color: StatsTokens.onHeroTertiary,

@@ -26,6 +26,9 @@ void main() {
       final window = StatisticsWindow(
         period: StatisticsPeriod.month,
         anchor: DateTime(2026, 8, 15),
+        // 固定「今天」，让 8 月是一个已经走完的区间——否则
+        // previousLabel 会随运行日期在「较上月 / 较上月同期」之间摇摆。
+        today: DateTime(2026, 9, 3),
       );
 
       expect(window.range.start, DateTime(2026, 8));
@@ -129,6 +132,89 @@ void main() {
     });
   });
 
+  group('StatisticsWindow 环比对等口径', () {
+    test('进行中的月：对照区间截成等长前缀，文案点明同期', () {
+      final window = StatisticsWindow(
+        period: StatisticsPeriod.month,
+        anchor: DateTime(2026, 8, 15),
+        today: DateTime(2026, 8, 13),
+      );
+
+      expect(window.elapsedDayCount, 13);
+      expect(window.isPartial, isTrue);
+      // 完整 7 月是 31 天，对照只取前 13 天。
+      expect(window.previousRange.dayCount, 31);
+      expect(window.comparisonRange.start, DateTime(2026, 7));
+      expect(window.comparisonRange.endExclusive, DateTime(2026, 7, 14));
+      expect(window.comparisonRange.dayCount, 13);
+      expect(window.previousLabel, '较上月同期');
+    });
+
+    test('已走完的月：对照区间就是完整的上一周期', () {
+      final window = StatisticsWindow(
+        period: StatisticsPeriod.month,
+        anchor: DateTime(2026, 7, 15),
+        today: DateTime(2026, 8, 13),
+      );
+
+      expect(window.elapsedDayCount, 31);
+      expect(window.isPartial, isFalse);
+      expect(window.comparisonRange.start, DateTime(2026, 6));
+      expect(window.comparisonRange.endExclusive, DateTime(2026, 7));
+      expect(window.previousLabel, '较上月');
+    });
+
+    test('等长前缀不越过上一周期末尾', () {
+      // 3 月 29 日：29 天的前缀超出只有 28 天的 2 月，退化为整个 2 月。
+      final window = StatisticsWindow(
+        period: StatisticsPeriod.month,
+        anchor: DateTime(2026, 3, 29),
+        today: DateTime(2026, 3, 29),
+      );
+
+      expect(window.elapsedDayCount, 29);
+      expect(window.comparisonRange.start, DateTime(2026, 2));
+      expect(window.comparisonRange.endExclusive, DateTime(2026, 3));
+    });
+
+    test('整段落在未来的区间：已过 0 天', () {
+      final window = StatisticsWindow(
+        period: StatisticsPeriod.month,
+        anchor: DateTime(2026, 12, 5),
+        today: DateTime(2026, 8, 13),
+      );
+
+      expect(window.elapsedDayCount, 0);
+      expect(window.includesToday, isFalse);
+    });
+
+    test('日视图不存在「同期」：当天区间本身就是走完的', () {
+      final window = StatisticsWindow(
+        period: StatisticsPeriod.day,
+        anchor: DateTime(2026, 8, 13),
+        today: DateTime(2026, 8, 13),
+      );
+
+      expect(window.elapsedDayCount, 1);
+      expect(window.isPartial, isFalse);
+      expect(window.previousLabel, '较昨日');
+    });
+
+    test('进行中的周：对照上周同样的天数', () {
+      // 2026-08-13 是周四，本周为 08-10 ~ 08-17（开区间），已过 4 天。
+      final window = StatisticsWindow(
+        period: StatisticsPeriod.week,
+        anchor: DateTime(2026, 8, 13),
+        today: DateTime(2026, 8, 13),
+      );
+
+      expect(window.elapsedDayCount, 4);
+      expect(window.comparisonRange.start, DateTime(2026, 8, 3));
+      expect(window.comparisonRange.endExclusive, DateTime(2026, 8, 7));
+      expect(window.previousLabel, '较上周同期');
+    });
+  });
+
   group('轴刻度金额格式', () {
     test('按量级收敛并去掉多余小数', () {
       expect(formatAxisMoney(0), '0');
@@ -142,6 +228,122 @@ void main() {
       expect(formatAxisMoney(3500000), '3.5万');
       // 1.2 亿。
       expect(formatAxisMoney(12000000000), '1.2亿');
+    });
+  });
+
+  group('分类环比查询', () {
+    test('两期金额按一级分类对照；子分类归入父级，另一侧缺席算减少', () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final categories = await database.exportCategories();
+      final child = categories.firstWhere(
+        (item) => item.kind == 0 && item.parentId != null,
+      );
+      final root = categories.firstWhere((item) => item.id == child.parentId);
+      final other = categories.firstWhere(
+        (item) => item.kind == 0 && item.level == 1 && item.id != root.id,
+      );
+      final income = categories.firstWhere(
+        (item) => item.kind == 1 && item.level == 1,
+      );
+
+      var seq = 0;
+      Future<void> add({
+        required String categoryId,
+        required int cents,
+        required String date,
+        int kind = 0,
+      }) {
+        seq++;
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: 'delta-$seq',
+            kind: kind,
+            amountCents: cents,
+            categoryId: categoryId,
+            accountingDate: date,
+            occurredAt: seq,
+            createdAt: seq,
+            updatedAt: seq,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      // 本期：父级 100 元 + 子级 20 元，合计应归到父级的 120 元。
+      await add(categoryId: root.id, cents: 10000, date: '2026-08-05');
+      await add(categoryId: child.id, cents: 2000, date: '2026-08-06');
+      // 上期：同一父级 60 元；另一分类 30 元且本期没有。
+      await add(categoryId: root.id, cents: 6000, date: '2026-07-05');
+      await add(categoryId: other.id, cents: 3000, date: '2026-07-06');
+      // 两个区间之外，以及另一种收支类型，都不该进入结果。
+      await add(categoryId: root.id, cents: 50000, date: '2026-06-01');
+      await add(
+        categoryId: income.id,
+        cents: 90000,
+        date: '2026-08-07',
+        kind: 1,
+      );
+
+      final deltas = await database
+          .watchCategoryDeltas(
+            current: LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9)),
+            comparison: LedgerDateRange(DateTime(2026, 7), DateTime(2026, 8)),
+            kind: 0,
+          )
+          .first;
+
+      expect(deltas, hasLength(2));
+      final rootDelta = deltas.firstWhere((item) => item.categoryId == root.id);
+      expect(rootDelta.currentCents, 12000);
+      expect(rootDelta.comparisonCents, 6000);
+      expect(rootDelta.deltaCents, 6000);
+      expect(rootDelta.ratio, 1.0);
+
+      final otherDelta = deltas.firstWhere(
+        (item) => item.categoryId == other.id,
+      );
+      expect(otherDelta.currentCents, 0);
+      expect(otherDelta.comparisonCents, 3000);
+      expect(otherDelta.deltaCents, -3000);
+    });
+
+    test('上期为 0 时算不出比例', () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final categories = await database.exportCategories();
+      final root = categories.firstWhere(
+        (item) => item.kind == 0 && item.level == 1,
+      );
+      await database.saveTransaction(
+        entry: TransactionsCompanion.insert(
+          id: 'delta-new',
+          kind: 0,
+          amountCents: 8800,
+          categoryId: root.id,
+          accountingDate: '2026-08-05',
+          occurredAt: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        ),
+        newImages: const [],
+        removedImageIds: const {},
+      );
+
+      final deltas = await database
+          .watchCategoryDeltas(
+            current: LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9)),
+            comparison: LedgerDateRange(DateTime(2026, 7), DateTime(2026, 8)),
+            kind: 0,
+          )
+          .first;
+
+      expect(deltas, hasLength(1));
+      expect(deltas.single.comparisonCents, 0);
+      expect(deltas.single.ratio, isNull);
     });
   });
 
@@ -164,11 +366,11 @@ void main() {
 
     /// 把测试视口拉高。
     ///
-    /// flutter_test 默认视口 800x600，而统计页四张卡纵向远超600；
-    /// ListView 懒加载会导致靠下的「分类构成 / 周期对比」根本没被build，
-    /// 断言自然找不到。拉到 2400高让整页一次性布局出来。
+    /// flutter_test 默认视口 800x600，而统计页五张卡纵向远超600；
+    /// ListView 懒加载会导致靠下的「分类构成 / 分类变化 / 周期对比」
+    /// 根本没被 build，断言自然找不到。拉高让整页一次性布局出来。
     void useTallViewport(WidgetTester tester) {
-      tester.view.physicalSize = const Size(1000, 2400);
+      tester.view.physicalSize = const Size(1000, 3000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
     }
@@ -213,6 +415,7 @@ void main() {
       // 三张图表卡各自给出针对性的空态文案，而不是共用一句「暂无数据」。
       expect(find.text('本期还没有支出'), findsOneWidget);
       expect(find.text('本期没有支出记录'), findsOneWidget);
+      expect(find.text('本期与对照期都没有支出'), findsOneWidget);
       expect(find.text('近期没有可对比的支出'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
@@ -314,6 +517,55 @@ void main() {
       expect(find.text('$rangeLabel · 共 1 笔'), findsOneWidget);
       expect(find.text(child.name), findsOneWidget);
       expect(find.textContaining('午餐外卖'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
+    testWidgets('分类变化卡：给出与上月同期的差额和幅度', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final categories = await database.exportCategories();
+      final expenseCategory = categories.firstWhere(
+        (item) => item.kind == 0 && item.level == 1,
+      );
+      final now = DateTime.now();
+      // 上月 1 号：不论今天是几号，它都落在「上月同期」的前缀里。
+      final lastMonthFirst = DateTime(now.year, now.month - 1, 1);
+
+      Future<void> add(String id, int cents, DateTime date) {
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: id,
+            kind: 0,
+            amountCents: cents,
+            categoryId: expenseCategory.id,
+            accountingDate: dateKey(date),
+            occurredAt: date.millisecondsSinceEpoch,
+            createdAt: date.millisecondsSinceEpoch,
+            updatedAt: date.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      await add('delta-current', 10000, now);
+      await add('delta-previous', 4000, lastMonthFirst);
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      expect(find.text('分类变化'), findsOneWidget);
+      expect(find.text('支出增加'), findsOneWidget);
+      // 100 - 40 = +60 元，相对 40 元涨了 150%。
+      expect(find.text('+¥60.00'), findsOneWidget);
+      expect(find.text('¥40.00 → ¥100.00'), findsOneWidget);
+      // 只有一个分类时，它的变化幅度必然等于概览卡的总额环比，
+      // 所以「150%」应当同时出现在 Hero 徽章和这一行上——
+      // 两处对不上就说明两张卡用了不同的对照区间。
+      expect(find.text('150%'), findsNWidgets(2));
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
     });

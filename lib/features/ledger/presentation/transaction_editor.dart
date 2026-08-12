@@ -23,6 +23,15 @@ import '../../../shared/widgets/photo_viewer.dart';
 import '../application/amount_expression.dart';
 import '../application/providers.dart';
 
+/// 单笔账单最多能挂几张图。
+///
+/// 收口成一个常量：选图上限、面板里「添加」格子的显隐、确认按钮上的计数
+/// 三处必须同时变，之前各写各的 3，改一处漏一处就会出现「加得进去但
+/// 面板显示 4/3」这种状态。
+///
+/// 贴纸的倾角表长度必须与它一致，见 `_PolaroidStackState._kTilts`。
+const int kMaxTransactionImages = 5;
+
 class TransactionEditor extends ConsumerStatefulWidget {
   const TransactionEditor({super.key, this.existing, this.initialDate});
 
@@ -265,14 +274,29 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     return _amountExpr.substring(idx + 1);
   }
 
-  /// 选图并加入待上传列表。不触发 setState——调用方决定刷新
-  /// 编辑器整体还是图片面板的局部状态。
-  Future<void> _pickImage(ImageSource source) async {
-    if (_visibleImageCount >= 3) return;
-    final image = await _picker.pickImage(source: source, imageQuality: 100);
-    if (image != null && mounted) {
-      _pendingImages.add(image);
+  /// 选图并加入待上传列表。相册一次可多选，相机一次只能拍一张。
+  ///
+  /// 不触发 setState——调用方决定刷新编辑器整体还是图片面板的局部状态。
+  ///
+  /// 返回**被丢掉的张数**。`limit` 只是给系统选择器的建议，并非所有平台都会
+  /// 真的拦住，所以这里仍按剩余名额截断一次；调用方据此告诉用户多选的那几张
+  /// 没被全部收下，否则用户会以为自己点漏了。
+  Future<int> _pickImages(ImageSource source) async {
+    final remaining = kMaxTransactionImages - _visibleImageCount;
+    if (remaining <= 0) return 0;
+    final List<XFile> picked;
+    if (source == ImageSource.camera) {
+      final shot = await _picker.pickImage(source: source, imageQuality: 100);
+      picked = [?shot];
+    } else {
+      picked = await _picker.pickMultiImage(
+        imageQuality: 100,
+        limit: remaining,
+      );
     }
+    if (!mounted || picked.isEmpty) return 0;
+    _pendingImages.addAll(picked.take(remaining));
+    return picked.length > remaining ? picked.length - remaining : 0;
   }
 
   /// 图片面板里点「添加」：先选来源（拍照/相册），选完刷新面板。
@@ -289,7 +313,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             ),
             ListTile(
               leading: const Icon(FLucideIcons.images),
-              title: const Text('从相册选择'),
+              title: const Text('从相册选择（可多选）'),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
           ],
@@ -297,8 +321,14 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       ),
     );
     if (source == null) return;
-    await _pickImage(source);
+    final dropped = await _pickImages(source);
     refreshSheet(() {});
+    if (dropped > 0 && mounted) {
+      showAppToast(
+        context,
+        message: '最多 $kMaxTransactionImages 张，有 $dropped 张没有添加',
+      );
+    }
   }
 
   /// 键盘顶栏的图片入口：底部弹出图片管理面板（增删图片）。
@@ -389,7 +419,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                           onRemove: () =>
                               setSheetState(() => _pendingImages.removeAt(i)),
                         ),
-                      if (count < 3)
+                      if (count < kMaxTransactionImages)
                         _SheetAddTile(
                           onTap: () => _addImageFromSheet(setSheetState),
                         ),
@@ -409,7 +439,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                         ),
                       ),
                       child: Text(
-                        '确认（$count/3）',
+                        '确认（$count/$kMaxTransactionImages）',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -784,8 +814,10 @@ class _PolaroidStackState extends State<_PolaroidStack> {
 
   /// 从左到右的倾角（弧度）。角度全一致会像印刷出来的图案，逐帧随机又会自己
   /// 抖，固定成手摆过的样子；最右那张压在最上面，倾角也最小，最像被摆正的主角。
-  /// 长度同时兼作贴纸的张数上限——正好等于单笔账单的图片上限 3。
-  static const _kTilts = [-0.14, 0.09, -0.035];
+  ///
+  /// 取的是**末尾** n 个（见 build 里的 sublist），所以往前加值只影响张数多的
+  /// 情形，少于原来三张时的样子逐字不变。长度必须等于 [kMaxTransactionImages]。
+  static const _kTilts = [-0.18, 0.155, -0.14, 0.09, -0.035];
 
   /// 照片区边长。
   static const double _kPhoto = 72;
@@ -802,14 +834,17 @@ class _PolaroidStackState extends State<_PolaroidStack> {
   /// 相邻两张的水平错位。
   ///
   /// 早先几张相框同心叠放、只差旋转角，相邻不到 7° 的角度差让下面那些只从边角
-  /// 露出几像素白边——露出来的还是相框而不是照片，传了 3 张和传 1 张看起来
+  /// 露出几像素白边——露出来的还是相框而不是照片，传好几张和传 1 张看起来
   /// 没有区别。错开小半张（40 约为相框宽的一半）每张才都露得出内容；
-  /// 再小会退回一摞，再大就散成三张不相干的图。
+  /// 再小会退回一摞，再大就散成几张不相干的图。
+  ///
+  /// 满 5 张时整把宽 258（82 + 4×40 + 余量），窄到 320dp 的屏也放得下。
   static const double _kSpread = 40;
 
-  /// 旋转余量。[Transform.rotate] 只改绘制不改布局，82×90 转 8° 后包围盒
-  /// 约 94×101，四边各留 6 才不会被 [Stack] 裁掉角。
-  static const double _kRotationMargin = 6;
+  /// 旋转余量。[Transform.rotate] 只改绘制不改布局，尺寸得手动留够。
+  /// 最歪的一张是 [_kTilts] 的 0.18（约 10.3°），82×90 转过去包围盒约
+  /// 97×104，四边各留 8 才不会被 [Stack] 裁掉角。
+  static const double _kRotationMargin = 8;
 
   /// 抬起的位移。外框高度为它另留一份、静止时整把再下沉半份，
   /// 抬到顶也不会顶出 [Stack] 被裁掉。

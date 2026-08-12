@@ -8,6 +8,7 @@ import '../../../features/ledger/application/providers.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import 'stats_card.dart';
 import 'stats_category.dart';
+import 'stats_category_delta.dart';
 import 'stats_charts.dart';
 import 'stats_design.dart';
 import 'stats_overview.dart';
@@ -194,9 +195,42 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               ),
             ),
 
-            // ---------------------------------------------- 周期对比
+            // ---------------------------------------------- 分类环比
             _Slot(
               index: 3,
+              child: StatsCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    StatsSectionHeader(
+                      title: '分类变化',
+                      caption: '${_window.previousLabel}的增减',
+                    ),
+                    const SizedBox(height: 14),
+                    StatsStreamBuilder<List<CategoryDelta>>(
+                      // 跟随分类构成卡的支出/收入切换：两张卡讲的是同一批分类，
+                      // 各带一个切换开关会让「哪张卡现在是收入」变得要猜。
+                      stream: database.watchCategoryDeltas(
+                        current: range,
+                        comparison: _window.comparisonRange,
+                        kind: _categoryKind,
+                      ),
+                      loading: const StatsDeltaSkeleton(),
+                      errorHeight: 148,
+                      builder: (context, deltas) => CategoryDeltaList(
+                        deltas: deltas,
+                        kind: _categoryKind,
+                        grouped: grouped,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ---------------------------------------------- 周期对比
+            _Slot(
+              index: 4,
               child: StatsCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -285,7 +319,9 @@ class _OverviewSlot extends ConsumerWidget {
       stream: database.watchSummary(window.range),
       builder: (context, currentSnap) {
         return StreamBuilder<LedgerSummary>(
-          stream: database.watchSummary(window.previousRange),
+          // 对照区间而不是完整上一周期：当期没走完时两者长度不同，
+          // 直接比会让徽章长期误报。口径见 [StatisticsWindow.comparisonRange]。
+          stream: database.watchSummary(window.comparisonRange),
           builder: (context, prevSnap) {
             return StatsOverviewCard(
               window: window,
