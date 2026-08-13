@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
+import 'app_accent.dart';
+
 /// 全应用语义色板。
 ///
 /// 这里是**实例**而不是一堆 `static const`：深浅两套皮肤必须能在运行时切换，
@@ -46,6 +48,16 @@ class AppColors extends ThemeExtension<AppColors> {
   /// Material 主题，缺扩展时应该渲染成浅色而不是整屏红。
   static AppColors of(BuildContext context) =>
       Theme.of(context).extension<AppColors>() ?? light;
+
+  /// 按亮度和强调色取色板。
+  ///
+  /// 默认蓝直接返回 [light] / [dark] 常量实例——测试和缓存都按引用比较，
+  /// 其它色才从对应皮肤 [withAccent] 派生。
+  static AppColors resolve(Brightness brightness, AppAccent accent) {
+    final base = brightness == Brightness.dark ? dark : light;
+    if (accent == AppAccent.blue) return base;
+    return base.withAccent(accent.primaryOf(brightness));
+  }
 
   /// 浅色：奶白页底 + 纯白卡片，文字用带绿的深墨色。
   static const light = AppColors(
@@ -187,6 +199,49 @@ class AppColors extends ThemeExtension<AppColors> {
   final List<BoxShadow> shadowHeroWarm;
 
   bool get isDark => brightness == Brightness.dark;
+
+  /// 只重染强调色家族（主色、浅底、按下/水波、Hero 蓝阴影）。
+  /// 支出红 / 收入绿 / 暖黄摘要保持原样。
+  AppColors withAccent(Color primary) {
+    final soft = isDark
+        ? Color.lerp(primary, canvas, 0.78)!
+        : Color.lerp(primary, const Color(0xFFFFFFFF), 0.82)!;
+    return copyWith(
+      primary: primary,
+      primarySoft: soft,
+      pressed: primary.withValues(alpha: isDark ? 0.12 : 0.06),
+      ripple: primary.withValues(alpha: isDark ? 0.08 : 0.04),
+      shadowHeroPrimary: isDark
+          ? [
+              BoxShadow(
+                color: Color.lerp(
+                  primary,
+                  const Color(0xFF000000),
+                  0.12,
+                )!.withValues(alpha: 0.18),
+                offset: const Offset(0, 8),
+                blurRadius: 24,
+              ),
+              const BoxShadow(
+                color: Color(0x4D000000),
+                offset: Offset(0, 2),
+                blurRadius: 6,
+              ),
+            ]
+          : [
+              BoxShadow(
+                color: primary.withValues(alpha: 0.20),
+                offset: const Offset(0, 8),
+                blurRadius: 24,
+              ),
+              BoxShadow(
+                color: primary.withValues(alpha: 0.10),
+                offset: const Offset(0, 2),
+                blurRadius: 6,
+              ),
+            ],
+    );
+  }
 
   /// 状态栏 / 导航栏图标的明暗。深底要浅图标，反之亦然。
   SystemUiOverlayStyle get systemOverlayStyle => isDark
@@ -457,62 +512,74 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
 
 /// forui 品牌主题：以 neutral(light/dark touch) 为底，套上 LigyTally 的语义化配色。
 ///
-/// - primary       → 品牌蓝，用于选中态、强调按钮
+/// - primary       → 强调色，用于选中态、强调按钮
 /// - destructive   → 支出红（记账语境里的"扣钱/删除"）
-/// - background→ 页面底色
-/// - card / border  → 卡片面色 + 淡描边
+/// - background    → 页面底色
+/// - card / border → 卡片面色 + 淡描边
 ///
 /// 通过 [FThemeData.copyWith] + [FColors.copyWith] 只改颜色，其余间距/圆角/字体
 /// 沿用 forui 触屏预设，保证组件观感一致。
-FThemeData buildForuiTheme({Brightness brightness = Brightness.light}) {
+FThemeData buildForuiTheme({
+  Brightness brightness = Brightness.light,
+  AppColors? colors,
+}) {
   final dark = brightness == Brightness.dark;
-  final colors = dark ? AppColors.dark : AppColors.light;
+  final resolved = colors ?? (dark ? AppColors.dark : AppColors.light);
   final base = dark ? FTheme.neutral.dark.touch : FTheme.neutral.light.touch;
   final theme = FThemeData(
     touch: true,
     debugLabel: 'LigyTally forui ${dark ? 'dark' : 'light'}',
     colors: base.colors.copyWith(
-      background: colors.canvas,
-      foreground: colors.ink,
-      primary: colors.primary,
-      // 深色下品牌蓝被提亮了，压白字对比度不够，改用深墨色前景。
-      primaryForeground: dark ? colors.canvas : Colors.white,
-      secondary: colors.primarySoft,
-      secondaryForeground: colors.primary,
-      muted: colors.fill,
-      mutedForeground: colors.muted,
-      destructive: colors.expense,
-      destructiveForeground: dark ? colors.canvas : Colors.white,
-      card: colors.surface,
-      border: colors.line,
-      barrier: colors.barrier,
+      background: resolved.canvas,
+      foreground: resolved.ink,
+      primary: resolved.primary,
+      // 深色下强调色被提亮了，压白字对比度不够，改用深墨色前景。
+      primaryForeground: dark ? resolved.canvas : Colors.white,
+      secondary: resolved.primarySoft,
+      secondaryForeground: resolved.primary,
+      muted: resolved.fill,
+      mutedForeground: resolved.muted,
+      destructive: resolved.expense,
+      destructiveForeground: dark ? resolved.canvas : Colors.white,
+      card: resolved.surface,
+      border: resolved.line,
+      barrier: resolved.barrier,
     ),
   );
-  return theme.copyWith(toasterStyle: _toasterStyle(colors));
+  return theme.copyWith(toasterStyle: _toasterStyle(resolved));
 }
 
-final _foruiLight = buildForuiTheme();
-final _foruiDark = buildForuiTheme(brightness: Brightness.dark);
+final _foruiCache = <(Brightness, AppAccent), FThemeData>{};
 
 /// 缓存好的 forui 主题。
 ///
 /// [buildForuiTheme] 里的 toast 样式 delta 构造不算便宜，而主题过渡的
-/// 200ms 里外层会重建十几次，每次重建一份纯粹是浪费——两套主题都只依赖
-/// 常量色板，缓存不会读到过期值。
-FThemeData foruiThemeFor(Brightness brightness) =>
-    brightness == Brightness.dark ? _foruiDark : _foruiLight;
+/// 200ms 里外层会重建十几次，每次重建一份纯粹是浪费。
+/// 按（亮度 × 强调色）缓存：默认蓝仍是原来那两份，其它强调色各一份。
+FThemeData foruiThemeFor(
+  Brightness brightness, [
+  AppAccent accent = AppAccent.blue,
+]) => _foruiCache.putIfAbsent(
+  (brightness, accent),
+  () => buildForuiTheme(
+    brightness: brightness,
+    colors: AppColors.resolve(brightness, accent),
+  ),
+);
 
 /// 生产环境用的 Material 兜底主题：forui 主题的近似映射 + 挂上色板扩展。
 ///
 /// 保持「以 forui 主题为唯一真源」的原有结构（[buildAppTheme] 是另一套
 /// 独立的 Material3 主题，只有测试在用），这里只补两件事：
 /// 亮度跟随、以及把 [AppColors] 挂进 extensions。
-ThemeData buildMaterialTheme(Brightness brightness) {
-  final colors = brightness == Brightness.dark
-      ? AppColors.dark
-      : AppColors.light;
-  return buildForuiTheme(
-    brightness: brightness,
+ThemeData buildMaterialTheme(
+  Brightness brightness, [
+  AppAccent accent = AppAccent.blue,
+]) {
+  final colors = AppColors.resolve(brightness, accent);
+  return foruiThemeFor(
+    brightness,
+    accent,
   ).toApproximateMaterialTheme().copyWith(extensions: [colors]);
 }
 

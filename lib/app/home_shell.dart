@@ -69,7 +69,10 @@ class _HomeShellState extends State<HomeShell> {
                 key: const ValueKey('add'),
                 onPressed: _addTransaction,
                 backgroundColor: context.colors.primary,
-                foregroundColor: Colors.white,
+                // 深色下品牌蓝被提亮，白字对比不够；与 forui primaryForeground 同一条规则。
+                foregroundColor: context.colors.isDark
+                    ? context.colors.canvas
+                    : Colors.white,
                 elevation: 3,
                 shape: const CircleBorder(),
                 child: const Icon(FLucideIcons.plus, size: 26),

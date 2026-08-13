@@ -713,10 +713,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                               final categories =
                                   snapshot.data ?? const <CategoryEntry>[];
                               if (categories.isEmpty) {
-                                return const SizedBox(
+                                return SizedBox(
                                   height: 72,
                                   child: Center(
-                                    child: CircularProgressIndicator(),
+                                    child: CircularProgressIndicator(
+                                      color: context.colors.primary,
+                                    ),
                                   ),
                                 );
                               }

@@ -347,6 +347,130 @@ void main() {
     });
   });
 
+  group('单笔金额分布查询', () {
+    test('按 20 / 50 / 100 / 500 元分档，只返回有账单的档位', () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final categories = await database.exportCategories();
+      final expense = categories.firstWhere(
+        (item) => item.kind == 0 && item.level == 1,
+      );
+      final income = categories.firstWhere(
+        (item) => item.kind == 1 && item.level == 1,
+      );
+
+      var seq = 0;
+      Future<void> add(int cents, {int kind = 0}) {
+        seq++;
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: 'bucket-$seq',
+            kind: kind,
+            amountCents: cents,
+            categoryId: kind == 0 ? expense.id : income.id,
+            accountingDate: '2026-08-05',
+            occurredAt: seq,
+            createdAt: seq,
+            updatedAt: seq,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      // 档位是左闭右开：19.99 落第 0 档，20.00 落第 1 档。
+      await add(1999);
+      await add(500);
+      await add(2000);
+      await add(49999);
+      await add(50000);
+      // 收入不该混进支出的分档里。
+      await add(80000, kind: 1);
+
+      final buckets = await database
+          .watchAmountBuckets(
+            LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9)),
+            0,
+          )
+          .first;
+
+      // 第 2 档（¥50 - 100）没有账单，查询不返回该行。
+      expect(buckets.map((item) => item.index), [0, 1, 3, 4]);
+      final first = buckets.first;
+      expect(first.entryCount, 2);
+      expect(first.totalCents, 2499);
+      expect(buckets.last.index, AmountBucket.count - 1);
+      expect(buckets.last.totalCents, 50000);
+    });
+
+    test('档位文案覆盖首档、中间档和末档', () {
+      expect(AmountBucket.labelOf(0), '< ¥20');
+      expect(AmountBucket.labelOf(1), '¥20 - 50');
+      expect(AmountBucket.labelOf(3), '¥100 - 500');
+      expect(AmountBucket.labelOf(AmountBucket.count - 1), '≥ ¥500');
+    });
+  });
+
+  group('分类走势查询', () {
+    test('按一级分类过滤，子分类计入父级，其他分类不计入', () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final categories = await database.exportCategories();
+      final child = categories.firstWhere(
+        (item) => item.kind == 0 && item.parentId != null,
+      );
+      final root = categories.firstWhere((item) => item.id == child.parentId);
+      final other = categories.firstWhere(
+        (item) => item.kind == 0 && item.level == 1 && item.id != root.id,
+      );
+
+      var seq = 0;
+      Future<void> add(String categoryId, int cents, String date) {
+        seq++;
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: 'span-$seq',
+            kind: 0,
+            amountCents: cents,
+            categoryId: categoryId,
+            accountingDate: date,
+            occurredAt: seq,
+            createdAt: seq,
+            updatedAt: seq,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      await add(root.id, 10000, '2026-07-05');
+      await add(child.id, 2000, '2026-08-05');
+      await add(other.id, 90000, '2026-08-06');
+
+      final spans = [
+        PeriodSpan(
+          range: LedgerDateRange(DateTime(2026, 7), DateTime(2026, 8)),
+          label: '7月',
+        ),
+        PeriodSpan(
+          range: LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9)),
+          label: '8月',
+        ),
+      ];
+
+      final scoped = await database
+          .watchPeriodBars(spans, rootCategoryId: root.id)
+          .first;
+      expect(scoped.map((bar) => bar.expenseCents), [10000, 2000]);
+
+      // 不传分类时仍是全局口径，另一个分类的 900 元要算进来。
+      final all = await database.watchPeriodBars(spans).first;
+      expect(all.map((bar) => bar.expenseCents), [10000, 92000]);
+    });
+  });
+
   group('统计页渲染', () {
     /// 用内存库跑真实页面，避免 mock 与真实 SQL 口径脱节。
     Future<Widget> host(AppDatabase database) async {
@@ -416,6 +540,7 @@ void main() {
       expect(find.text('本期还没有支出'), findsOneWidget);
       expect(find.text('本期没有支出记录'), findsOneWidget);
       expect(find.text('本期与对照期都没有支出'), findsOneWidget);
+      expect(find.text('没有可分档的支出'), findsOneWidget);
       expect(find.text('近期没有可对比的支出'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
@@ -521,6 +646,145 @@ void main() {
       await teardownTree(tester);
     });
 
+    testWidgets('概览卡：标出本期有多少天没有任何记录', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final expenseCategory = (await database.exportCategories()).firstWhere(
+        (item) => item.kind == 0 && item.level == 1,
+      );
+      final now = DateTime.now();
+      // 只在本月 1 号记一笔，于是「有记录的天数」恒为 1，
+      // 空白天数 = 本月已过天数 - 1，与运行日期无关地可推算。
+      final firstOfMonth = DateTime(now.year, now.month, 1);
+      await database.saveTransaction(
+        entry: TransactionsCompanion.insert(
+          id: 'coverage-1',
+          kind: 0,
+          amountCents: 3000,
+          categoryId: expenseCategory.id,
+          accountingDate: dateKey(firstOfMonth),
+          occurredAt: firstOfMonth.millisecondsSinceEpoch,
+          createdAt: firstOfMonth.millisecondsSinceEpoch,
+          updatedAt: firstOfMonth.millisecondsSinceEpoch,
+        ),
+        newImages: const [],
+        removedImageIds: const {},
+      );
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      // 月视图下「已过天数」就是今天的日号；今天是月末最后一天时
+      // 区间正好走完，文案从「已过」变成「跨」。
+      final monthDays = DateTime(now.year, now.month + 1, 0).day;
+      final expected = StringBuffer(
+        '共 1 笔 · ${now.day < monthDays ? '已过' : '跨'} ${now.day} 天',
+      );
+      if (now.day > 1) expected.write(' · ${now.day - 1} 天无记录');
+      expect(find.text(expected.toString()), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
+    testWidgets('单笔金额分布卡：空档补零，并给出金额最集中的档位', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final expenseCategory = (await database.exportCategories()).firstWhere(
+        (item) => item.kind == 0 && item.level == 1,
+      );
+      final now = DateTime.now();
+      var seq = 0;
+      Future<void> add(int cents) {
+        seq++;
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: 'ui-bucket-$seq',
+            kind: 0,
+            amountCents: cents,
+            categoryId: expenseCategory.id,
+            accountingDate: dateKey(now),
+            occurredAt: now.millisecondsSinceEpoch + seq,
+            createdAt: now.millisecondsSinceEpoch,
+            updatedAt: now.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      // 15 / 80 / 600 元，分别落在第 0、2、4 档，第 1、3 档为空。
+      await add(1500);
+      await add(8000);
+      await add(60000);
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      expect(find.text('单笔金额分布'), findsOneWidget);
+      // 五档始终占位，空档显示 0 笔。
+      expect(find.text('< ¥20'), findsOneWidget);
+      expect(find.text('≥ ¥500'), findsOneWidget);
+      expect(find.text('0 笔'), findsNWidgets(2));
+      expect(find.text('1 笔'), findsNWidgets(3));
+      // 600 / 695 = 86%。
+      expect(find.textContaining('支出金额最集中在 ≥ ¥500，占 86%'), findsOneWidget);
+      expect(find.text('金额占比'), findsOneWidget);
+      expect(find.text('笔数占比'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
+    testWidgets('下钻面板：给出该分类近 6 个周期的走势与均值', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final expenseCategory = (await database.exportCategories()).firstWhere(
+        (item) => item.kind == 0 && item.level == 1,
+      );
+      final now = DateTime.now();
+      final lastMonthFirst = DateTime(now.year, now.month - 1, 1);
+      var seq = 0;
+      Future<void> add(int cents, DateTime date) {
+        seq++;
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: 'trend-$seq',
+            kind: 0,
+            amountCents: cents,
+            categoryId: expenseCategory.id,
+            accountingDate: dateKey(date),
+            occurredAt: date.millisecondsSinceEpoch,
+            createdAt: date.millisecondsSinceEpoch,
+            updatedAt: date.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      await add(4000, now);
+      await add(10000, lastMonthFirst);
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      await tester.tap(find.byType(CategoryRankRow));
+      await settle(tester);
+
+      // 面板里的范围说明与统计页「周期对比」卡共用一句文案，
+      // 所以此时页面上有两处——两者本就该指同一组周期。
+      expect(find.text('最近 6 个月'), findsNWidgets(2));
+      // 只有两个月有金额，均值 =（100 + 40）/ 2。
+      expect(find.text('均值 ¥70.00'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
     testWidgets('分类变化卡：给出与上月同期的差额和幅度', (tester) async {
       useTallViewport(tester);
       final database = AppDatabase.forTesting(NativeDatabase.memory());
@@ -566,6 +830,118 @@ void main() {
       // 所以「150%」应当同时出现在 Hero 徽章和这一行上——
       // 两处对不上就说明两张卡用了不同的对照区间。
       expect(find.text('150%'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
+    testWidgets('分类变化卡：超出 3 项时折叠，且能展开全部', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final roots = (await database.exportCategories())
+          .where((item) => item.kind == 0 && item.level == 1)
+          .take(4)
+          .toList();
+      expect(roots, hasLength(4));
+
+      final now = DateTime.now();
+      final lastMonthFirst = DateTime(now.year, now.month - 1, 1);
+      var seq = 0;
+      Future<void> add(String categoryId, int cents, DateTime date) {
+        seq++;
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: 'fold-$seq',
+            kind: 0,
+            amountCents: cents,
+            categoryId: categoryId,
+            accountingDate: dateKey(date),
+            occurredAt: date.millisecondsSinceEpoch,
+            createdAt: date.millisecondsSinceEpoch,
+            updatedAt: date.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      // 四个分类上期都是 10 元，本期分别 100 / 90 / 80 / 70 元，
+      // 于是差额是 +90 / +80 / +70 / +60，第四名在折叠态下应当看不到。
+      const currentCents = [10000, 9000, 8000, 7000];
+      for (var i = 0; i < roots.length; i++) {
+        await add(roots[i].id, currentCents[i], now);
+        await add(roots[i].id, 1000, lastMonthFirst);
+      }
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      // 折叠态：只显示前三名，但必须告知一共有几项变化。
+      expect(find.text('+¥90.00'), findsOneWidget);
+      expect(find.text('+¥70.00'), findsOneWidget);
+      expect(find.text('+¥60.00'), findsNothing);
+      expect(find.text('展开全部 4 项变化'), findsOneWidget);
+
+      await tester.tap(find.text('展开全部 4 项变化'));
+      await settle(tester);
+
+      expect(find.text('+¥60.00'), findsOneWidget);
+      expect(find.text('收起'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
+    testWidgets('窄屏真机宽度下整页不横向溢出', (tester) async {
+      // 其余用例都用 1000 宽的视口，横向溢出在那种宽度下永远暴露不出来。
+      // 这里用真机宽度 390，高度仍拉高以便一次布局出全部卡片
+      //（横向溢出只取决于宽度）。
+      tester.view.physicalSize = const Size(390, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final roots = (await database.exportCategories())
+          .where((item) => item.kind == 0 && item.level == 1)
+          .take(7)
+          .toList();
+      final now = DateTime.now();
+      final lastMonthFirst = DateTime(now.year, now.month - 1, 1);
+      final thisMonthFirst = DateTime(now.year, now.month, 1);
+      var seq = 0;
+      Future<void> add(String categoryId, int cents, DateTime date) {
+        seq++;
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: 'narrow-$seq',
+            kind: 0,
+            amountCents: cents,
+            categoryId: categoryId,
+            accountingDate: dateKey(date),
+            occurredAt: date.millisecondsSinceEpoch + seq,
+            createdAt: date.millisecondsSinceEpoch,
+            updatedAt: date.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      // 金额取到百万级，让 Hero 大数字、排行金额、环比差额都是长串；
+      // 只在本月 1 号与今天记账，概览卡底部那行才会凑齐三段
+      //（笔数 · 已过天数 · 空白天数）——它正是最容易顶破宽度的一行。
+      for (final root in roots) {
+        await add(root.id, 123456789, now);
+        await add(root.id, 98765432, thisMonthFirst);
+        await add(root.id, 87654321, lastMonthFirst);
+      }
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      expect(find.text('统计'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
     });

@@ -296,10 +296,14 @@ class _CategoryManagementScreenState
                   ),
                 ),
                 if (categories == null)
-                  const SliverToBoxAdapter(
+                  SliverToBoxAdapter(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 80),
-                      child: Center(child: CircularProgressIndicator()),
+                      padding: const EdgeInsets.symmetric(vertical: 80),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: context.colors.primary,
+                        ),
+                      ),
                     ),
                   )
                 else

@@ -13,6 +13,7 @@ import '../../../core/update/update_controller.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
+import 'accent_color_sheet.dart';
 import 'app_icon_picker_sheet.dart';
 import 'backdrop_blur_sheet.dart';
 import 'category_management_screen.dart';
@@ -155,6 +156,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onChanged: (value) =>
                         ref.read(appThemeModeProvider.notifier).setMode(value),
                   ),
+                ),
+                _SettingsItem(
+                  icon: FLucideIcons.palette,
+                  title: '主题色',
+                  trailing: const _AccentPreview(),
+                  showChevron: true,
+                  onTap: () => showAccentColorSheet(context),
                 ),
                 _SettingsItem(
                   icon: FLucideIcons.tags,
@@ -471,10 +479,13 @@ class _RowSpinner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
+    return SizedBox(
       width: 18,
       height: 18,
-      child: CircularProgressIndicator(strokeWidth: 2),
+      child: CircularProgressIndicator(
+        strokeWidth: 2,
+        color: context.colors.primary,
+      ),
     );
   }
 }
@@ -635,6 +646,25 @@ class _TrailingSwitch extends StatelessWidget {
     return Transform.translate(
       offset: const Offset(12, 0),
       child: AppSwitch(value: value, onChange: onChange),
+    );
+  }
+}
+
+/// 主题色行的右侧色点：当前强调色，点进浮层再换。
+class _AccentPreview extends StatelessWidget {
+  const _AccentPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: colors.primary,
+        shape: BoxShape.circle,
+        border: Border.all(color: colors.line),
+      ),
     );
   }
 }

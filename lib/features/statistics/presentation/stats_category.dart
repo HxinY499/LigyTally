@@ -6,6 +6,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import 'category_transactions_sheet.dart';
+import 'stats_card.dart';
 import 'stats_charts.dart';
 import 'stats_design.dart';
 
@@ -27,6 +28,8 @@ class CategoryComposition extends StatefulWidget {
     required this.grouped,
     required this.range,
     required this.rangeLabel,
+    required this.trendSpans,
+    required this.trendCaption,
   });
 
   final List<CategoryTotal> totals;
@@ -41,6 +44,12 @@ class CategoryComposition extends StatefulWidget {
 
   /// 区间文案，显示在明细面板头部，说明「这些账单来自哪一段时间」。
   final String rangeLabel;
+
+  /// 下钻面板里那条走势的周期区间，直接沿用「周期对比」的那一组。
+  final List<PeriodSpan> trendSpans;
+
+  /// 走势的范围说明，如「最近 6 个月」。
+  final String trendCaption;
 
   @override
   State<CategoryComposition> createState() => _CategoryCompositionState();
@@ -125,6 +134,8 @@ class _CategoryCompositionState extends State<CategoryComposition> {
       color: index < _maxSlices
           ? stats.categoryColor(index)
           : stats.categoryRest,
+      trendSpans: widget.trendSpans,
+      trendCaption: widget.trendCaption,
     );
   }
 
@@ -200,26 +211,10 @@ class _CategoryCompositionState extends State<CategoryComposition> {
             onTap: () => _openDetails(i, stats),
           ),
         if (totals.length > _collapsedRows)
-          Center(
-            child: TextButton(
-              onPressed: () => setState(() => _expanded = !_expanded),
-              style: TextButton.styleFrom(
-                foregroundColor: stats.primary,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(
-                _expanded ? '收起' : '展开全部 ${totals.length} 个分类',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+          StatsExpandToggle(
+            expanded: _expanded,
+            collapsedLabel: '展开全部 ${totals.length} 个分类',
+            onChanged: (value) => setState(() => _expanded = value),
           ),
       ],
     );
@@ -374,10 +369,7 @@ class CategoryRankRow extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(3),
-                              child: _RatioBar(ratio: ratio, color: color),
-                            ),
+                            child: StatsRatioBar(ratio: ratio, color: color),
                           ),
                           const SizedBox(width: 10),
                           Text(
@@ -398,40 +390,6 @@ class CategoryRankRow extends StatelessWidget {
                   color: stats.textFaint,
                 ),
               ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 占比进度条：宽度带补间动画，切换区间时是「长出来」而不是瞬间跳变。
-///
-/// 不用 [LinearProgressIndicator]：它自带 Material 的不确定态与主题色逻辑，
-/// 这里只需要一根纯色条 + 一个浅色槽。
-class _RatioBar extends StatelessWidget {
-  const _RatioBar({required this.ratio, required this.color});
-
-  final double ratio;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final stats = StatsTokens.of(context);
-    return SizedBox(
-      height: 5,
-      child: DecoratedBox(
-        decoration: BoxDecoration(color: stats.fillMuted),
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: ratio.clamp(0.0, 1.0)),
-          duration: StatsTokens.durChart,
-          curve: StatsTokens.curveEnter,
-          builder: (context, value, _) => Align(
-            alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: value,
-              child: DecoratedBox(decoration: BoxDecoration(color: color)),
             ),
           ),
         ),

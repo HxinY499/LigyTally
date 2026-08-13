@@ -90,6 +90,91 @@ class StatsSectionHeader extends StatelessWidget {
   }
 }
 
+/// 占比条：浅色底槽 + 主色进条，宽度带补间动画。
+///
+/// 不用 [LinearProgressIndicator]：它自带 Material 的不确定态与主题色逻辑，
+/// 这里只需要一根纯色条和一个浅色槽。切换区间时是「长出来」而不是瞬间跳变。
+class StatsRatioBar extends StatelessWidget {
+  const StatsRatioBar({
+    super.key,
+    required this.ratio,
+    required this.color,
+    this.height = 5,
+  });
+
+  /// 0 ~ 1，超出会被夹住。
+  final double ratio;
+
+  final Color color;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(height / 2),
+      child: SizedBox(
+        height: height,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: stats.fillMuted),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: ratio.clamp(0.0, 1.0)),
+            duration: StatsTokens.durChart,
+            curve: StatsTokens.curveEnter,
+            builder: (context, value, _) => Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: value,
+                child: DecoratedBox(decoration: BoxDecoration(color: color)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 卡片内列表底部的「展开 / 收起」按钮：居中的小号文字按钮。
+///
+/// 分类构成与分类环比都要在列表底部折叠超出项。两处各写一份内联
+/// TextButton 样式的话，字号、色值和内边距很快就会漂移成两套。
+class StatsExpandToggle extends StatelessWidget {
+  const StatsExpandToggle({
+    super.key,
+    required this.expanded,
+    required this.collapsedLabel,
+    required this.onChanged,
+  });
+
+  final bool expanded;
+
+  /// 收起态的文案，例如「展开全部 12 个分类」。展开态固定显示「收起」。
+  final String collapsedLabel;
+
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
+    return Center(
+      child: TextButton(
+        onPressed: () => onChanged(!expanded),
+        style: TextButton.styleFrom(
+          foregroundColor: stats.primary,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        child: Text(
+          expanded ? '收起' : collapsedLabel,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+}
+
 /// 入场动画包装：淡入 + 轻微上移。
 ///
 /// [index] 用来做阶梯延迟，让卡片自上而下依次落位，

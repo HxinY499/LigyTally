@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/app_widgets.dart';
 import 'update_controller.dart';
 import 'update_service.dart';
@@ -65,7 +66,7 @@ class _UpdateNotificationLayerState
           ),
           const SizedBox(width: 4),
           AppButton(
-            variant: AppButtonVariant.ghost,
+            variant: AppButtonVariant.primary,
             onPress: () {
               entry.dismiss();
               controller.downloadAndInstall();
@@ -121,7 +122,7 @@ class _UpdateProgressBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.read(updateControllerProvider.notifier);
-    final theme = Theme.of(context);
+    final colors = context.colors;
     final info = state.info;
     if (info == null) return const SizedBox.shrink();
 
@@ -135,7 +136,7 @@ class _UpdateProgressBar extends ConsumerWidget {
         : '正在下载 v${info.version}…';
 
     return Material(
-      color: theme.colorScheme.secondaryContainer,
+      color: colors.primarySoft,
       // 顶部留出状态栏高度；不用 SafeArea 是因为内部页面
       // 自己也有 SafeArea，叠加会多留一次边距。
       child: Padding(
@@ -150,8 +151,10 @@ class _UpdateProgressBar extends ConsumerWidget {
                   Expanded(
                     child: Text(
                       label,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSecondaryContainer,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.3,
+                        color: colors.primary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -161,6 +164,7 @@ class _UpdateProgressBar extends ConsumerWidget {
                     TextButton(
                       onPressed: controller.cancelDownload,
                       style: TextButton.styleFrom(
+                        foregroundColor: colors.primary,
                         visualDensity: VisualDensity.compact,
                       ),
                       child: const Text('取消'),
@@ -173,7 +177,8 @@ class _UpdateProgressBar extends ConsumerWidget {
               height: 3,
               child: LinearProgressIndicator(
                 value: isVerifying ? null : fraction,
-                backgroundColor: theme.colorScheme.secondaryContainer,
+                color: colors.primary,
+                backgroundColor: colors.primary.withValues(alpha: 0.22),
               ),
             ),
           ],

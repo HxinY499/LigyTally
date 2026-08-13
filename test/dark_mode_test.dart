@@ -168,6 +168,7 @@ void main() {
                   incomeCents: 10000,
                   expenseCents: 3575,
                   entryCount: 2,
+                  activeDayCount: 2,
                 ),
               ),
             ),

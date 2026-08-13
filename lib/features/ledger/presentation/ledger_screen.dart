@@ -123,6 +123,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                   incomeCents: 0,
                   expenseCents: 0,
                   entryCount: 0,
+                  activeDayCount: 0,
                 );
             return CustomScrollView(
               slivers: [
@@ -163,10 +164,14 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                         }
                         final allItems = snapshot.data;
                         if (allItems == null) {
-                          return const SliverToBoxAdapter(
+                          return SliverToBoxAdapter(
                             child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 80),
-                              child: Center(child: CircularProgressIndicator()),
+                              padding: const EdgeInsets.symmetric(vertical: 80),
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: context.colors.primary,
+                                ),
+                              ),
                             ),
                           );
                         }

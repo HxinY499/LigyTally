@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -67,13 +69,37 @@ class StatsTokens {
 
   // ---------------------------------------------------------------- 颜色
 
-  /// Hero 卡渐变：品牌蓝往深靛蓝收，右下角最深。
-  LinearGradient get heroGradient => _chart.heroGradient;
+  /// Hero 卡渐变：手挑的三色停转到主题色的色相上，**并保住原有的相对亮度**。
+  ///
+  /// 两条都必须做到：
+  /// - 不能「从 [AppColors.primary] 沿明度轴现算」。手挑的色停是边压暗边
+  ///   降饱和的（浅色饱和度从 0.86 收到 0.65），只挪明度会得到一支电光蓝，
+  ///   深色那套刻意压暗（深页面里高亮卡会刺眼）也一起丢掉。
+  /// - 不能只转色相。HSL 明度相同时青色比蓝色亮得多，纯转色相会让青色主题
+  ///   下的白字压在 #6BF7ED 上，对比度从 2.56 掉到 1.30，等于看不见。
+  ///
+  /// 所以转完色相再沿明度轴二分回原色停的相对亮度：这张卡上的白字
+  /// （[onHeroPrimary] 那一族）对比度与选了哪个主题色无关。
+  LinearGradient get heroGradient {
+    final rotation = _hueRotation;
+    final source = _chart.heroGradient;
+    if (rotation == 0) return source;
+    return LinearGradient(
+      begin: source.begin,
+      end: source.end,
+      colors: [
+        for (final stop in source.colors)
+          _matchLuminance(_rotate(stop, rotation), _relativeLuminance(stop)),
+      ],
+      stops: source.stops,
+    );
+  }
 
   /// Hero 卡上的次级文字（标签、说明）：白色降透明度，
-  /// 比直接给一个灰色更干净——灰色压在蓝底上会发浊。
+  /// 比直接给一个灰色更干净——灰色压在彩色卡面上会发浊。
   ///
-  /// Hero 卡两套皮肤都是蓝底，所以这四个值不随亮度变化。
+  /// Hero 卡在任何主题色下都是同一支色相的深浅渐变，
+  /// 所以这四个值既不随亮度也不随主题色变化。
   static const onHeroPrimary = Colors.white;
   static const onHeroSecondary = Color(0xCCFFFFFF);
   static const onHeroTertiary = Color(0x99FFFFFF);
@@ -119,28 +145,113 @@ class StatsTokens {
   ///
   /// 选色原则：色相尽量拉开（蓝 → 橙 → 青 → 珊瑚 → 紫 → 天蓝），
   /// 明度与饱和度保持在同一档，避免某一片「跳出来」抢视觉。
-  /// 前两位是最高频的两个分类，用对比最强的蓝 / 橙。
-  List<Color> get categoryPalette => _chart.categoryPalette;
+  ///
+  /// 整条调色板跟着主题色**转色相**（见 [_hueRotation]）：第一片是最大的
+  /// 分类，占的面积最多，固定成蓝色的话，换成橙色主题后同一屏里会出现
+  /// 「橙 Hero 卡 + 蓝色主片」两个主色。旋转而不是只换第一片，是因为
+  /// 只换第一片会撞上后面固定的橙 / 青——整条一起转才保住相对间距。
+  List<Color> get categoryPalette {
+    final rotation = _hueRotation;
+    return [
+      for (final color in _chart.categoryPalette) _rotate(color, rotation),
+    ];
+  }
 
   /// 「其他」聚合项固定用低饱和灰蓝，视觉上自然退到后面。
+  ///
+  /// 不跟着转色相：它的饱和度本来就压到最低，转了看不出差别，
+  /// 而「退到后面」正是它唯一的职责。
   Color get categoryRest => _chart.categoryRest;
 
   /// 取第 [index] 个分类色；超出调色板长度时回落到 [categoryRest]，
   /// 而不是循环取色——循环会让第 7 项和第 1 项同色，图例失去区分度。
-  Color categoryColor(int index) =>
-      index < categoryPalette.length ? categoryPalette[index] : categoryRest;
+  ///
+  /// 只转要用的那一个，不走 [categoryPalette]：这个方法在每片扇形和每行
+  /// 图例上都会调一次，整条转一遍再取下标是 O(n²) 次色彩空间换算。
+  Color categoryColor(int index) {
+    final palette = _chart.categoryPalette;
+    if (index >= palette.length) return categoryRest;
+    return _rotate(palette[index], _hueRotation);
+  }
 
   /// 趋势折线：主色渐变（左浅右深），比单色更有纵深。
-  LinearGradient get trendLineGradient => _chart.trendLineGradient;
+  LinearGradient get trendLineGradient =>
+      _rotateGradient(_chart.trendLineGradient);
 
   /// 趋势折线下方面积填充：主色到透明。
-  LinearGradient get trendAreaGradient => _chart.trendAreaGradient;
+  LinearGradient get trendAreaGradient =>
+      _rotateGradient(_chart.trendAreaGradient);
 
   /// 柱状图当期高亮柱渐变。
-  LinearGradient get barActiveGradient => _chart.barActiveGradient;
+  LinearGradient get barActiveGradient =>
+      _rotateGradient(_chart.barActiveGradient);
 
-  /// 柱状图历史柱：低饱和蓝，和高亮柱形成明确主次。
-  Color get barIdle => _chart.barIdle;
+  /// 柱状图历史柱：低饱和主色，和高亮柱形成明确主次。
+  Color get barIdle => _rotate(_chart.barIdle, _hueRotation);
+
+  /// 当前主色相对**默认主色**的色相偏移量（度）。
+  ///
+  /// 锚点取同一亮度下的默认色板，所以默认主题的偏移恒为 0，
+  /// 所有手挑色值原样返回。
+  double get _hueRotation {
+    final anchor = _colors.isDark
+        ? AppColors.dark.primary
+        : AppColors.light.primary;
+    return HSLColor.fromColor(_colors.primary).hue -
+        HSLColor.fromColor(anchor).hue;
+  }
+
+  /// 转色相，饱和度、明度、透明度全部保持原样。
+  ///
+  /// 只动色相是为了保住原手挑色值里的明度 / 饱和度走势；
+  /// 全透明的色停（面积填充的末端）转完仍然全透明。
+  Color _rotate(Color color, double rotation) {
+    if (rotation == 0) return color;
+    final hsl = HSLColor.fromColor(color);
+    return hsl.withHue((hsl.hue + rotation) % 360).toColor();
+  }
+
+  LinearGradient _rotateGradient(LinearGradient gradient) {
+    final rotation = _hueRotation;
+    if (rotation == 0) return gradient;
+    return LinearGradient(
+      begin: gradient.begin,
+      end: gradient.end,
+      colors: [for (final c in gradient.colors) _rotate(c, rotation)],
+      stops: gradient.stops,
+    );
+  }
+
+  /// WCAG 2.1 相对亮度。
+  static double _relativeLuminance(Color color) {
+    double channel(double value) => value <= 0.03928
+        ? value / 12.92
+        : math.pow((value + 0.055) / 1.055, 2.4).toDouble();
+    return 0.2126 * channel(color.r) +
+        0.7152 * channel(color.g) +
+        0.0722 * channel(color.b);
+  }
+
+  /// 沿 HSL 明度轴二分，把 [color] 调到相对亮度 [target]，色相与饱和度不动。
+  ///
+  /// 明度与相对亮度单调同向，所以二分一定收敛；固定 12 步而不是「直到收敛」，
+  /// 是为了让这个 getter 的耗时可预测——它在 Hero 卡每次重建时都会跑。
+  static Color _matchLuminance(Color color, double target) {
+    final hsl = HSLColor.fromColor(color);
+    var low = 0.0;
+    var high = 1.0;
+    var result = color;
+    for (var i = 0; i < 12; i++) {
+      final mid = (low + high) / 2;
+      result = hsl.withLightness(mid).toColor();
+      if (_relativeLuminance(result) < target) {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+    return result;
+  }
 
   /// 柱状图背景轨道：给每根柱一个浅槽，柱子矮时也不会「悬空」。
   Color get barTrack => _chart.barTrack;
@@ -377,11 +488,12 @@ const _chartLight = _StatsChartColors(
   barTrack: Color(0xFFF4F7FC),
 );
 
-/// 深色图表色。三条调整原则：
+/// 深色图表色。两条调整原则：
 /// - 中性色（网格线、轨道、填充）不能直接取浅色的反相，要沉到接近页底，
 ///   否则密集横线在深底上比数据本身更抢眼。
 /// - 分类调色板整体提亮降饱和：浅色那套压在深底上像发光的霓虹。
-/// - Hero 渐变略压暗：深色页面里高亮蓝卡会刺眼。
+///
+/// - Hero 渐变略压暗：深色页面里高亮卡会刺眼。
 const _chartDark = _StatsChartColors(
   heroGradient: LinearGradient(
     begin: Alignment.topLeft,

@@ -241,14 +241,19 @@ class StatsOverviewCard extends StatelessWidget {
                   color: StatsTokens.onHeroTertiary,
                 ),
                 const SizedBox(width: 5),
-                Text(
-                  summary == null
-                      ? '统计中…'
-                      : '共${summary.entryCount} 笔记录 · '
-                            '${window.isPartial ? '已过' : '跨'} $elapsed 天',
-                  style: StatsTokens.heroLabel.copyWith(
-                    fontSize: 11,
-                    color: StatsTokens.onHeroTertiary,
+                // 这行是三段拼起来的，笔数和天数都没有位数上限
+                //（年视图 + 上千笔），窄屏上必须能让它省略而不是溢出。
+                Expanded(
+                  child: Text(
+                    summary == null
+                        ? '统计中…'
+                        : _footnote(summary, elapsed, window.isPartial),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: StatsTokens.heroLabel.copyWith(
+                      fontSize: 11,
+                      color: StatsTokens.onHeroTertiary,
+                    ),
                   ),
                 ),
               ],
@@ -258,6 +263,22 @@ class StatsOverviewCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Hero 卡底部那行小字：笔数、已过天数，以及有多少天没有任何记录。
+///
+/// 空白天数是整页统计的可信度标注——本期已过 13 天却只有 8 天有记录时，
+/// 日均、环比、分类占比全都建立在残缺样本上。它只在确实存在空白时出现，
+/// 记全了的人不该被提醒。
+///
+/// 空白天数取「已过天数 - 有记录天数」并夹到 0：账单可以记在未来日期上，
+/// 那些天会被算进 [LedgerSummary.activeDayCount] 但不算进已过天数。
+String _footnote(LedgerSummary summary, int elapsed, bool isPartial) {
+  // 「笔记录」压成「笔」：加上空白天数后这行有三段，窄屏上要给省略号留余量。
+  final head =
+      '共 ${summary.entryCount} 笔 · ${isPartial ? '已过' : '跨'} $elapsed 天';
+  final blank = elapsed - summary.activeDayCount;
+  return blank > 0 ? '$head · $blank 天无记录' : head;
 }
 
 /// Hero 卡内的金额：不带 `¥`，让大数字更干净（卡内已有「支出」语义）。

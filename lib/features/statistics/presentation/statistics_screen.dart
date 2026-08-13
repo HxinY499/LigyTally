@@ -6,6 +6,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/preferences/money_grouped.dart';
 import '../../../features/ledger/application/providers.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import 'stats_amount_buckets.dart';
 import 'stats_card.dart';
 import 'stats_category.dart';
 import 'stats_category_delta.dart';
@@ -187,6 +188,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                           grouped: grouped,
                           range: range,
                           rangeLabel: _window.rangeLabel,
+                          trendSpans: _window.comparisonSpans,
+                          trendCaption: _window.comparisonCaption,
                         );
                       },
                     ),
@@ -228,9 +231,35 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               ),
             ),
 
-            // ---------------------------------------------- 周期对比
+            // ---------------------------------------------- 单笔金额分布
             _Slot(
               index: 4,
+              child: StatsCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const StatsSectionHeader(
+                      title: '单笔金额分布',
+                      caption: '钱花在少数几笔上，还是很多笔上',
+                    ),
+                    const SizedBox(height: 14),
+                    StatsStreamBuilder<List<AmountBucket>>(
+                      stream: database.watchAmountBuckets(range, _categoryKind),
+                      loading: const StatsBucketSkeleton(),
+                      builder: (context, buckets) => AmountBucketList(
+                        buckets: buckets,
+                        kind: _categoryKind,
+                        grouped: grouped,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ---------------------------------------------- 周期对比
+            _Slot(
+              index: 5,
               child: StatsCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

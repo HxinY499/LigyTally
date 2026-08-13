@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import 'stats_card.dart';
 import 'stats_design.dart';
 import 'stats_states.dart';
 
@@ -13,9 +14,11 @@ import 'stats_states.dart';
 /// 用户下一句要问的是「涨在哪」，而分类构成卡只给当期占比，两期之间的
 /// 差额在页面上原本无处可见。
 ///
-/// 只显示有变化的分类，且每个方向最多 3 行：差额榜的价值集中在头部，
-/// 把十几个分类的零碎变化全列出来反而盖住真正的信号。
-class CategoryDeltaList extends StatelessWidget {
+/// 只显示有变化的分类，默认每个方向 3 行、超出折叠：差额榜的价值集中在头部，
+/// 十几个分类的零碎变化全列出来反而盖住真正的信号。但折叠不能是静默的——
+/// 底部始终给出「一共有多少项变化」和展开入口，否则用户无法判断
+/// 自己看到的是全部还是片段。
+class CategoryDeltaList extends StatefulWidget {
   const CategoryDeltaList({
     super.key,
     required this.deltas,
@@ -30,12 +33,25 @@ class CategoryDeltaList extends StatelessWidget {
 
   final bool grouped;
 
-  /// 每个方向最多显示的行数。
+  @override
+  State<CategoryDeltaList> createState() => _CategoryDeltaListState();
+}
+
+class _CategoryDeltaListState extends State<CategoryDeltaList> {
+  /// 折叠态下每个方向显示的行数。
   static const _maxRows = 3;
+
+  bool _expanded = false;
+
+  List<CategoryDelta> _visible(List<CategoryDelta> items) =>
+      _expanded ? items : items.take(_maxRows).toList();
 
   @override
   Widget build(BuildContext context) {
     final stats = StatsTokens.of(context);
+    final deltas = widget.deltas;
+    final kind = widget.kind;
+    final grouped = widget.grouped;
     final label = kind == 0 ? '支出' : '收入';
     // 查询只会返回两个区间里出现过的分类，所以空列表意味着两期都没有记录，
     // 这和「有记录但金额一样」是两回事，不能共用一句文案。
@@ -56,12 +72,15 @@ class CategoryDeltaList extends StatelessWidget {
       );
     }
 
-    final increased =
-        changed.where((item) => item.deltaCents > 0).toList()
-          ..sort((a, b) => b.deltaCents.compareTo(a.deltaCents));
-    final decreased =
-        changed.where((item) => item.deltaCents < 0).toList()
-          ..sort((a, b) => a.deltaCents.compareTo(b.deltaCents));
+    final increased = changed.where((item) => item.deltaCents > 0).toList()
+      ..sort((a, b) => b.deltaCents.compareTo(a.deltaCents));
+    final decreased = changed.where((item) => item.deltaCents < 0).toList()
+      ..sort((a, b) => a.deltaCents.compareTo(b.deltaCents));
+
+    // 是否存在被折叠的项。它不能由「当前可见行数」反推——展开之后
+    // 隐藏数归零，按钮会连同收起入口一起消失。
+    final overflowing =
+        increased.length > _maxRows || decreased.length > _maxRows;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -69,7 +88,7 @@ class CategoryDeltaList extends StatelessWidget {
         if (increased.isNotEmpty)
           _Group(
             label: '$label增加',
-            items: increased.take(_maxRows).toList(),
+            items: _visible(increased),
             kind: kind,
             grouped: grouped,
           ),
@@ -78,9 +97,18 @@ class CategoryDeltaList extends StatelessWidget {
         if (decreased.isNotEmpty)
           _Group(
             label: '$label减少',
-            items: decreased.take(_maxRows).toList(),
+            items: _visible(decreased),
             kind: kind,
             grouped: grouped,
+          ),
+        if (overflowing)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: StatsExpandToggle(
+              expanded: _expanded,
+              collapsedLabel: '展开全部 ${changed.length} 项变化',
+              onChanged: (value) => setState(() => _expanded = value),
+            ),
           ),
       ],
     );

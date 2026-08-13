@@ -504,7 +504,8 @@ class AppDatabase extends _$AppDatabase {
       SELECT
         COALESCE(SUM(CASE WHEN kind = 1 THEN amount_cents ELSE 0 END), 0) AS income,
         COALESCE(SUM(CASE WHEN kind = 0 THEN amount_cents ELSE 0 END), 0) AS expense,
-        COUNT(*) AS entry_count
+        COUNT(*) AS entry_count,
+        COUNT(DISTINCT accounting_date) AS active_days
       FROM transactions
       WHERE accounting_date >= ? AND accounting_date < ?
       ''',
@@ -518,6 +519,7 @@ class AppDatabase extends _$AppDatabase {
         incomeCents: row.read<int>('income'),
         expenseCents: row.read<int>('expense'),
         entryCount: row.read<int>('entry_count'),
+        activeDayCount: row.read<int>('active_days'),
       ),
     );
   }
@@ -552,6 +554,55 @@ class AppDatabase extends _$AppDatabase {
               iconKey: row.read<String>('icon_key'),
               totalCents: row.read<int>('total'),
               entryCount: row.read<int>('entry_count'),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  /// 区间内单笔金额的分档统计。
+  ///
+  /// 回答的是趋势图和分类图都答不了的一个问题：钱是被少数几笔大额吃掉的，
+  /// 还是被几十笔小额磨掉的。两种情况的对策完全不同，而在「分类合计」这个
+  /// 口径下它们长得一模一样。
+  ///
+  /// 只返回有账单的档位，空档由展示层补零——`GROUP BY` 不会给空分组产出行，
+  /// 与其在 SQL 里造六行常量再左连接，不如让 UI 按固定档位表对齐。
+  Stream<List<AmountBucket>> watchAmountBuckets(
+    LedgerDateRange range,
+    int kind,
+  ) {
+    // 档位边界与 [AmountBucket.thresholdsCents] 必须一致。
+    return customSelect(
+      '''
+      SELECT
+        CASE
+          WHEN amount_cents < 2000 THEN 0
+          WHEN amount_cents < 5000 THEN 1
+          WHEN amount_cents < 10000 THEN 2
+          WHEN amount_cents < 50000 THEN 3
+          ELSE 4
+        END AS bucket,
+        COUNT(*) AS entry_count,
+        SUM(amount_cents) AS total
+      FROM transactions
+      WHERE accounting_date >= ? AND accounting_date < ? AND kind = ?
+      GROUP BY bucket
+      ORDER BY bucket ASC
+      ''',
+      variables: [
+        Variable.withString(dateKey(range.start)),
+        Variable.withString(dateKey(range.endExclusive)),
+        Variable.withInt(kind),
+      ],
+      readsFrom: {transactions},
+    ).watch().map(
+      (rows) => rows
+          .map(
+            (row) => AmountBucket(
+              index: row.read<int>('bucket'),
+              entryCount: row.read<int>('entry_count'),
+              totalCents: row.read<int>('total'),
             ),
           )
           .toList(),
@@ -660,19 +711,27 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// [ranges] 由调用方按周期类型（日/周/月/年）算好并按时间升序传入，
   /// 这里用一条 SQL 的 CASE WHEN 把每个区间聚合成一列，避免 N 次订阅。
-  Stream<List<PeriodBar>> watchPeriodBars(List<PeriodSpan> ranges) {
+  ///
+  /// [rootCategoryId] 非空时只统计该一级分类及其二级分类，归集口径与
+  /// [watchCategoryTotals] 一致，用于分类下钻面板里的走势。
+  Stream<List<PeriodBar>> watchPeriodBars(
+    List<PeriodSpan> ranges, {
+    String? rootCategoryId,
+  }) {
     if (ranges.isEmpty) {
       return Stream.value(const <PeriodBar>[]);
     }
     final expenseCases = StringBuffer();
     final incomeCases = StringBuffer();
     final variables = <Variable<Object>>[];
+    // 列名一律带 `t.` 前缀：分类过滤要 join categories，而它同样有 kind 列，
+    // 裸列名会变成歧义引用。
     for (var i = 0; i < ranges.length; i++) {
       expenseCases.write(
-        'COALESCE(SUM(CASE WHEN kind = 0 AND accounting_date >= ? AND accounting_date < ? THEN amount_cents ELSE 0 END), 0) AS e$i, ',
+        'COALESCE(SUM(CASE WHEN t.kind = 0 AND t.accounting_date >= ? AND t.accounting_date < ? THEN t.amount_cents ELSE 0 END), 0) AS e$i, ',
       );
       incomeCases.write(
-        'COALESCE(SUM(CASE WHEN kind = 1 AND accounting_date >= ? AND accounting_date < ? THEN amount_cents ELSE 0 END), 0) AS n$i, ',
+        'COALESCE(SUM(CASE WHEN t.kind = 1 AND t.accounting_date >= ? AND t.accounting_date < ? THEN t.amount_cents ELSE 0 END), 0) AS n$i, ',
       );
     }
     // 变量顺序需与 SQL 中 `?` 出现顺序一致：先所有 expense 段，再所有 income 段。
@@ -691,11 +750,16 @@ class AppDatabase extends _$AppDatabase {
     variables
       ..add(Variable.withString(overallStart))
       ..add(Variable.withString(overallEnd));
+    final scoped = rootCategoryId != null;
+    if (scoped) variables.add(Variable.withString(rootCategoryId));
     return customSelect(
       'SELECT ${expenseCases.toString()}${incomeCases.toString().replaceAll(RegExp(r', $'), '')} '
-      'FROM transactions WHERE accounting_date >= ? AND accounting_date < ?',
+      'FROM transactions t '
+      '${scoped ? 'JOIN categories c ON c.id = t.category_id ' : ''}'
+      'WHERE t.accounting_date >= ? AND t.accounting_date < ?'
+      '${scoped ? ' AND COALESCE(c.parent_id, c.id) = ?' : ''}',
       variables: variables,
-      readsFrom: {transactions},
+      readsFrom: scoped ? {transactions, categories} : {transactions},
     ).watchSingle().map((row) {
       return [
         for (var i = 0; i < ranges.length; i++)
@@ -830,11 +894,18 @@ class LedgerSummary {
     required this.incomeCents,
     required this.expenseCents,
     required this.entryCount,
+    required this.activeDayCount,
   });
 
   final int incomeCents;
   final int expenseCents;
   final int entryCount;
+
+  /// 区间内至少有一笔记录的天数。
+  ///
+  /// 用来暴露样本完整度：日均、环比、分类占比都建立在「这段时间记全了」
+  /// 的前提上，而这个前提在页面上原本无处可查。
+  final int activeDayCount;
 
   int get netCents => incomeCents - expenseCents;
 }
@@ -853,6 +924,41 @@ class CategoryTotal {
   final String iconKey;
   final int totalCents;
   final int entryCount;
+}
+
+/// 单笔金额的一个档位。
+class AmountBucket {
+  const AmountBucket({
+    required this.index,
+    required this.entryCount,
+    required this.totalCents,
+  });
+
+  /// 档位下标，与 [thresholdsCents] 对应。
+  final int index;
+
+  final int entryCount;
+  final int totalCents;
+
+  /// 档位上界（分），最后一档没有上界。
+  ///
+  /// 取 20 / 50 / 100 / 500 元：前两档覆盖日常小额（一杯咖啡、一顿午饭），
+  /// 100–500 是单次采买或聚餐，500 以上基本属于要单独解释的支出。
+  /// 档位是固定的而不是按当期最大值动态分档——动态分档会让同一笔
+  /// 80 元的账单这个月落在「中档」、下个月落在「低档」，横向比较失效。
+  static const thresholdsCents = [2000, 5000, 10000, 50000];
+
+  /// 档位数量。
+  static const count = 5;
+
+  /// 档位展示名，如 `< ¥20`、`¥100 - 500`、`≥ ¥500`。
+  static String labelOf(int index) {
+    if (index == 0) return '< ¥${thresholdsCents.first ~/ 100}';
+    if (index == count - 1) return '≥ ¥${thresholdsCents.last ~/ 100}';
+    final low = thresholdsCents[index - 1] ~/ 100;
+    final high = thresholdsCents[index] ~/ 100;
+    return '¥$low - $high';
+  }
 }
 
 /// 一个一级分类在「本期」与「对照期」的金额对照。
