@@ -48,7 +48,7 @@ class LigyTallyApp extends ConsumerWidget {
 class _ThemedShell extends StatelessWidget {
   const _ThemedShell({required this.accent, required this.child});
 
-  final AppAccent accent;
+  final AccentChoice accent;
   final Widget child;
 
   @override

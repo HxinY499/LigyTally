@@ -4,14 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/database/app_database.dart';
 import '../../core/preferences/money_grouped.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/theme/color_luminance.dart';
 import '../../core/utils/ledger_date.dart';
 
 /// 摘要卡上的文字色：固定白色，不随深浅皮肤变。
 ///
 /// 这里刻意不用 `colors.ink`——那是「压在页面底色上的文字色」，浅色皮肤下
-/// 是深墨色。而这张卡的卡面是一条压到固定深度的主题色渐变，两套皮肤下
-/// 一样深，字色必须跟着卡面而不是跟着页面，否则浅色下就是深墨字压深卡面。
+/// 是深墨色。而这张卡的卡面是一条主题色渐变，深浅两套皮肤下都足够深，
+/// 字色必须跟着卡面而不是跟着页面，否则浅色下就是深墨字压深卡面。
 /// 与统计页 `StatsTokens.onHeroPrimary` 同一条规则：**彩色卡上的前景色
 /// 属于卡片自己的配色，不进全局色板。**
 const _onHero = Colors.white;
@@ -34,44 +33,28 @@ const _compactSurface = Color(0xFF17211E);
 /// 视觉参照现代记账App：主题色渐变、大圆角，本月支出用超大白色黑体数字
 /// 撑起视觉重心；底部两组「本月收入 / 净收支」用小字与主数字拉开层级——
 /// 之前所有金额字号相近，才显得「一堆数字堆在一起」。
+///
+/// 卡面直接取 [AppColors.heroGradient]，也就是统计页概览卡那条：两屏的
+/// Hero 卡是同一个视觉元素，共用一份色停才不会各自漂移。
 class SummaryBand extends ConsumerWidget {
   const SummaryBand({super.key, required this.summary, this.compact = false});
 
   final LedgerSummary summary;
   final bool compact;
 
-  /// 卡面三个色停的相对亮度。
-  ///
-  /// 不直接用 `colors.primary` 及其明暗变体：那支色是为「压在页底上的强调色」
-  /// 挑的，白字压上去只有 3.2:1。这里把色停钉在固定亮度上，选哪套强调色、
-  /// 哪套皮肤，白字的对比度都一样——最浅的 [_faceTop] 卡在 AA(4.5:1) 之上，
-  /// 而它正是大数字所在的左上角。
-  static const _faceTop = 0.17;
-  static const _faceMid = 0.125;
-  static const _faceEnd = 0.085;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final grouped = ref.watch(moneyGroupedProvider);
     // 注意这张卡的文字用 [_onHero] 而不是 colors.ink：卡面在深浅两套皮肤下
-    // 都是同一深度的主题色渐变，字色必须跟着**卡面**走，跟着页面走会在浅色下
+    // 都是主题色渐变，字色必须跟着**卡面**走，跟着页面走会在浅色下
     // 变成深墨字压深卡面。
     if (compact) return _CompactBand(summary: summary, grouped: grouped);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            withRelativeLuminance(colors.primary, _faceTop),
-            withRelativeLuminance(colors.primary, _faceMid),
-            withRelativeLuminance(colors.primary, _faceEnd),
-          ],
-          stops: const [0.0, 0.55, 1.0],
-        ),
+        gradient: colors.heroGradient,
         borderRadius: BorderRadius.circular(22),
         // 用带主色相的阴影而不是中性灰：灰色压在彩色卡面下会发浊，
         // 阴影里掺入卡片自身色相才干净。与统计页 Hero 卡同一套思路。

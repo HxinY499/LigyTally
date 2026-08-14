@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
 import 'app_accent.dart';
+import 'color_shift.dart';
 
 /// 全应用语义色板。
 ///
@@ -51,10 +52,10 @@ class AppColors extends ThemeExtension<AppColors> {
   /// 按亮度和强调色取色板。
   ///
   /// 默认蓝直接返回 [light] / [dark] 常量实例——测试和缓存都按引用比较，
-  /// 其它色才从对应皮肤 [withAccent] 派生。
-  static AppColors resolve(Brightness brightness, AppAccent accent) {
+  /// 其它色（含自选色）才从对应皮肤 [withAccent] 派生。
+  static AppColors resolve(Brightness brightness, AccentChoice accent) {
     final base = brightness == Brightness.dark ? dark : light;
-    if (accent == AppAccent.blue) return base;
+    if (accent.preset == AppAccent.blue) return base;
     return base.withAccent(accent.primaryOf(brightness));
   }
 
@@ -193,6 +194,63 @@ class AppColors extends ThemeExtension<AppColors> {
   final List<BoxShadow> shadowHeroPrimary;
 
   bool get isDark => brightness == Brightness.dark;
+
+  /// Hero 卡渐变：统计页概览卡与记账页月度摘要卡共用的那条卡面。
+  ///
+  /// 两张卡必须是同一条渐变——它们是同一个视觉元素在两屏上的两次出现，
+  /// 各存一份色停的话，以后调其中一张另一张不会跟着变。
+  ///
+  /// 做法是「手挑三色停 → 转到当前主题色的色相 → 钉回原色停的相对亮度」，
+  /// 两步都不能省：
+  /// - 不能「从 [primary] 沿明度轴现算」。手挑的色停是边压暗边降饱和的
+  ///   （浅色饱和度从 0.86 收到 0.65），只挪明度会得到一支电光蓝，深色那套
+  ///   刻意压暗（深页面里高亮卡会刺眼）也一起丢掉。
+  /// - 不能只转色相。HSL 明度相同时青色比蓝色亮得多，纯转色相会让青色主题
+  ///   下的白字压在 #6BF7ED 上，对比度从 2.56 掉到 1.30，等于看不见。
+  ///
+  /// 所以卡上白字的对比度与选了哪个主题色无关（但它本身只有 2.56:1，
+  /// 靠 38/40px 的字重撑可读性，不是 AA）。
+  LinearGradient get heroGradient {
+    final rotation = accentHueRotation;
+    final saturation = accentSaturationScale;
+    final source = isDark ? _heroGradientDark : _heroGradientLight;
+    if (rotation == 0 && saturation == 1) return source;
+    return LinearGradient(
+      begin: source.begin,
+      end: source.end,
+      colors: [
+        for (final stop in source.colors)
+          withRelativeLuminance(
+            scaleSaturation(rotateHue(stop, rotation), saturation),
+            relativeLuminance(stop),
+          ),
+      ],
+      stops: source.stops,
+    );
+  }
+
+  /// 当前主色相对**默认主色**的色相偏移量（度）。
+  ///
+  /// 所有「跟着主题色重染」的手挑色值都按这个量转色相。锚点取同一亮度下的
+  /// 默认色板，所以默认主题的偏移恒为 0，手挑色值原样返回。
+  double get accentHueRotation {
+    final anchor = isDark ? dark.primary : light.primary;
+    return HSLColor.fromColor(primary).hue - HSLColor.fromColor(anchor).hue;
+  }
+
+  /// 当前主色相对默认主色的饱和度倍率。锚点同 [accentHueRotation]。
+  ///
+  /// [heroGradient] 必须跟着它走：自选强调色开放了饱和度这一维，只转色相的话
+  /// 「浓淡」滑到最淡时按钮变灰、而全 app 最大的一块彩色面（Hero 卡）纹丝不动，
+  /// 那条滑杆就等于坏的。预设也一起受这条影响——青 / 粉 / 橙 的饱和度本来就
+  /// 低于蓝，它们的 Hero 卡会比只转色相时softer 一档，这是把「卡面浓淡跟着
+  /// 主色」这条规则补齐的结果。
+  double get accentSaturationScale {
+    final anchor = isDark ? dark.primary : light.primary;
+    final anchorSaturation = HSLColor.fromColor(anchor).saturation;
+    if (anchorSaturation == 0) return 1;
+    return HSLColor.fromColor(primary).saturation / anchorSaturation;
+  }
 
   /// 只重染强调色家族（主色、浅底、按下/水波、Hero 阴影）。
   /// 支出红 / 收入绿保持原样。
@@ -354,6 +412,22 @@ const _shadowCardDark = [
   BoxShadow(color: Color(0x40000000), offset: Offset(0, 1), blurRadius: 2),
   BoxShadow(color: Color(0x59000000), offset: Offset(0, 8), blurRadius: 24),
 ];
+
+/// Hero 卡的手挑色停（默认蓝）。见 [AppColors.heroGradient]。
+const _heroGradientLight = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [Color(0xFF6BA3F7), Color(0xFF4A7FE8), Color(0xFF3B63D6)],
+  stops: [0.0, 0.55, 1.0],
+);
+
+/// 深色下略压暗：深色页面里高亮卡会刺眼。
+const _heroGradientDark = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [Color(0xFF4C82DC), Color(0xFF3A65C4), Color(0xFF2C4CA6)],
+  stops: [0.0, 0.55, 1.0],
+);
 
 const _shadowHeroPrimaryLight = [
   BoxShadow(color: Color(0x335190F2), offset: Offset(0, 8), blurRadius: 24),
@@ -529,23 +603,37 @@ FThemeData buildForuiTheme({
   return theme.copyWith(toasterStyle: _toasterStyle(resolved));
 }
 
-final _foruiCache = <(Brightness, AppAccent), FThemeData>{};
+final _foruiPresetCache = <(Brightness, AppAccent), FThemeData>{};
+
+/// 自选色只留最新的一份（每套亮度各一格）。
+///
+/// 不能和预设共用一个 map：色相条是连着拖的，每个落点都是一把新钥匙，拖一遍
+/// 就往 map 里灌进几百份主题，等于内存泄漏。同一时刻只有一种自选色在生效，
+/// 一格备忘录就够。
+final _foruiCustomCache = <Brightness, (AccentChoice, FThemeData)>{};
 
 /// 缓存好的 forui 主题。
 ///
 /// [buildForuiTheme] 里的 toast 样式 delta 构造不算便宜，而主题过渡的
 /// 200ms 里外层会重建十几次，每次重建一份纯粹是浪费。
-/// 按（亮度 × 强调色）缓存：默认蓝仍是原来那两份，其它强调色各一份。
 FThemeData foruiThemeFor(
   Brightness brightness, [
-  AppAccent accent = AppAccent.blue,
-]) => _foruiCache.putIfAbsent(
-  (brightness, accent),
-  () => buildForuiTheme(
+  AccentChoice accent = AccentChoice.initial,
+]) {
+  FThemeData build() => buildForuiTheme(
     brightness: brightness,
     colors: AppColors.resolve(brightness, accent),
-  ),
-);
+  );
+  final preset = accent.preset;
+  if (preset != null) {
+    return _foruiPresetCache.putIfAbsent((brightness, preset), build);
+  }
+  final cached = _foruiCustomCache[brightness];
+  if (cached != null && cached.$1 == accent) return cached.$2;
+  final theme = build();
+  _foruiCustomCache[brightness] = (accent, theme);
+  return theme;
+}
 
 /// 生产环境用的 Material 兜底主题：forui 主题的近似映射 + 挂上色板扩展。
 ///
@@ -554,7 +642,7 @@ FThemeData foruiThemeFor(
 /// 亮度跟随、以及把 [AppColors] 挂进 extensions。
 ThemeData buildMaterialTheme(
   Brightness brightness, [
-  AppAccent accent = AppAccent.blue,
+  AccentChoice accent = AccentChoice.initial,
 ]) {
   final colors = AppColors.resolve(brightness, accent);
   return foruiThemeFor(

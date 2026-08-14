@@ -153,16 +153,22 @@ void main() {
     });
   });
 
-  testWidgets('摘要卡的白字不跟皮肤翻，每套强调色下都压得住 AA', (tester) async {
-    // 卡面是主题色沿明度轴压出来的深色渐变，深浅两套皮肤下一样深。字色一旦
-    // 跟着 colors.ink 走，浅色下就是深墨字压深卡面，等于看不见——这是这类
+  testWidgets('摘要卡的白字不跟皮肤翻，卡面就是色板那条 Hero 渐变', (tester) async {
+    // 两件事各锁一半：
+    //
+    // 一是字色。卡面在两套皮肤下都是同一支色相的主题色渐变，字色一旦跟着
+    // colors.ink 走，浅色下就是深墨字压深卡面，等于看不见——这是这类
     // 「彩色卡 + 固定前景色」最容易踩的坑。
     //
-    // 另一半是「换强调色不能把字压瞎」：卡面色停钉的是**相对亮度**而不是 HSL
-    // 明度，所以六套强调色要逐一验，只验默认蓝会漏掉青、橙这些同明度下
-    // 实际亮得多的色相。
+    // 二是卡面。它必须逐位等于 [AppColors.heroGradient]，也就是统计页概览卡
+    // 那条；就地写一份色停的话，两屏的 Hero 卡会各自漂移。六套预设加一支自选色
+    // 逐一验，只验默认蓝会漏掉「重染只在默认色下正确」这种写法。
     SharedPreferences.setMockInitialValues({});
-    for (final accent in AppAccent.values) {
+    final choices = [
+      for (final preset in AppAccent.values) AccentChoice.preset(preset),
+      const AccentChoice.custom(hue: 96, saturation: 0.55),
+    ];
+    for (final accent in choices) {
       for (final brightness in Brightness.values) {
         await tester.pumpWidget(
           ProviderScope(
@@ -186,21 +192,18 @@ void main() {
         expect(
           tester.widget<Text>(find.text('35.75')).style!.color,
           Colors.white,
-          reason: '${accent.label} / $brightness 下大数字不是白字',
+          reason: '$accent / $brightness 下大数字不是白字',
         );
 
-        // 大数字在左上角，压的是渐变最浅的那个色停——AA 要按它算，
-        // 按平均色算会把最糟的那一角放过去。
         final face = tester
             .widgetList<Container>(find.byType(Container))
             .map((container) => container.decoration)
             .whereType<BoxDecoration>()
             .firstWhere((decoration) => decoration.gradient != null);
-        final lightest = (face.gradient! as LinearGradient).colors.first;
         expect(
-          _contrast(Colors.white, lightest),
-          greaterThan(4.5),
-          reason: '${accent.label} / $brightness 下白字压不住卡面',
+          face.gradient,
+          AppColors.resolve(brightness, accent).heroGradient,
+          reason: '$accent / $brightness 下摘要卡没走共用的 Hero 渐变',
         );
       }
     }

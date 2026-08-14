@@ -211,6 +211,9 @@ void main() {
         expect(colors.brightness, brightness);
         expect(identical(stats.shadowCard, colors.shadowCard), isTrue);
         expect(identical(stats.shadowHero, colors.shadowHeroPrimary), isTrue);
+        // Hero 卡渐变同理：统计页概览卡和记账页月度摘要卡是同一个视觉元素，
+        // 色停必须来自色板同一份，否则调了一屏另一屏不动。
+        expect(stats.heroGradient, colors.heroGradient);
       }
     });
 
