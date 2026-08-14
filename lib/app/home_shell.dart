@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
+import '../core/preferences/quick_tally_mode.dart';
 import '../core/theme/app_theme.dart';
 import '../features/ledger/presentation/ledger_screen.dart';
 import '../features/ledger/presentation/transaction_editor.dart';
@@ -15,16 +17,32 @@ import '../features/statistics/presentation/statistics_screen.dart';
 /// index 平滑滑动的高亮胶囊——胶囊内缩留呼吸，不撑满格子。
 /// 「记一笔」是居中悬浮的主按钮（FAB），落在导航栏上方：
 /// 居中比右下角更适合单手（尤其左手）拇指够到。
-class HomeShell extends StatefulWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   @override
-  State<HomeShell> createState() => _HomeShellState();
+  ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell> {
   final PageController _controller = PageController();
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // 等首帧挂上 Navigator 再读偏好：开了快速记账就推记账页。
+    // 只在本次挂载走一次，设置里中途打开开关不会立刻弹页。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openQuickTallyIfNeeded();
+    });
+  }
+
+  Future<void> _openQuickTallyIfNeeded() async {
+    await ref.read(quickTallyModeProvider.notifier).ready;
+    if (!mounted || !ref.read(quickTallyModeProvider)) return;
+    await _addTransaction();
+  }
 
   @override
   void dispose() {

@@ -6,6 +6,7 @@ import '../../../core/preferences/app_icon.dart';
 import '../../../core/preferences/backdrop_blur.dart';
 import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/money_grouped.dart';
+import '../../../core/preferences/quick_tally_mode.dart';
 import '../../../core/preferences/theme_mode.dart';
 import '../../../core/preferences/transaction_image_style.dart';
 import '../../../core/theme/app_theme.dart';
@@ -148,6 +149,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const _SectionLabel('偏好'),
             _SettingsCard(
               children: [
+                _SettingsItem(
+                  icon: FLucideIcons.zap,
+                  title: '快速记账模式',
+                  subtitle: '打开应用后直接进入记账页',
+                  trailing: _TrailingSwitch(
+                    value: ref.watch(quickTallyModeProvider),
+                    onChange: (value) => ref
+                        .read(quickTallyModeProvider.notifier)
+                        .setEnabled(value),
+                  ),
+                ),
                 _SettingsItem(
                   icon: FLucideIcons.sunMoon,
                   title: '外观',
