@@ -7,28 +7,24 @@ import '../../core/theme/app_theme.dart';
 
 /// ── 页头设计令牌（唯一真相源）──────────────────────────────
 ///
-/// 全应用**所有**页头都由本文件渲染，一级 Tab 页与二级页共用同一套几何。
+/// 全应用**所有**页头都由本文件渲染。一级 Tab 页与二级页共用同一套紧凑几何，
+/// 但只有一级页有大标题折叠。
 ///
-/// 视觉语言是「大标题 + 滚动折叠 + 吸顶毛玻璃」：静止时标题以 28px 大字左对齐，
-/// 页面像有个封面；内容一滚，标题平滑缩到 20px 收进 56 高的紧凑条，同时页头
-/// 底色转为半透明并模糊背后穿过的内容，浮现一道发丝线把两层分开。
-/// 滚回顶部再原样展开、恢复不透明。
+/// 一级页是「大标题 + 滚动折叠 + 吸顶毛玻璃」：静止时 28px 大字左对齐，
+/// 内容一滚缩到 20px 收进 56 高的紧凑条，同时转为毛玻璃。
+/// 二级页（记一笔、分类管理）默认就是那条紧凑条：返回与标题同一行，
+/// 不再展开——任务页要的是立刻动手，大标题只会和返回箭头挤在一起。
 ///
 /// 实现形态是 [SliverPersistentHeader]（pinned），**不是**并列在 Column 里的
-/// 固定条。这是毛玻璃唯一可行的形态：Column 形态下内容永远走不到页头背后，
-/// 半透明只能露出同色底、模糊只能模糊纯色，视觉上等于什么都没做。
-/// pinned sliver 在 viewport 里是最后绘制（靠前的 sliver 盖在后面之上），
-/// 因此 [BackdropFilter] 读得到后续 sliver 已经画好的像素。
+/// 固定条。这是毛玻璃唯一可行的形态：Column 形态下内容永远走不到页头背后。
 /// 代价是**页面内容必须以 sliver 形式交进来**，见 [AppPageHeader.slivers]。
 ///
 /// 三条硬性一致规则（由 test/app_page_header_test.dart 锁死）：
-/// 1. **所有页面展开高度相同** = [kAppHeaderExpandedHeight]，
-///    没有 actions / 没有返回箭头的页面就留空，不缩高度 —— 否则切 Tab 时
-///    内容起始线会上下跳。
-/// 2. **所有页面大标题左缘相同** = [kAppHeaderGutter]。返回箭头独占标题
-///    上方一行，不再横向挤压标题（旧版被挤到 56，与一级页的 20 对不齐）。
+/// 1. **所有一级页展开高度相同** = [kAppHeaderExpandedHeight]，
+///    没有 actions 的页面就留空，不缩高度 —— 否则切 Tab 时内容起始线会跳。
+/// 2. **所有紧凑态标题垂直中心线相同**（一级页折叠后、二级页、搜索框）。
 /// 3. **操作行位置完全不随折叠变化**：返回箭头与 actions 恒定居中在顶部
-///    56 区内（中心线 28）。只有标题在动，图标不跟着漂。
+///    56 区内（中心线 28）。只有一级页的标题在动，图标不跟着漂。
 
 /// 折叠态页头高度（不含状态栏）。也是 [AppPageHeader.content]（搜索框）的固定高度。
 const double kAppHeaderHeight = 56;
@@ -43,12 +39,13 @@ const double kAppHeaderHeight = 56;
 /// 标题在最左、图标在最右，两者根本碰不到面，于是这 24px 是纯赚的。
 const double kAppHeaderExpandedHeight = 88;
 
-/// 页头静止时占掉的屏幕高度（含状态栏）。
+/// 二级页页头占掉的屏幕高度（含状态栏）。
 ///
-/// 给「页头之下还压着常驻面板」的页面用（记一笔页的数字键盘）：这类页面要靠
-/// 剩余高度决定面板形态，而页头现在活在滚动体内部，量不到自己脚下还剩多少。
+/// 二级页没有大标题、恒为 [kAppHeaderHeight] 紧凑条。给「页头之下还压着
+/// 常驻面板」的页面用（记一笔页的数字键盘）：页头活在滚动体内部，
+/// 量不到自己脚下还剩多少，只能从整页高度里把这段减掉。
 double appHeaderRestingExtent(BuildContext context) =>
-    MediaQuery.paddingOf(context).top + kAppHeaderExpandedHeight;
+    MediaQuery.paddingOf(context).top + kAppHeaderHeight;
 
 /// 页面左右安全留白基线。标题左缘、返回图标光学左缘、右侧图标光学右缘
 /// 全部落在这条线上，与页面内容卡片的边距同源。
@@ -181,20 +178,22 @@ class _BackButton extends StatelessWidget {
   }
 }
 
-/// 页头的底板：底色 + 吸顶毛玻璃 + 折叠后浮现的分隔线。
+/// 吸顶铬层的底板：底色 + 毛玻璃 + 随通透度淡入的分隔线。
 ///
-/// [translucency] 就是折叠进度：0 = 完全展开（页头背后是空的，什么都不用做），
+/// 页头、记账页月份条、分类管理收支条共用这一份，令牌才能对得上。
+/// [translucency] 0 = 背后没有内容穿过（不挂 [BackdropFilter]），
 /// 1 = 完全吸顶（底色降到 [_kGlassOpacity]、模糊拉到 [_kGlassBlurSigma]）。
-class _HeaderGlass extends StatelessWidget {
-  const _HeaderGlass({
+class AppChromeGlass extends StatelessWidget {
+  const AppChromeGlass({
+    super.key,
     required this.translucency,
-    required this.background,
     required this.child,
+    this.background,
   });
 
   final double translucency;
 
-  /// 页头条底色。透明时页面自身的背景（如记一笔页的图片背板）会透上来。
+  /// 底色。透明时页面自身的背景（如记一笔页的图片背板）会透上来。
   /// null 表示取页面底色。
   final Color? background;
 
@@ -378,7 +377,7 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
   /// 和它下面的毛玻璃之间压出一道横向色阶，比不做毛玻璃更难看。
   final double topPadding;
 
-  /// false 时恒为折叠态（[AppPageHeader.content] 搜索框模式）。
+  /// false 时恒为折叠态（二级页、搜索框）。
   final bool collapsible;
 
   final String? title;
@@ -401,11 +400,18 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
     bool overlapsContent,
   ) {
     final range = maxExtent - minExtent;
-    // range 为 0 即搜索框模式：没有可折叠的余量，恒定按吸顶态渲染。
+    // range 为 0：二级页 / 搜索框，没有可折叠的余量，标题按紧凑态渲染。
     final t = range <= 0 ? 1.0 : (shrinkOffset / range).clamp(0.0, 1.0);
+    // 紧凑条的 shrinkOffset 仍随滚动从 0 涨到 maxExtent（Flutter 传的是
+    // min(scrollOffset, maxExtent)，不是 max-min）。用它开毛玻璃：
+    // 静止为 0，内容一开始上移就淡入。overlapsContent 不能用——
+    // 它表示「上面的 sliver 压到我」，第一个 sliver 上永远是 false。
+    final translucency = range <= 0
+        ? (minExtent <= 0 ? 0.0 : (shrinkOffset / minExtent).clamp(0.0, 1.0))
+        : t;
     return SizedBox.expand(
-      child: _HeaderGlass(
-        translucency: t,
+      child: AppChromeGlass(
+        translucency: translucency,
         background: background,
         child: Padding(
           padding: EdgeInsets.only(top: topPadding),
@@ -443,6 +449,7 @@ class AppHeaderSliver extends StatelessWidget {
     this.content,
     this.actions,
     this.showBack = false,
+    this.collapsible = true,
     this.background,
   }) : assert(title != null || content != null, 'title 与 content 至少提供一个');
 
@@ -454,6 +461,10 @@ class AppHeaderSliver extends StatelessWidget {
   final List<Widget>? actions;
   final bool showBack;
 
+  /// false 时恒为 [kAppHeaderHeight] 紧凑条，不随滚动展开。
+  /// 二级页和搜索框走这条；一级 Tab 页才有大标题折叠。
+  final bool collapsible;
+
   /// 页头条底色，null 表示取页面底色。
   final Color? background;
 
@@ -463,7 +474,7 @@ class AppHeaderSliver extends StatelessWidget {
       pinned: true,
       delegate: _HeaderDelegate(
         topPadding: MediaQuery.paddingOf(context).top,
-        collapsible: content == null,
+        collapsible: collapsible && content == null,
         title: title,
         content: content,
         actions: actions,
@@ -523,16 +534,15 @@ class AppPageHeader extends StatelessWidget {
 
 /// 应用统一页头（二级页面用）。
 ///
-/// 与一级页 [AppPageHeader] 共用 [_HeaderDelegate]，观感完全一致：
-/// 展开时返回箭头独占顶部一行、大标题在其下方；折叠后标题收进箭头那一行。
+/// 与一级页共用 [_HeaderContent] 的紧凑态：返回箭头与 20px 标题同一行，
+/// **没有**大标题、也不随滚动折叠。任务页（记一笔、分类管理）要的是
+/// 立刻动手，不是再看一遍封面。
 ///
-/// 因为返回箭头不再挤压标题，**展开态大标题左缘与一级页同为**
-/// [kAppHeaderGutter]，从列表页进二级页时标题不会横向跳动。
+/// 毛玻璃仍在：内容滚过页头背后时挂上，和一级页吸顶后同一套令牌。
 ///
 /// 刻意**不复用** Material [AppBar]：AppBar 按 leadingWidth + titleSpacing
-/// 推挤标题，实测导致「有返回 64 / 无返回 16」两种左缘，与一级页三方不一致；
-/// 且它无法表达大标题折叠。也因此本组件**不是** PreferredSizeWidget，
-/// 不能塞进 `Scaffold.appBar`，要当 body 用。
+/// 推挤标题，实测导致「有返回 64 / 无返回 16」两种左缘；也因此本组件
+/// **不是** PreferredSizeWidget，不能塞进 `Scaffold.appBar`，要当 body 用。
 ///
 /// 用法：`Scaffold(body: AppTopBar(title: '记一笔', slivers: [...]))`
 class AppTopBar extends StatelessWidget {
@@ -574,6 +584,7 @@ class AppTopBar extends StatelessWidget {
           title: title,
           actions: actions,
           showBack: Navigator.of(context).canPop(),
+          collapsible: false,
           background: background,
         ),
         ...slivers,

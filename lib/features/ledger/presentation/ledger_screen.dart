@@ -814,11 +814,12 @@ class _MessageState extends StatelessWidget {
   }
 }
 
-/// 吸顶月份/收支条：与页头一体感——底色沿用页面 canvas，无卡片描边。
+/// 吸顶月份/收支条：与页头共用 [AppChromeGlass]。
 ///
-/// pinned 状态下贴在页头下沿。滚动前它作为常规项占位，滚动到与页头
-/// 齐平时锁在原地。左侧「年月⌄」可点，唤起月份选择器；右侧显示
-/// 本月「支 xx / 收 xx」（跟随 `moneyGroupedProvider` 显示千分位）。
+/// pinned 状态下贴在页头下沿。滚动前它作为常规项占位，内容还没穿过，
+/// 底板保持不透明；[shrinkOffset] 随自身滚出涨到条高，才挂上和页头
+/// 同一套毛玻璃。左侧「年月⌄」可点，唤起月份选择器；右侧显示本月
+/// 「支 xx / 收 xx」（跟随 `moneyGroupedProvider` 显示千分位）。
 class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
   _MonthStickyBarDelegate({
     required this.month,
@@ -850,57 +851,62 @@ class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
       child: Consumer(
         builder: (context, ref, _) {
           final grouped = ref.watch(moneyGroupedProvider);
-          return Material(
-            // 吸顶条自己提供 Material：它铺的是页面灰底，
-            // 若沿用 Container(color:) 则月份按钮的水波同样会被灰底盖掉。
-            color: colors.canvas,
-            child: Container(
-              height: _height,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  InkWell(
-                    onTap: onPick,
-                    borderRadius: context.radii.chipAll,
-                    highlightColor: colors.pressed,
-                    splashColor: colors.ripple,
-                    hoverColor: colors.ripple,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 4,
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            formatMonth(month),
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: colors.ink,
-                            ),
+          return AppChromeGlass(
+            translucency: (shrinkOffset / _height).clamp(0.0, 1.0),
+            child: Material(
+              // 水波画在毛玻璃这一层。底色交给 [AppChromeGlass]，
+              // 这里再铺一层 canvas 会把背后刚模糊出来的内容盖死。
+              type: MaterialType.transparency,
+              child: SizedBox(
+                height: _height,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      InkWell(
+                        onTap: onPick,
+                        borderRadius: context.radii.chipAll,
+                        highlightColor: colors.pressed,
+                        splashColor: colors.ripple,
+                        hoverColor: colors.ripple,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 4,
                           ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            FLucideIcons.chevronDown,
-                            size: 16,
-                            color: colors.ink,
+                          child: Row(
+                            children: [
+                              Text(
+                                formatMonth(month),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: colors.ink,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                FLucideIcons.chevronDown,
+                                size: 16,
+                                color: colors.ink,
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                      const Spacer(),
+                      Text(
+                        '支 ${formatMoney(summary.expenseCents, grouped: grouped)}',
+                        style: TextStyle(fontSize: 13, color: colors.muted),
+                      ),
+                      const SizedBox(width: 14),
+                      Text(
+                        '收 ${formatMoney(summary.incomeCents, grouped: grouped)}',
+                        style: TextStyle(fontSize: 13, color: colors.muted),
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  Text(
-                    '支 ${formatMoney(summary.expenseCents, grouped: grouped)}',
-                    style: TextStyle(fontSize: 13, color: colors.muted),
-                  ),
-                  const SizedBox(width: 14),
-                  Text(
-                    '收 ${formatMoney(summary.incomeCents, grouped: grouped)}',
-                    style: TextStyle(fontSize: 13, color: colors.muted),
-                  ),
-                ],
+                ),
               ),
             ),
           );

@@ -10,8 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 主题色浮层测试。
 ///
-/// 重点不是「浮层能打开」，而是**预览带真的跟着选择变**——预览存在的全部理由
-/// 就是让人不必退出去比对，它一旦读了静态色值就等于没有。
+/// 浮层本身不再带预览（外观页顶部那张共享样张负责这件事），
+/// 这里只守：浮层打得开、色点能切、滑杆拖动中不落盘、松手才写偏好。
 void main() {
   /// 把浮层挂在一个跟随 accent 重建主题的宿主里，模拟真实的 MaterialApp 接线。
   Widget host() => ProviderScope(
@@ -39,75 +39,39 @@ void main() {
     ),
   );
 
-  /// 预览里 Hero 卡的渐变色停。
-  List<Color> heroStops(WidgetTester tester) {
-    final box = tester.widget<Container>(
-      find
-          .ancestor(of: find.text('1,286.40'), matching: find.byType(Container))
-          .first,
-    );
-    final decoration = box.decoration! as BoxDecoration;
-    return (decoration.gradient! as LinearGradient).colors;
-  }
-
-  testWidgets('预览带渲染 Hero 卡、底栏三个 tab 和 FAB', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(host());
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('本期支出'), findsOneWidget);
-    expect(find.text('1,286.40'), findsOneWidget);
-    for (final label in ['明细', '统计', '设置']) {
-      expect(find.text(label), findsOneWidget);
-    }
-    expect(find.byIcon(FLucideIcons.plus), findsOneWidget);
-    // 六个色点都在。
-    for (final accent in AppAccent.values) {
-      expect(find.text(accent.label), findsOneWidget);
-    }
-  });
-
-  testWidgets('默认蓝下预览用的就是统计页那份手挑渐变', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(host());
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-
-    expect(heroStops(tester), const [
-      Color(0xFF6BA3F7),
-      Color(0xFF4A7FE8),
-      Color(0xFF3B63D6),
-    ]);
-  });
-
-  testWidgets('点色点后预览跟着换色，不是静态图', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(host());
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-
-    final before = heroStops(tester);
-    await tester.tap(find.text(AppAccent.purple.label));
-    await tester.pumpAndSettle();
-    final after = heroStops(tester);
-
-    expect(after, isNot(before));
-    // 换的是色相，亮度阶梯不动：白字对比度不该随主题色漂。
-    expect(after.length, before.length);
-    for (var i = 0; i < after.length; i++) {
-      expect(
-        HSLColor.fromColor(after[i]).hue,
-        isNot(closeTo(HSLColor.fromColor(before[i]).hue, 1)),
-        reason: '第 $i 个色停的色相没变',
-      );
-    }
-  });
-
-  /// 浮层当前的选中值。
   AccentChoice choiceOf(WidgetTester tester) => ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp)),
   ).read(appAccentProvider);
+
+  testWidgets('浮层里是六个色点和两条滑杆，没有预览带', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(host());
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('主题色'), findsOneWidget);
+    for (final accent in AppAccent.values) {
+      expect(find.text(accent.label), findsOneWidget);
+    }
+    expect(find.text('色相'), findsOneWidget);
+    expect(find.text('浓淡'), findsOneWidget);
+    // 预览已经收到外观页顶部，浮层里不该再出现那一套样张。
+    expect(find.text('本期支出'), findsNothing);
+    expect(find.text('1,286.40'), findsNothing);
+    expect(find.byIcon(FLucideIcons.plus), findsNothing);
+  });
+
+  testWidgets('点色点会改选中值', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(host());
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(choiceOf(tester).preset, AppAccent.blue);
+    await tester.tap(find.text(AppAccent.purple.label));
+    await tester.pumpAndSettle();
+    expect(choiceOf(tester).preset, AppAccent.purple);
+  });
 
   /// 某条滑杆轨道上的横向坐标。[fraction] 0 是最左、1 是最右。
   ///
@@ -203,31 +167,5 @@ void main() {
     }
     expect(find.text('色相'), findsOneWidget);
     expect(find.text('浓淡'), findsOneWidget);
-  });
-
-  testWidgets('底栏选中态与 FAB 用当前主色', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(host());
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(AppAccent.teal.label));
-    await tester.pumpAndSettle();
-
-    final expected = AppAccent.teal.light;
-    // 选中的「明细」走主色，未选中的「设置」走 inactive。
-    expect(tester.widget<Text>(find.text('明细')).style!.color, expected);
-    expect(
-      tester.widget<Text>(find.text('设置')).style!.color,
-      AppColors.light.inactive,
-    );
-    final fab = tester.widget<Container>(
-      find
-          .ancestor(
-            of: find.byIcon(FLucideIcons.plus),
-            matching: find.byType(Container),
-          )
-          .first,
-    );
-    expect((fab.decoration! as BoxDecoration).color, expected);
   });
 }

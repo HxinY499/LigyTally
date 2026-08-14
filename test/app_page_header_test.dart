@@ -9,17 +9,19 @@ import 'package:ligy_tally/shared/widgets/app_widgets.dart';
 /// 页头是全应用出现频率最高的元素，一旦某页自绘就会破坏统一感
 /// （历史上统计页用过 22 号字 + 随内容滚走）。这里把四条硬性规则锁死：
 ///
-/// 1. 展开态：所有页面标题左缘 / 顶边 / 字号完全相同（跨页切换不跳动）
-/// 2. 折叠态：所有页面标题垂直中心线 / 字号完全相同
+/// 1. 一级页展开态：标题左缘 / 顶边 / 字号完全相同（切 Tab 不跳动）
+/// 2. 紧凑态（一级页折叠后、二级页默认、搜索框）：标题垂直中心线 / 字号相同
 /// 3. 操作行图标位置**不随折叠变化**（中心线恒为 56/2，右缘恒为 gutter）
-/// 4. 毛玻璃**只在吸顶后存在**：展开态不该挂 BackdropFilter，
-///    它每帧都要把背后像素读回来重新模糊，而展开态背后根本没有内容
+/// 4. 毛玻璃**只在内容穿过后存在**：静止时不该挂 BackdropFilter
 void main() {
   final forui = buildForuiTheme();
 
   Widget host(Widget child) => MaterialApp(
     theme: forui.toApproximateMaterialTheme(),
-    builder: (context, c) => FTheme(data: forui, child: FToaster(child: c!)),
+    builder: (context, c) => FTheme(
+      data: forui,
+      child: FToaster(child: c!),
+    ),
     home: child,
   );
 
@@ -146,64 +148,42 @@ void main() {
       ),
     );
 
-    testWidgets('展开态：返回箭头独占一行，大标题左缘与一级页同线', (tester) async {
+    testWidgets('默认就是紧凑条：标题与返回箭头同一行，没有大标题', (tester) async {
       await tester.pumpWidget(host(secondary()));
       await tester.tap(find.text('go'));
       await tester.pumpAndSettle();
 
+      expect(fontSizeOf(tester, '分类管理'), 20, reason: '二级页不做大标题');
+      expect(tester.getRect(find.text('分类管理')).center.dy, centerLine);
       expect(
         tester.getRect(find.text('分类管理')).left,
-        kAppHeaderGutter,
-        reason:
-            '这是「进二级页标题不横跳」的硬保证：'
-            '返回箭头在标题上方，不再横向挤压标题',
+        56,
+        reason: '有返回时标题让到箭头右侧',
       );
-      expect(fontSizeOf(tester, '分类管理'), 28);
 
       final back = tester.getRect(find.byIcon(FLucideIcons.chevronLeft));
-      expect(back.left, kAppHeaderGutter, reason: '返回图标光学左缘同样落在 gutter');
+      expect(back.left, kAppHeaderGutter, reason: '返回图标光学左缘落在 gutter');
       expect(back.center.dy, centerLine);
+      expect(
+        find.byType(BackdropFilter),
+        findsNothing,
+        reason: '静止时内容还没穿过，不该挂毛玻璃',
+      );
     });
 
-    testWidgets('折叠态：标题收进箭头那一行，箭头不动', (tester) async {
+    testWidgets('滚动不改变页头几何，内容穿过后才出毛玻璃', (tester) async {
       await tester.pumpWidget(host(secondary()));
       await tester.tap(find.text('go'));
       await tester.pumpAndSettle();
+      final titleBefore = tester.getRect(find.text('分类管理'));
       final backBefore = tester.getRect(find.byIcon(FLucideIcons.chevronLeft));
 
       await collapse(tester);
 
-      expect(fontSizeOf(tester, '分类管理'), 20);
-      expect(tester.getRect(find.text('分类管理')).center.dy, centerLine);
-      expect(
-        tester.getRect(find.byIcon(FLucideIcons.chevronLeft)),
-        backBefore,
-        reason: '返回箭头在折叠前后必须完全不动',
-      );
+      expect(tester.getRect(find.text('分类管理')), titleBefore);
+      expect(tester.getRect(find.byIcon(FLucideIcons.chevronLeft)), backBefore);
+      expect(find.byType(BackdropFilter), findsOneWidget);
     });
-  });
-
-  testWidgets('一级页与二级页：展开态标题几何完全重合', (tester) async {
-    await tester.pumpWidget(
-      host(
-        Scaffold(
-          body: AppPageHeader(title: 'A', slivers: longSlivers()),
-        ),
-      ),
-    );
-    final primary = tester.getRect(find.text('A'));
-
-    await tester.pumpWidget(
-      host(
-        Scaffold(
-          body: AppTopBar(title: 'A', slivers: longSlivers()),
-        ),
-      ),
-    );
-    final secondary = tester.getRect(find.text('A'));
-
-    expect(secondary.left, primary.left, reason: '跨页切换标题不得横向跳动');
-    expect(secondary.top, primary.top, reason: '跨页切换标题不得纵向跳动');
   });
 
   testWidgets('搜索框模式：页头固定为紧凑高度，输入框不被缩放', (tester) async {
@@ -247,11 +227,7 @@ void main() {
 
     final panel = tester.getRect(find.text('keypad'));
     await collapse(tester);
-    expect(
-      tester.getRect(find.text('keypad')),
-      panel,
-      reason: '常驻面板不随内容滚动',
-    );
+    expect(tester.getRect(find.text('keypad')), panel, reason: '常驻面板不随内容滚动');
     expect(
       tester.getRect(find.byType(CustomScrollView)).bottom,
       panel.top,

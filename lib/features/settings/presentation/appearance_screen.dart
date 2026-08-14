@@ -163,6 +163,8 @@ class AppearanceScreen extends ConsumerWidget {
 /// 挑这三样是因为它们正好覆盖三档圆角（卡片 / 卡内小块 / 浮层按钮），
 /// 同时也是主题色出场面积最大的三处。只放一张卡的话，用户看不出
 /// 「弹窗按钮会跟着变多圆」。
+///
+/// 通栏上写「按钮」而不是「确定」：这是示意块，不是操作，写成确定会让人去点。
 class _AppearancePreview extends StatelessWidget {
   const _AppearancePreview();
 
@@ -298,7 +300,7 @@ class _AppearancePreview extends StatelessWidget {
               borderRadius: radii.sheetAll,
             ),
             child: Text(
-              '确定',
+              '按钮',
               style: TextStyle(
                 fontSize: 13.5,
                 fontWeight: FontWeight.w700,

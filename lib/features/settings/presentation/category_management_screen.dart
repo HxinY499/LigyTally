@@ -930,7 +930,7 @@ class _DashedBorderPainter extends CustomPainter {
 
 /// 吸顶的支出/收入切换条。
 ///
-/// 底色沿用页面 canvas、无描边，和页头连成一体（同首页的吸顶月份条）。
+/// 与首页月份条同一套 [AppChromeGlass]：自身开始滚出时才毛玻璃，静止时不透明。
 class _KindBarDelegate extends SliverPersistentHeaderDelegate {
   _KindBarDelegate({required this.kind, required this.onChanged});
 
@@ -945,12 +945,15 @@ class _KindBarDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    return Material(
-      color: context.colors.canvas,
-      child: SizedBox(
-        height: _height,
-        child: Center(
-          child: _KindSwitch(kind: kind, onChanged: onChanged),
+    return AppChromeGlass(
+      translucency: (shrinkOffset / _height).clamp(0.0, 1.0),
+      child: Material(
+        type: MaterialType.transparency,
+        child: SizedBox(
+          height: _height,
+          child: Center(
+            child: _KindSwitch(kind: kind, onChanged: onChanged),
+          ),
         ),
       ),
     );

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
 import 'package:ligy_tally/core/preferences/accent_color.dart';
 import 'package:ligy_tally/core/preferences/corner_style.dart';
+import 'package:ligy_tally/core/theme/app_accent.dart';
 import 'package:ligy_tally/core/theme/app_radius.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/features/settings/presentation/appearance_screen.dart';
@@ -59,6 +60,19 @@ void main() {
     return (decoration.borderRadius! as BorderRadius).topLeft.x;
   }
 
+  List<Color> heroStops(WidgetTester tester) {
+    final box = tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.text('1,280.00'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    final decoration = box.decoration! as BoxDecoration;
+    return (decoration.gradient! as LinearGradient).colors;
+  }
+
   testWidgets('五组外观设置都在这一屏上，不再散落在设置首页', (tester) async {
     await pumpPage(tester);
 
@@ -99,5 +113,24 @@ void main() {
     await tester.tap(find.byIcon(FLucideIcons.sticker));
     await tester.pumpAndSettle();
     expect(find.text('背景模糊'), findsNothing);
+  });
+
+  testWidgets('样张通栏写的是「按钮」，不是「确定」', (tester) async {
+    await pumpPage(tester);
+    expect(find.text('按钮'), findsOneWidget);
+    expect(find.text('确定'), findsNothing);
+  });
+
+  testWidgets('换主题色，顶部共享样张的 Hero 渐变跟着变', (tester) async {
+    await pumpPage(tester);
+    final before = heroStops(tester);
+
+    ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    ).read(appAccentProvider.notifier).setAccent(AccentChoice.preset(AppAccent.purple));
+    await tester.pumpAndSettle();
+
+    final after = heroStops(tester);
+    expect(after, isNot(before));
   });
 }
