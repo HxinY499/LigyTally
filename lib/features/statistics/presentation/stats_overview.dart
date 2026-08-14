@@ -139,7 +139,7 @@ class StatsOverviewCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         gradient: stats.heroGradient,
-        borderRadius: BorderRadius.circular(StatsTokens.radiusCard),
+        borderRadius: BorderRadius.circular(stats.radiusCard),
         boxShadow: stats.shadowHero,
       ),
       child: Padding(

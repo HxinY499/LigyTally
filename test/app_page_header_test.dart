@@ -7,20 +7,19 @@ import 'package:ligy_tally/shared/widgets/app_widgets.dart';
 /// 页头一致性回归测试。
 ///
 /// 页头是全应用出现频率最高的元素，一旦某页自绘就会破坏统一感
-/// （历史上统计页用过 22 号字 + 随内容滚走）。这里把三条硬性规则锁死：
+/// （历史上统计页用过 22 号字 + 随内容滚走）。这里把四条硬性规则锁死：
 ///
 /// 1. 展开态：所有页面标题左缘 / 顶边 / 字号完全相同（跨页切换不跳动）
 /// 2. 折叠态：所有页面标题垂直中心线 / 字号完全相同
 /// 3. 操作行图标位置**不随折叠变化**（中心线恒为 56/2，右缘恒为 gutter）
+/// 4. 毛玻璃**只在吸顶后存在**：展开态不该挂 BackdropFilter，
+///    它每帧都要把背后像素读回来重新模糊，而展开态背后根本没有内容
 void main() {
   final forui = buildForuiTheme();
 
   Widget host(Widget child) => MaterialApp(
     theme: forui.toApproximateMaterialTheme(),
-    builder: (context, c) => FTheme(
-      data: forui,
-      child: FToaster(child: c!),
-    ),
+    builder: (context, c) => FTheme(data: forui, child: FToaster(child: c!)),
     home: child,
   );
 
@@ -28,21 +27,27 @@ void main() {
   const viewportWidth = 800.0;
 
   /// 折叠态图标与标题的公共中心线。
+  ///
+  /// 测试环境的 MediaQuery.padding 为 0，所以页头 extent 里不含状态栏，
+  /// 几何可以直接和令牌对照。
   const centerLine = kAppHeaderHeight / 2;
 
   /// 够长的内容，保证能滚出折叠所需距离。
-  Widget longList() => ListView(
-    children: [
-      for (var i = 0; i < 40; i++) SizedBox(height: 60, child: Text('row $i')),
-    ],
-  );
+  List<Widget> longSlivers() => [
+    SliverList.list(
+      children: [
+        for (var i = 0; i < 40; i++)
+          SizedBox(height: 60, child: Text('row $i')),
+      ],
+    ),
+  ];
 
   double fontSizeOf(WidgetTester tester, String text) =>
       tester.widget<Text>(find.text(text)).style!.fontSize!;
 
   /// 滚动到完全折叠。拖动量需 > 折叠距离（展开高 - 折叠高）。
   Future<void> collapse(WidgetTester tester) async {
-    await tester.drag(find.byType(ListView), const Offset(0, -200));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -200));
     await tester.pumpAndSettle();
   }
 
@@ -56,7 +61,7 @@ void main() {
               actions: [
                 AppHeaderAction(icon: FLucideIcons.search, onTap: () {}),
               ],
-              body: longList(),
+              slivers: longSlivers(),
             ),
           ),
         ),
@@ -72,9 +77,20 @@ void main() {
         kAppHeaderGutter,
         reason: '图标光学右缘与标题左缘对称',
       );
+
+      expect(
+        tester.getRect(find.text('row 0')).top,
+        kAppHeaderExpandedHeight,
+        reason: '内容起始线就是页头展开高度 —— 这是「切 Tab 不上下跳」的落点',
+      );
+      expect(
+        find.byType(BackdropFilter),
+        findsNothing,
+        reason: '展开态页头背后没有内容，不该白烧一次离屏模糊',
+      );
     });
 
-    testWidgets('折叠态：标题缩到紧凑条并垂直居中，图标位置不变', (tester) async {
+    testWidgets('折叠态：标题缩到紧凑条并垂直居中，图标位置不变，浮出毛玻璃', (tester) async {
       await tester.pumpWidget(
         host(
           Scaffold(
@@ -83,7 +99,7 @@ void main() {
               actions: [
                 AppHeaderAction(icon: FLucideIcons.search, onTap: () {}),
               ],
-              body: longList(),
+              slivers: longSlivers(),
             ),
           ),
         ),
@@ -100,6 +116,11 @@ void main() {
         iconBefore,
         reason: '折叠过程中图标必须绝对静止，否则观感会漂',
       );
+      expect(
+        find.byType(BackdropFilter),
+        findsOneWidget,
+        reason: '吸顶后内容从页头背后穿过，此时才需要毛玻璃',
+      );
     });
   });
 
@@ -115,7 +136,7 @@ void main() {
                   actions: [
                     AppHeaderAction(icon: FLucideIcons.plus, onTap: () {}),
                   ],
-                  body: longList(),
+                  slivers: longSlivers(),
                 ),
               ),
             ),
@@ -166,7 +187,7 @@ void main() {
     await tester.pumpWidget(
       host(
         Scaffold(
-          body: AppPageHeader(title: 'A', body: longList()),
+          body: AppPageHeader(title: 'A', slivers: longSlivers()),
         ),
       ),
     );
@@ -175,7 +196,7 @@ void main() {
     await tester.pumpWidget(
       host(
         Scaffold(
-          body: AppTopBar(title: 'A', body: longList()),
+          body: AppTopBar(title: 'A', slivers: longSlivers()),
         ),
       ),
     );
@@ -192,7 +213,7 @@ void main() {
           body: AppPageHeader(
             content: const SizedBox(height: 38, child: TextField()),
             actions: [AppHeaderAction(icon: FLucideIcons.x, onTap: () {})],
-            body: longList(),
+            slivers: longSlivers(),
           ),
         ),
       ),
@@ -208,6 +229,33 @@ void main() {
       tester.getRect(find.byType(TextField)),
       before,
       reason: '搜索框模式恒为折叠态，滚动不该让它移动',
+    );
+  });
+
+  testWidgets('底部常驻面板：不进滚动体，内容不会滚到它背后', (tester) async {
+    await tester.pumpWidget(
+      host(
+        Scaffold(
+          body: AppTopBar(
+            title: '记一笔',
+            slivers: longSlivers(),
+            bottom: const SizedBox(height: 120, child: Text('keypad')),
+          ),
+        ),
+      ),
+    );
+
+    final panel = tester.getRect(find.text('keypad'));
+    await collapse(tester);
+    expect(
+      tester.getRect(find.text('keypad')),
+      panel,
+      reason: '常驻面板不随内容滚动',
+    );
+    expect(
+      tester.getRect(find.byType(CustomScrollView)).bottom,
+      panel.top,
+      reason: '滚动区止于面板上沿，二者不重叠',
     );
   });
 }

@@ -314,7 +314,7 @@ class _SheetShell extends StatelessWidget {
     // 而壳内用了 InkWell，所以这里必须自己铺一层 Material。
     return Material(
       color: colors.surface,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: context.radii.sheetTop,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
@@ -406,7 +406,7 @@ class _SheetAction extends StatelessWidget {
     }
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: context.radii.chipAll,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Text(

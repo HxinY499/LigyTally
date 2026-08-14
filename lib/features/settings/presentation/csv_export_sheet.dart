@@ -29,7 +29,7 @@ class _CsvExportSheet extends StatelessWidget {
     final now = DateTime.now();
     return Material(
       color: colors.surface,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: context.radii.sheetTop,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
@@ -123,7 +123,7 @@ class _Option extends StatelessWidget {
               height: 32,
               decoration: BoxDecoration(
                 color: colors.primarySoft,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: context.radii.blockAll,
               ),
               alignment: Alignment.center,
               child: Icon(icon, size: 17, color: colors.primary),

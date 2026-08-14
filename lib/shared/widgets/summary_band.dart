@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:forui/forui.dart';
 
 import '../../core/database/app_database.dart';
 import '../../core/preferences/money_grouped.dart';
@@ -37,10 +38,22 @@ const _compactSurface = Color(0xFF17211E);
 /// 卡面直接取 [AppColors.heroGradient]，也就是统计页概览卡那条：两屏的
 /// Hero 卡是同一个视觉元素，共用一份色停才不会各自漂移。
 class SummaryBand extends ConsumerWidget {
-  const SummaryBand({super.key, required this.summary, this.compact = false});
+  const SummaryBand({
+    super.key,
+    required this.summary,
+    this.compact = false,
+    this.onOpenCalendar,
+  });
 
   final LedgerSummary summary;
   final bool compact;
+
+  /// 非空时在卡片右上角显示月历入口。
+  ///
+  /// 刻意做成一颗独立图标按钮，而不是让整张卡可点：这张卡面积大又待在
+  /// 滚动区顶部，整卡可点会在滑列表时被误触，而且卡面上没有任何线索
+  /// 能告诉用户「这里能点」。
+  final VoidCallback? onOpenCalendar;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -52,74 +65,131 @@ class SummaryBand extends ConsumerWidget {
     if (compact) return _CompactBand(summary: summary, grouped: grouped);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
       decoration: BoxDecoration(
         gradient: colors.heroGradient,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: context.radii.cardAll,
         // 用带主色相的阴影而不是中性灰：灰色压在彩色卡面下会发浊，
         // 阴影里掺入卡片自身色相才干净。与统计页 Hero 卡同一套思路。
         boxShadow: colors.shadowHeroPrimary,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          Row(
-            children: [
-              const Text(
-                '本月支出',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: _onHeroSoft,
-                  letterSpacing: 0.2,
-                ),
-              ),
-              const SizedBox(width: 4),
-              const Text(
-                '(元)',
-                style: TextStyle(fontSize: 11, color: _onHeroFaint),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              _rawMoney(summary.expenseCents, grouped: grouped),
-              maxLines: 1,
-              style: const TextStyle(
-                fontSize: 40,
-                height: 1.1,
-                fontWeight: FontWeight.w800,
-                color: _onHero,
-                letterSpacing: 0.4,
-              ),
+          // 月历按钮浮在角上而不是排进标签行：排进去会把 34 的热区撑进
+          // 那一行，整张卡跟着变高，主数字的位置也跟着往下挪。
+          if (onOpenCalendar != null)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: _CalendarButton(onTap: onOpenCalendar!),
             ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: _MiniStat(
-                  label: '本月收入',
-                  value: _rawMoney(summary.incomeCents, grouped: grouped),
-                ),
-              ),
-              Expanded(
-                child: _MiniStat(
-                  label: '净收支',
-                  value: _rawMoney(
-                    summary.netCents,
-                    grouped: grouped,
-                    signed: true,
-                  ),
-                ),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+            child: _bandBody(grouped),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _bandBody(bool grouped) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text(
+              '本月支出',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: _onHeroSoft,
+                letterSpacing: 0.2,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Text(
+              '(元)',
+              style: TextStyle(fontSize: 11, color: _onHeroFaint),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            _rawMoney(summary.expenseCents, grouped: grouped),
+            maxLines: 1,
+            style: const TextStyle(
+              fontSize: 40,
+              height: 1.1,
+              fontWeight: FontWeight.w800,
+              color: _onHero,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: _MiniStat(
+                label: '本月收入',
+                value: _rawMoney(summary.incomeCents, grouped: grouped),
+              ),
+            ),
+            Expanded(
+              child: _MiniStat(
+                label: '净收支',
+                value: _rawMoney(
+                  summary.netCents,
+                  grouped: grouped,
+                  signed: true,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// 卡片右上角的月历入口。
+///
+/// 必须自带一层透明 [Material]：水波是画在最近的 Material 上、且在其子节点
+/// 之下的，而这张卡的卡面是渐变 [Container]，往上找到的最近 Material 是页面
+/// 那层，水波会被卡面整块盖住（与记账页日卡踩过的同一个坑）。
+class _CalendarButton extends StatelessWidget {
+  const _CalendarButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: Tooltip(
+        message: '月历',
+        child: InkResponse(
+          onTap: onTap,
+          radius: 17,
+          containedInkWell: true,
+          customBorder: const CircleBorder(),
+          // 水波色写死成半透明白：卡面是主题色渐变，用全局 ripple（墨色系）
+          // 压在上面几乎看不见。
+          highlightColor: const Color(0x1FFFFFFF),
+          splashColor: const Color(0x24FFFFFF),
+          child: const SizedBox.square(
+            dimension: 34,
+            child: Center(
+              child: Icon(FLucideIcons.calendarDays, size: 18, color: _onHero),
+            ),
+          ),
+        ),
       ),
     );
   }

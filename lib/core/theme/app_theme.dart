@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
 import 'app_accent.dart';
+import 'app_radius.dart';
 import 'color_shift.dart';
 
 /// 全应用语义色板。
@@ -440,11 +441,13 @@ const _shadowHeroPrimaryDark = [
   BoxShadow(color: Color(0x4D000000), offset: Offset(0, 2), blurRadius: 6),
 ];
 
-/// 取色板的终端写法：`context.colors.ink`。
+/// 取色板 / 圆角阶梯的终端写法：`context.colors.ink`、`context.radii.card`。
 ///
 /// 比 `AppColors.of(context).ink` 短，调用点密度高的 build 方法里差别明显。
 extension AppThemeContext on BuildContext {
   AppColors get colors => AppColors.of(this);
+
+  AppRadius get radii => AppRadius.of(this);
 }
 
 TextStyle _flat(TextStyle? style, AppColors colors) =>
@@ -454,7 +457,10 @@ TextStyle _flat(TextStyle? style, AppColors colors) =>
 ///
 /// [brightness] 决定取哪套色板，并把色板挂进 [ThemeData.extensions]——
 /// `context.colors` 就是从这里读的，漏挂会静默退回浅色。
-ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
+ThemeData buildAppTheme({
+  Brightness brightness = Brightness.light,
+  AppRadius radius = const AppRadius(),
+}) {
   final colors = brightness == Brightness.dark
       ? AppColors.dark
       : AppColors.light;
@@ -473,7 +479,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
   );
   final text = base.textTheme;
   return base.copyWith(
-    extensions: [colors],
+    extensions: [colors, radius],
     textTheme: text.copyWith(
       displayLarge: _flat(text.displayLarge, colors),
       displayMedium: _flat(text.displayMedium, colors),
@@ -512,7 +518,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       margin: EdgeInsets.zero,
       color: colors.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        borderRadius: radius.cardAll,
         side: BorderSide(color: colors.line),
       ),
     ),
@@ -529,22 +535,22 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       filled: true,
       fillColor: colors.surface,
       border: OutlineInputBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        borderRadius: radius.blockAll,
         borderSide: BorderSide(color: colors.line),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        borderRadius: radius.blockAll,
         borderSide: BorderSide(color: colors.line),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        borderRadius: radius.blockAll,
         borderSide: BorderSide(color: colors.primary, width: 1.5),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size(0, 50),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(borderRadius: radius.blockAll),
         textStyle: _flat(
           text.labelLarge,
           colors,
@@ -554,7 +560,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
     segmentedButtonTheme: SegmentedButtonThemeData(
       style: ButtonStyle(
         shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          RoundedRectangleBorder(borderRadius: radius.blockAll),
         ),
         textStyle: WidgetStatePropertyAll(
           _flat(text.labelLarge, colors).copyWith(fontWeight: FontWeight.w600),
@@ -571,11 +577,16 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
 /// - background    → 页面底色
 /// - card / border → 卡片面色 + 淡描边
 ///
-/// 通过 [FThemeData.copyWith] + [FColors.copyWith] 只改颜色，其余间距/圆角/字体
+/// 通过 [FThemeData] 重建（而不是 `copyWith`）只改颜色与圆角，其余间距/字体
 /// 沿用 forui 触屏预设，保证组件观感一致。
+///
+/// 圆角必须走构造函数而不是 `copyWith(style: ...)`：forui 的各组件样式是在
+/// [FThemeData] 构造时由 `style` 派生出来的，`copyWith` 只换 style 字段，
+/// 已经算好的 cardStyle / buttonStyles 不会跟着重算，圆角设置会半数失效。
 FThemeData buildForuiTheme({
   Brightness brightness = Brightness.light,
   AppColors? colors,
+  AppRadius radius = const AppRadius(),
 }) {
   final dark = brightness == Brightness.dark;
   final resolved = colors ?? (dark ? AppColors.dark : AppColors.light);
@@ -583,6 +594,7 @@ FThemeData buildForuiTheme({
   final theme = FThemeData(
     touch: true,
     debugLabel: 'LigyTally forui ${dark ? 'dark' : 'light'}',
+    style: base.style.copyWith(borderRadius: radius.forui),
     colors: base.colors.copyWith(
       background: resolved.canvas,
       foreground: resolved.ink,
@@ -600,17 +612,21 @@ FThemeData buildForuiTheme({
       barrier: resolved.barrier,
     ),
   );
-  return theme.copyWith(toasterStyle: _toasterStyle(resolved));
+  return theme.copyWith(toasterStyle: _toasterStyle(resolved, radius));
 }
 
-final _foruiPresetCache = <(Brightness, AppAccent), FThemeData>{};
+final _foruiPresetCache =
+    <(Brightness, AppAccent, AppCornerStyle), FThemeData>{};
 
 /// 自选色只留最新的一份（每套亮度各一格）。
 ///
 /// 不能和预设共用一个 map：色相条是连着拖的，每个落点都是一把新钥匙，拖一遍
 /// 就往 map 里灌进几百份主题，等于内存泄漏。同一时刻只有一种自选色在生效，
 /// 一格备忘录就够。
-final _foruiCustomCache = <Brightness, (AccentChoice, FThemeData)>{};
+///
+/// 圆角档位可以安全地进缓存键：它是枚举，取值有限，不像色相那样连续。
+final _foruiCustomCache =
+    <Brightness, (AccentChoice, AppCornerStyle, FThemeData)>{};
 
 /// 缓存好的 forui 主题。
 ///
@@ -619,19 +635,23 @@ final _foruiCustomCache = <Brightness, (AccentChoice, FThemeData)>{};
 FThemeData foruiThemeFor(
   Brightness brightness, [
   AccentChoice accent = AccentChoice.initial,
+  AppCornerStyle corner = AppCornerStyle.fallback,
 ]) {
   FThemeData build() => buildForuiTheme(
     brightness: brightness,
     colors: AppColors.resolve(brightness, accent),
+    radius: AppRadius(scale: corner.scale),
   );
   final preset = accent.preset;
   if (preset != null) {
-    return _foruiPresetCache.putIfAbsent((brightness, preset), build);
+    return _foruiPresetCache.putIfAbsent((brightness, preset, corner), build);
   }
   final cached = _foruiCustomCache[brightness];
-  if (cached != null && cached.$1 == accent) return cached.$2;
+  if (cached != null && cached.$1 == accent && cached.$2 == corner) {
+    return cached.$3;
+  }
   final theme = build();
-  _foruiCustomCache[brightness] = (accent, theme);
+  _foruiCustomCache[brightness] = (accent, corner, theme);
   return theme;
 }
 
@@ -643,12 +663,12 @@ FThemeData foruiThemeFor(
 ThemeData buildMaterialTheme(
   Brightness brightness, [
   AccentChoice accent = AccentChoice.initial,
+  AppCornerStyle corner = AppCornerStyle.fallback,
 ]) {
   final colors = AppColors.resolve(brightness, accent);
-  return foruiThemeFor(
-    brightness,
-    accent,
-  ).toApproximateMaterialTheme().copyWith(extensions: [colors]);
+  return foruiThemeFor(brightness, accent, corner)
+      .toApproximateMaterialTheme()
+      .copyWith(extensions: [colors, AppRadius(scale: corner.scale)]);
 }
 
 /// toast 的浮起阴影：两层叠加（近距离描边阴影 + 远距离柔光），
@@ -668,15 +688,16 @@ const _toastShadowDark = [
 /// 只调样式不动交互——位置（触屏顶部居中）、滑动消失、堆叠展开
 /// 全部沿用 forui 预设。
 ///
-/// -圆角用超椭圆 18px，比默认 md(10) 更圆润，符合浮层调性
+/// - 圆角走卡片档的超椭圆，和日记账卡、统计卡是同一档
 /// - 卡片面色 + 极淡描边 + 双层阴影，从页面底色上「浮」起来
 /// - 标题 15/w600、描述 13，比默认更紧凑，一行提示不显得空旷
 /// - destructive 变体改成淡红底 + 红描边，比纯卡片底红字更有警示感
 ///
 /// 这里必须是**函数**而不是 top-level final：后者只在首次访问时求值一次，
 /// 之后切主题拿到的仍是旧色板的 toast。
-FToasterStyleDelta _toasterStyle(AppColors colors) {
+FToasterStyleDelta _toasterStyle(AppColors colors, AppRadius radius) {
   final shadow = colors.isDark ? _toastShadowDark : _toastShadowLight;
+  final borderRadius = radius.cardAll;
   return FToasterStyleDelta.delta(
     padding: const EdgeInsetsGeometryDelta.value(
       EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -698,7 +719,7 @@ FToasterStyleDelta _toasterStyle(AppColors colors) {
                 color: colors.surface,
                 shape: RoundedSuperellipseBorder(
                   side: BorderSide(color: colors.line),
-                  borderRadius: const BorderRadius.all(Radius.circular(18)),
+                  borderRadius: borderRadius,
                 ),
                 shadows: shadow,
               ),
@@ -736,7 +757,7 @@ FToasterStyleDelta _toasterStyle(AppColors colors) {
                   side: BorderSide(
                     color: colors.expense.withValues(alpha: 0.28),
                   ),
-                  borderRadius: const BorderRadius.all(Radius.circular(18)),
+                  borderRadius: borderRadius,
                 ),
                 shadows: shadow,
               ),

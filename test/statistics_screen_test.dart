@@ -10,6 +10,7 @@ import 'package:ligy_tally/core/utils/ledger_date.dart';
 import 'package:ligy_tally/features/ledger/application/providers.dart';
 import 'package:ligy_tally/features/statistics/presentation/statistics_screen.dart';
 import 'package:ligy_tally/features/statistics/presentation/statistics_window.dart';
+import 'package:ligy_tally/features/statistics/presentation/stats_card.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_category.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_charts.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_design.dart';
@@ -846,7 +847,17 @@ void main() {
       await tester.pumpWidget(await host(database));
       await settle(tester);
 
-      await tester.tap(find.text('收入'));
+      // 支出/收入切换器现在有两处（分类构成卡、周期对比卡），
+      // 必须按卡片限定范围，否则 find.text('收入') 会撞上两个。
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('分类构成'),
+            matching: find.byType(StatsCard),
+          ),
+          matching: find.text('收入'),
+        ),
+      );
       await settle(tester);
 
       expect(find.text('本期没有收入记录'), findsOneWidget);

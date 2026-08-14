@@ -39,7 +39,7 @@ class _AccentColorSheet extends ConsumerWidget {
     final selected = ref.watch(appAccentProvider);
     return Material(
       color: colors.surface,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: context.radii.sheetTop,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
@@ -167,21 +167,18 @@ class _CustomStrips extends ConsumerWidget {
             for (var i = 0; i <= 6; i++)
               at(
                 withSaturation:
-                    kAccentMinSaturation +
-                    (1 - kAccentMinSaturation) * (i / 6),
+                    kAccentMinSaturation + (1 - kAccentMinSaturation) * (i / 6),
               ),
           ],
           value:
-              ((saturation - kAccentMinSaturation) /
-                      (1 - kAccentMinSaturation))
+              ((saturation - kAccentMinSaturation) / (1 - kAccentMinSaturation))
                   .clamp(0.0, 1.0),
           thumb: thumb,
           onChanged: (fraction, done) => emit(
             AccentChoice.custom(
               hue: hue,
               saturation:
-                  kAccentMinSaturation +
-                  (1 - kAccentMinSaturation) * fraction,
+                  kAccentMinSaturation + (1 - kAccentMinSaturation) * fraction,
             ),
             done: done,
           ),
@@ -332,11 +329,11 @@ class _Preview extends StatelessWidget {
     final colors = context.colors;
     final stats = StatsTokens.of(context);
     return Container(
-      // 必须裁剪：底栏是通栏贴底的方角，不裁会画到 16 圆角外面去。
+      // 必须裁剪：底栏是通栏贴底的方角，不裁会画到圆角外面去。
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: colors.canvas,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: context.radii.cardAll,
       ),
       // 描边不是装饰：底栏用的 surface 和浮层自己的底色是同一个值，
       // 没有这条边界，底栏在深浅两套皮肤下都会整块融进浮层，
@@ -345,7 +342,7 @@ class _Preview extends StatelessWidget {
       // 走 foregroundDecoration 而不是 decoration.border：后者画在子节点
       // **下面**，会被贴到边的底栏盖掉三条边，只剩顶边看得见。
       foregroundDecoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: context.radii.cardAll,
         border: Border.all(color: colors.line),
       ),
       child: Column(
@@ -356,7 +353,7 @@ class _Preview extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
             decoration: BoxDecoration(
               gradient: stats.heroGradient,
-              borderRadius: BorderRadius.circular(StatsTokens.radiusCard),
+              borderRadius: BorderRadius.circular(stats.radiusCard),
               boxShadow: stats.shadowHero,
             ),
             child: Column(

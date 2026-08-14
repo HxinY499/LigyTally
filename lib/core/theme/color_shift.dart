@@ -26,9 +26,7 @@ Color rotateHue(Color color, double degrees) {
 Color scaleSaturation(Color color, double scale) {
   if (scale == 1) return color;
   final hsl = HSLColor.fromColor(color);
-  return hsl
-      .withSaturation((hsl.saturation * scale).clamp(0.0, 1.0))
-      .toColor();
+  return hsl.withSaturation((hsl.saturation * scale).clamp(0.0, 1.0)).toColor();
 }
 
 /// WCAG 2.1 相对亮度。

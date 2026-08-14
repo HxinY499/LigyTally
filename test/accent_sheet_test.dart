@@ -130,9 +130,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(choiceOf(tester).isCustom, isFalse);
 
-    final gesture = await tester.startGesture(
-      stripPoint(tester, '色相', 0.05),
-    );
+    final gesture = await tester.startGesture(stripPoint(tester, '色相', 0.05));
     await tester.pump();
     await gesture.moveTo(stripPoint(tester, '色相', 0.9));
     await tester.pump();

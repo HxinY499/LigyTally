@@ -32,6 +32,14 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   StatisticsWindow _window = StatisticsWindow.now();
   int _categoryKind = 0;
 
+  /// 周期对比卡的收支口径。
+  ///
+  /// 与 [_categoryKind] 分开而不是共用一个全局开关：分类构成与分类变化讲的是
+  /// 同一批分类，联动是必要的；而周期对比换的是整张图的 Y 轴口径，
+  /// 让它跟着上面两张卡走，会出现「只想看收入分类，最下面的柱子也跟着变」
+  /// 这种没人要求的连带效果。
+  int _comparisonKind = 0;
+
   void _shift(int direction) {
     setState(() => _window = _window.shifted(direction));
   }
@@ -71,207 +79,225 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     final grouped = ref.watch(moneyGroupedProvider);
     final range = _window.range;
 
-    return SafeArea(
-      bottom: false,
-      child: AppPageHeader(
-        title: '统计',
-        body: ListView(
+    return AppPageHeader(
+      title: '统计',
+      slivers: [
+        SliverPadding(
           // 导航栏已贴底固定、本页无 FAB，底部只留收尾留白。
           padding: const EdgeInsets.only(bottom: 28),
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                StatsTokens.gutter,
-                4,
-                StatsTokens.gutter,
-                0,
-              ),
-              child: StatsPeriodSelector(
-                selected: _window.period,
-                onChanged: _selectPeriod,
-              ),
-            ),
-
-            // ---------------------------------------------- 概览 Hero 卡
-            _Slot(
-              index: 0,
-              child: _OverviewSlot(
-                window: _window,
-                grouped: grouped,
-                onShift: _shift,
-                onPickRange: _onRangeTap,
-              ),
-            ),
-
-            // ---------------------------------------------- 支出趋势
-            _Slot(
-              index: 1,
-              child: StatsCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    StatsSectionHeader(
-                      title: _window.trendTitle,
-                      caption: _window.trendCaption,
-                    ),
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      height: 176,
-                      child: StatsStreamBuilder<List<TrendPoint>>(
-                        stream: database.watchTrend(
-                          range,
-                          groupByMonth: _window.groupByMonth,
-                        ),
-                        loading: const StatsChartSkeleton(height: 176),
-                        builder: (context, points) {
-                          // 区间内只有收入、没有任何支出时，趋势图画出来
-                          // 是一条贴底的直线，不如直接说明。
-                          final hasExpense = points.any(
-                            (point) => point.expenseCents > 0,
-                          );
-                          if (!hasExpense) {
-                            return const StatsEmpty(
-                              title: '本期还没有支出',
-                              body: '记一笔支出后，这里会显示金额随时间的变化趋势',
-                              height: 176,
-                            );
-                          }
-                          return TrendLineChart(points: points);
-                        },
-                      ),
-                    ),
-                  ],
+          sliver: SliverList.list(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  StatsTokens.gutter,
+                  4,
+                  StatsTokens.gutter,
+                  0,
+                ),
+                child: StatsPeriodSelector(
+                  selected: _window.period,
+                  onChanged: _selectPeriod,
                 ),
               ),
-            ),
 
-            // ---------------------------------------------- 分类构成
-            _Slot(
-              index: 2,
-              child: StatsCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    StatsSectionHeader(
-                      title: '分类构成',
-                      caption: '点扇区看占比，点排行看明细',
-                      trailing: _KindToggle(
-                        selected: _categoryKind,
-                        onChanged: (value) =>
-                            setState(() => _categoryKind = value),
+              // ---------------------------------------------- 概览 Hero 卡
+              _Slot(
+                index: 0,
+                child: _OverviewSlot(
+                  window: _window,
+                  grouped: grouped,
+                  onShift: _shift,
+                  onPickRange: _onRangeTap,
+                ),
+              ),
+
+              // ---------------------------------------------- 支出趋势
+              _Slot(
+                index: 1,
+                child: StatsCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      StatsSectionHeader(
+                        title: _window.trendTitle,
+                        caption: _window.trendCaption,
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    StatsStreamBuilder<List<CategoryTotal>>(
-                      stream: database.watchCategoryTotals(
-                        range,
-                        _categoryKind,
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        height: 176,
+                        child: StatsStreamBuilder<List<TrendPoint>>(
+                          stream: database.watchTrend(
+                            range,
+                            groupByMonth: _window.groupByMonth,
+                          ),
+                          loading: const StatsChartSkeleton(height: 176),
+                          builder: (context, points) {
+                            // 区间内只有收入、没有任何支出时，趋势图画出来
+                            // 是一条贴底的直线，不如直接说明。
+                            final hasExpense = points.any(
+                              (point) => point.expenseCents > 0,
+                            );
+                            if (!hasExpense) {
+                              return const StatsEmpty(
+                                title: '本期还没有支出',
+                                body: '记一笔支出后，这里会显示金额随时间的变化趋势',
+                                height: 176,
+                              );
+                            }
+                            return TrendLineChart(points: points);
+                          },
+                        ),
                       ),
-                      loading: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: StatsDonutSkeleton(),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ---------------------------------------------- 分类构成
+              _Slot(
+                index: 2,
+                child: StatsCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      StatsSectionHeader(
+                        title: '分类构成',
+                        caption: '点扇区看占比，点排行看明细',
+                        trailing: _KindToggle(
+                          selected: _categoryKind,
+                          onChanged: (value) =>
+                              setState(() => _categoryKind = value),
+                        ),
                       ),
-                      builder: (context, totals) {
-                        if (totals.isEmpty) {
-                          return StatsEmpty(
-                            icon: FLucideIcons.chartPie,
-                            title: '本期没有${_categoryKind == 0 ? '支出' : '收入'}记录',
-                            body: '换一个时间范围，或先记录一笔账单',
+                      const SizedBox(height: 14),
+                      StatsStreamBuilder<List<CategoryTotal>>(
+                        stream: database.watchCategoryTotals(
+                          range,
+                          _categoryKind,
+                        ),
+                        loading: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: StatsDonutSkeleton(),
+                        ),
+                        builder: (context, totals) {
+                          if (totals.isEmpty) {
+                            return StatsEmpty(
+                              icon: FLucideIcons.chartPie,
+                              title:
+                                  '本期没有${_categoryKind == 0 ? '支出' : '收入'}记录',
+                              body: '换一个时间范围，或先记录一笔账单',
+                            );
+                          }
+                          return CategoryComposition(
+                            // kind 变化时强制重建，让内部选中态跟着复位。
+                            key: ValueKey(_categoryKind),
+                            totals: totals,
+                            kind: _categoryKind,
+                            grouped: grouped,
+                            range: range,
+                            rangeLabel: _window.rangeLabel,
+                            trendSpans: _window.comparisonSpans,
+                            trendCaption: _window.comparisonCaption,
                           );
-                        }
-                        return CategoryComposition(
-                          // kind 变化时强制重建，让内部选中态跟着复位。
-                          key: ValueKey(_categoryKind),
-                          totals: totals,
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ---------------------------------------------- 分类环比
+              _Slot(
+                index: 3,
+                child: StatsCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      StatsSectionHeader(
+                        title: '分类变化',
+                        caption: '${_window.previousLabel}的增减',
+                      ),
+                      const SizedBox(height: 14),
+                      StatsStreamBuilder<List<CategoryDelta>>(
+                        // 跟随分类构成卡的支出/收入切换：两张卡讲的是同一批分类，
+                        // 各带一个切换开关会让「哪张卡现在是收入」变得要猜。
+                        stream: database.watchCategoryDeltas(
+                          current: range,
+                          comparison: _window.comparisonRange,
+                          kind: _categoryKind,
+                        ),
+                        loading: const StatsDeltaSkeleton(),
+                        errorHeight: 148,
+                        builder: (context, deltas) => CategoryDeltaList(
+                          deltas: deltas,
                           kind: _categoryKind,
                           grouped: grouped,
-                          range: range,
-                          rangeLabel: _window.rangeLabel,
-                          trendSpans: _window.comparisonSpans,
-                          trendCaption: _window.comparisonCaption,
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // ---------------------------------------------- 分类环比
-            _Slot(
-              index: 3,
-              child: StatsCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    StatsSectionHeader(
-                      title: '分类变化',
-                      caption: '${_window.previousLabel}的增减',
-                    ),
-                    const SizedBox(height: 14),
-                    StatsStreamBuilder<List<CategoryDelta>>(
-                      // 跟随分类构成卡的支出/收入切换：两张卡讲的是同一批分类，
-                      // 各带一个切换开关会让「哪张卡现在是收入」变得要猜。
-                      stream: database.watchCategoryDeltas(
-                        current: range,
-                        comparison: _window.comparisonRange,
-                        kind: _categoryKind,
-                      ),
-                      loading: const StatsDeltaSkeleton(),
-                      errorHeight: 148,
-                      builder: (context, deltas) => CategoryDeltaList(
-                        deltas: deltas,
-                        kind: _categoryKind,
-                        grouped: grouped,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // ---------------------------------------------- 周期对比
-            _Slot(
-              index: 4,
-              child: StatsCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    StatsSectionHeader(
-                      title: _window.comparisonTitle,
-                      caption: _window.comparisonCaption,
-                    ),
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      height: 196,
-                      child: StatsStreamBuilder<List<PeriodBar>>(
-                        stream: database.watchPeriodBars(
-                          _window.comparisonSpans,
                         ),
-                        loading: const StatsChartSkeleton(height: 196, bars: 6),
-                        builder: (context, bars) {
-                          final hasData = bars.any(
-                            (bar) => bar.expenseCents > 0,
-                          );
-                          if (!hasData) {
-                            return const StatsEmpty(
-                              icon: FLucideIcons.chartColumn,
-                              title: '近期没有可对比的支出',
-                              body: '积累几个周期的记录后即可看到横向对比',
-                              height: 196,
-                            );
-                          }
-                          return PeriodBarChart(bars: bars);
-                        },
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+
+              // ---------------------------------------------- 周期对比
+              _Slot(
+                index: 4,
+                child: StatsCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      StatsSectionHeader(
+                        title: _window.comparisonTitle(_comparisonKind),
+                        caption: _window.comparisonCaption,
+                        trailing: _KindToggle(
+                          selected: _comparisonKind,
+                          onChanged: (value) =>
+                              setState(() => _comparisonKind = value),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        height: 196,
+                        child: StatsStreamBuilder<List<PeriodBar>>(
+                          stream: database.watchPeriodBars(
+                            _window.comparisonSpans,
+                          ),
+                          loading: const StatsChartSkeleton(
+                            height: 196,
+                            bars: 6,
+                          ),
+                          builder: (context, bars) {
+                            final hasData = bars.any(
+                              (bar) =>
+                                  (_comparisonKind == 0
+                                      ? bar.expenseCents
+                                      : bar.incomeCents) >
+                                  0,
+                            );
+                            if (!hasData) {
+                              return StatsEmpty(
+                                icon: FLucideIcons.chartColumn,
+                                title:
+                                    '近期没有可对比的${_comparisonKind == 0 ? '支出' : '收入'}',
+                                body: '积累几个周期的记录后即可看到横向对比',
+                                height: 196,
+                              );
+                            }
+                            return PeriodBarChart(
+                              bars: bars,
+                              kind: _comparisonKind,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }

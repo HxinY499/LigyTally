@@ -338,7 +338,7 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
       padding: EdgeInsets.only(bottom: keyboard),
       child: Material(
         color: colors.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: context.radii.sheetTop,
         clipBehavior: Clip.antiAlias,
         child: SafeArea(
           top: false,
@@ -463,11 +463,11 @@ class _NameRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    const radius = BorderRadius.all(Radius.circular(12));
-    OutlineInputBorder border(Color color) => const OutlineInputBorder(
+    final radius = context.radii.blockAll;
+    OutlineInputBorder border(Color color) => OutlineInputBorder(
       borderRadius: radius,
-      borderSide: BorderSide.none,
-    ).copyWith(borderSide: BorderSide(color: color));
+      borderSide: BorderSide(color: color),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -956,9 +956,7 @@ class _ConfirmButton extends StatelessWidget {
           backgroundColor: accent,
           disabledBackgroundColor: colors.line,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: context.radii.sheetAll),
         ),
         child: busy
             ? const SizedBox(

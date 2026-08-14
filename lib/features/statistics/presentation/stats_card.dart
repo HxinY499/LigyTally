@@ -30,14 +30,14 @@ class StatsCard extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: stats.surface,
-        borderRadius: BorderRadius.circular(StatsTokens.radiusCard),
+        borderRadius: BorderRadius.circular(stats.radiusCard),
         boxShadow: stats.shadowCard,
       ),
       child: onTap == null
           ? content
           : Material(
               color: Colors.transparent,
-              borderRadius: BorderRadius.circular(StatsTokens.radiusCard),
+              borderRadius: BorderRadius.circular(stats.radiusCard),
               clipBehavior: Clip.antiAlias,
               child: InkWell(onTap: onTap, child: content),
             ),

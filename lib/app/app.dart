@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
 import '../core/preferences/accent_color.dart';
+import '../core/preferences/corner_style.dart';
 import '../core/preferences/theme_mode.dart';
 import '../core/theme/app_accent.dart';
+import '../core/theme/app_radius.dart';
 import '../core/theme/app_theme.dart';
 import '../core/update/update_banner.dart';
 import 'home_shell.dart';
@@ -17,13 +19,14 @@ class LigyTallyApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = ref.watch(appAccentProvider);
+    final corner = ref.watch(appCornerStyleProvider);
     return MaterialApp(
       title: 'Ligy Tally',
       debugShowCheckedModeBanner: false,
       // Material 兜底组件（showDialog / 未迁移页面）沿用 forui 近似主题，
       // 保证 forui 与 Material 混用时观感一致。
-      theme: buildMaterialTheme(Brightness.light, accent),
-      darkTheme: buildMaterialTheme(Brightness.dark, accent),
+      theme: buildMaterialTheme(Brightness.light, accent, corner),
+      darkTheme: buildMaterialTheme(Brightness.dark, accent, corner),
       themeMode: ref.watch(appThemeModeProvider).materialMode,
       locale: const Locale('zh', 'CN'),
       supportedLocales: const [Locale('zh', 'CN')],
@@ -34,7 +37,8 @@ class LigyTallyApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      builder: (context, child) => _ThemedShell(accent: accent, child: child!),
+      builder: (context, child) =>
+          _ThemedShell(accent: accent, corner: corner, child: child!),
       home: const UpdateNotificationLayer(child: HomeShell()),
     );
   }
@@ -46,9 +50,14 @@ class LigyTallyApp extends ConsumerWidget {
 /// 下真正生效的亮度由 MaterialApp 自己按平台亮度决定，只有在它下面
 /// `Theme.of(context)` 才拿得到结果，否则 `ThemeMode.system` 会失效。
 class _ThemedShell extends StatelessWidget {
-  const _ThemedShell({required this.accent, required this.child});
+  const _ThemedShell({
+    required this.accent,
+    required this.corner,
+    required this.child,
+  });
 
   final AccentChoice accent;
+  final AppCornerStyle corner;
   final Widget child;
 
   @override
@@ -60,7 +69,7 @@ class _ThemedShell extends StatelessWidget {
       // 用 FTheme 包裹整棵树，forui 组件才能读到品牌主题；
       // FToaster 为 forui 的 toast/sonner 提供挂载点。
       child: FTheme(
-        data: foruiThemeFor(colors.brightness, accent),
+        data: foruiThemeFor(colors.brightness, accent, corner),
         child: FToaster(child: child),
       ),
     );

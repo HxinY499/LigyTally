@@ -2,23 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
-import '../../../core/preferences/app_icon.dart';
-import '../../../core/preferences/backdrop_blur.dart';
-import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/money_grouped.dart';
 import '../../../core/preferences/quick_tally_mode.dart';
-import '../../../core/preferences/theme_mode.dart';
-import '../../../core/preferences/transaction_image_style.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/update/update_controller.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
-import 'accent_color_sheet.dart';
-import 'app_icon_picker_sheet.dart';
-import 'backdrop_blur_sheet.dart';
+import 'appearance_screen.dart';
 import 'category_management_screen.dart';
 import 'csv_export_sheet.dart';
+import 'settings_widgets.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -122,155 +116,98 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     showAppToast(context, message: message, level: level);
   }
 
-  Future<void> _pickAppIcon() async {
-    final current = ref.read(appIconProvider);
-    final picked = await showAppIconPickerSheet(context, current: current);
-    if (picked == null || picked == current || !mounted) return;
-    try {
-      await ref.read(appIconProvider.notifier).setStyle(picked);
-      if (mounted) {
-        _showMessage('图标已切换，桌面可能需要几秒刷新');
-      }
-    } catch (error) {
-      if (mounted) _showMessage('切换失败：$error', level: AppToastLevel.error);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final imageStyle = ref.watch(transactionImageStyleProvider);
-    return SafeArea(
-      bottom: false,
-      child: AppPageHeader(
-        title: '设置',
-        body: ListView(
+    return AppPageHeader(
+      title: '设置',
+      slivers: [
+        SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
-          children: [
-            const _SectionLabel('偏好'),
-            _SettingsCard(
-              children: [
-                _SettingsItem(
-                  icon: FLucideIcons.zap,
-                  title: '快速记账模式',
-                  subtitle: '打开应用后直接进入记账页',
-                  trailing: _TrailingSwitch(
-                    value: ref.watch(quickTallyModeProvider),
-                    onChange: (value) => ref
-                        .read(quickTallyModeProvider.notifier)
-                        .setEnabled(value),
-                  ),
-                ),
-                _SettingsItem(
-                  icon: FLucideIcons.sunMoon,
-                  title: '外观',
-                  trailing: _ThemeModeToggle(
-                    value: ref.watch(appThemeModeProvider),
-                    onChanged: (value) =>
-                        ref.read(appThemeModeProvider.notifier).setMode(value),
-                  ),
-                ),
-                _SettingsItem(
-                  icon: FLucideIcons.palette,
-                  title: '主题色',
-                  trailing: const _AccentPreview(),
-                  showChevron: true,
-                  onTap: () => showAccentColorSheet(context),
-                ),
-                _SettingsItem(
-                  icon: FLucideIcons.tags,
-                  title: '分类管理',
-                  showChevron: true,
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => const CategoryManagementScreen(),
+          sliver: SliverList.list(
+            children: [
+              const SectionLabel('偏好'),
+              SettingsCard(
+                children: [
+                  SettingsItem(
+                    icon: FLucideIcons.zap,
+                    title: '快速记账模式',
+                    subtitle: '打开应用后直接进入记账页',
+                    trailing: TrailingSwitch(
+                      value: ref.watch(quickTallyModeProvider),
+                      onChange: (value) => ref
+                          .read(quickTallyModeProvider.notifier)
+                          .setEnabled(value),
                     ),
                   ),
-                ),
-                _SettingsItem(
-                  icon: FLucideIcons.layoutGrid,
-                  title: '分类选择样式',
-                  trailing: _LayoutToggle(
-                    value: ref.watch(categoryPickerLayoutProvider),
-                    onChanged: (value) => ref
-                        .read(categoryPickerLayoutProvider.notifier)
-                        .setLayout(value),
+                  SettingsItem(
+                    icon: FLucideIcons.hash,
+                    title: '金额千分位',
+                    trailing: TrailingSwitch(
+                      value: ref.watch(moneyGroupedProvider),
+                      onChange: (value) => ref
+                          .read(moneyGroupedProvider.notifier)
+                          .setGrouped(value),
+                    ),
                   ),
-                ),
-                _SettingsItem(
-                  icon: FLucideIcons.image,
-                  title: '记账页图片',
-                  trailing: _ImageStyleToggle(
-                    value: imageStyle,
-                    onChanged: (value) => ref
-                        .read(transactionImageStyleProvider.notifier)
-                        .setStyle(value),
-                  ),
-                ),
-                // 模糊是背板独有的参数，贴纸模式下怎么调都不会有变化。
-                // 与其置灰摆在那里让人猜它归谁管，不如跟着背板一起收起来。
-                if (imageStyle == TransactionImageStyle.backdrop)
-                  _SettingsItem(
-                    icon: FLucideIcons.aperture,
-                    title: '背景模糊',
-                    value: ref.watch(backdropBlurProvider).round().toString(),
+                  // 外观是唯一收进二级页的一组：这几项互相影响，
+                  // 摊在这里只能六个浮层各看各的，收进去才能共用一张样张。
+                  SettingsItem(
+                    icon: FLucideIcons.paintbrush,
+                    title: '外观',
+                    subtitle: '深浅、主题色、圆角、版式',
                     showChevron: true,
-                    onTap: () => showBackdropBlurSheet(context),
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => const AppearanceScreen(),
+                      ),
+                    ),
                   ),
-                _SettingsItem(
-                  icon: FLucideIcons.smartphone,
-                  title: '应用图标',
-                  trailing: _AppIconPreview(style: ref.watch(appIconProvider)),
-                  showChevron: true,
-                  onTap: _pickAppIcon,
-                ),
-                _SettingsItem(
-                  icon: FLucideIcons.hash,
-                  title: '金额千分位',
-                  trailing: _TrailingSwitch(
-                    value: ref.watch(moneyGroupedProvider),
-                    onChange: (value) => ref
-                        .read(moneyGroupedProvider.notifier)
-                        .setGrouped(value),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const SectionLabel('数据'),
+              SettingsCard(
+                children: [
+                  // 分类管理会改数据、带确认弹窗，和导出/备份是同一类操作。
+                  // 之前它挤在一堆开关中间，层级不对等。
+                  SettingsItem(
+                    icon: FLucideIcons.tags,
+                    title: '分类管理',
+                    showChevron: true,
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => const CategoryManagementScreen(),
+                      ),
+                    ),
                   ),
-                ),
-                const _SettingsItem(
-                  icon: FLucideIcons.banknote,
-                  title: '默认货币',
-                  value: '人民币',
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            const _SectionLabel('数据'),
-            _SettingsCard(
-              children: [
-                _SettingsItem(
-                  icon: FLucideIcons.fileSpreadsheet,
-                  title: '导出 CSV',
-                  showChevron: !_busy,
-                  onTap: _busy ? null : _exportCsv,
-                ),
-                _SettingsItem(
-                  icon: FLucideIcons.upload,
-                  title: '导出完整备份',
-                  showChevron: !_busy,
-                  onTap: _busy ? null : _exportBackup,
-                ),
-                _SettingsItem(
-                  icon: FLucideIcons.download,
-                  title: '导入完整备份',
-                  showChevron: !_busy,
-                  trailing: _busy ? const _RowSpinner() : null,
-                  onTap: _busy ? null : _restoreBackup,
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            const _SectionLabel('关于'),
-            const _AboutCard(),
-          ],
+                  SettingsItem(
+                    icon: FLucideIcons.fileSpreadsheet,
+                    title: '导出 CSV',
+                    showChevron: !_busy,
+                    onTap: _busy ? null : _exportCsv,
+                  ),
+                  SettingsItem(
+                    icon: FLucideIcons.upload,
+                    title: '导出完整备份',
+                    showChevron: !_busy,
+                    onTap: _busy ? null : _exportBackup,
+                  ),
+                  SettingsItem(
+                    icon: FLucideIcons.download,
+                    title: '导入完整备份',
+                    showChevron: !_busy,
+                    trailing: _busy ? const RowSpinner() : null,
+                    onTap: _busy ? null : _restoreBackup,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const SectionLabel('关于'),
+              const _AboutCard(),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -339,17 +276,17 @@ class _AboutCardState extends ConsumerState<_AboutCard> {
       busySubtitle = null;
     }
 
-    return _SettingsCard(
+    return SettingsCard(
       children: [
         _BrandRow(version: _version, hasUpdate: pending != null),
-        _SettingsItem(
+        SettingsItem(
           icon: pending != null
               ? FLucideIcons.cloudDownload
               : FLucideIcons.refreshCw,
           title: pending != null ? '更新到 v${pending.version}' : '检查更新',
           subtitle: busySubtitle,
           accent: pending != null,
-          trailing: busy ? const _RowSpinner() : null,
+          trailing: busy ? const RowSpinner() : null,
           showChevron: !busy,
           onTap: busy
               ? null
@@ -388,7 +325,7 @@ class _BrandRow extends StatelessWidget {
               height: 32,
               decoration: BoxDecoration(
                 color: colors.primarySoft,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: context.radii.chipAll,
               ),
               alignment: Alignment.center,
               child: Image.asset(
@@ -456,412 +393,6 @@ class _Badge extends StatelessWidget {
           fontWeight: FontWeight.w700,
           color: colors.primary,
           height: 1.1,
-        ),
-      ),
-    );
-  }
-}
-
-/// 分组小标题：卡片外的灰色说明文字。
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w600,
-          color: context.colors.inactive,
-          letterSpacing: 0.3,
-        ),
-      ),
-    );
-  }
-}
-
-/// 行内小转圈：与 chevron 同宽，替换时不会让右侧跳动。
-class _RowSpinner extends StatelessWidget {
-  const _RowSpinner();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 18,
-      height: 18,
-      child: CircularProgressIndicator(
-        strokeWidth: 2,
-        color: context.colors.primary,
-      ),
-    );
-  }
-}
-
-/// 设置页卡片容器：白底、大圆角、组内发丝分割线。
-class _SettingsCard extends StatelessWidget {
-  const _SettingsCard({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < children.length; i++) ...[
-            // 分割线从标题文字起始处开始（左 16 + 图标 32 + 间距 12），
-            // 不切到左侧图标，视觉上更整齐。
-            if (i > 0)
-              Divider(
-                height: 1,
-                thickness: 1,
-                indent: 60,
-                color: colors.lineSoft,
-              ),
-            children[i],
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// 设置页列表行：左侧图标 + 标题（可带副标题），右侧值/ 控件 / chevron。
-///
-/// 右侧统一收在 16 的内边距上——chevron、开关、值文字的右边缘对齐同一条线，
-/// 所以带chevron 的行不再额外撑出 8px。
-class _SettingsItem extends StatelessWidget {
-  const _SettingsItem({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.value,
-    this.trailing,
-    this.showChevron = false,
-    this.accent = false,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-
-  /// 右侧灰色只读值（如「人民币」）。
-  final String? value;
-  final Widget? trailing;
-  final bool showChevron;
-
-  /// true 时标题与图标走品牌色，用于「有新版本可更新」这类强引导。
-  final bool accent;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        // minHeight 40：让「只有标题」「标题+副标题」「带开关」三种行
-        // 的高度都落在 64，否则开关（39 高）会把那一行顶得比邻居高。
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 40),
-          child: Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: accent ? colors.primary : colors.primarySoft,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                alignment: Alignment.center,
-                child: Icon(
-                  icon,
-                  size: 17,
-                  color: accent ? Colors.white : colors.primary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w600,
-                        color: accent ? colors.primary : colors.ink,
-                        height: 1.25,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle!,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colors.inactive,
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (value != null) ...[
-                const SizedBox(width: 12),
-                Text(
-                  value!,
-                  style: TextStyle(fontSize: 14, color: colors.muted),
-                ),
-              ],
-              if (trailing != null) ...[const SizedBox(width: 12), trailing!],
-              if (showChevron) ...[
-                const SizedBox(width: 6),
-                Icon(FLucideIcons.chevronRight, size: 18, color: colors.faint),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 行尾开关：把 forui 开关的隐形留白补掉，让轨道右边缘和chevron 对齐。
-///
-/// [AppSwitch] 内部 FLabel 左右各留 8，CupertinoSwitch 的 59×39 画布相对
-/// 51×31 的轨道又各多出 4 —— 右侧共空12px，不修正就会比其它行内缩。
-class _TrailingSwitch extends StatelessWidget {
-  const _TrailingSwitch({required this.value, required this.onChange});
-
-  final bool value;
-  final ValueChanged<bool> onChange;
-
-  @override
-  Widget build(BuildContext context) {
-    return Transform.translate(
-      offset: const Offset(12, 0),
-      child: AppSwitch(value: value, onChange: onChange),
-    );
-  }
-}
-
-/// 主题色行的右侧色点：当前强调色，点进浮层再换。
-class _AccentPreview extends StatelessWidget {
-  const _AccentPreview();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        color: colors.primary,
-        shape: BoxShape.circle,
-        border: Border.all(color: colors.line),
-      ),
-    );
-  }
-}
-
-/// 应用图标行的右侧小缩略图：让用户在设置列表里就能看到当前选中的图标样式，
-/// 不需要文字说明。尺寸和其它行右侧的开关/胶囊控件视觉重量对齐。
-class _AppIconPreview extends StatelessWidget {
-  const _AppIconPreview({required this.style});
-
-  final AppIconStyle style;
-
-  @override
-  Widget build(BuildContext context) {
-    final asset = style == AppIconStyle.dark
-        ? 'assets/branding/app-icon-dark.png'
-        : 'assets/branding/app-icon-light.png';
-    return Container(
-      width: 30,
-      height: 30,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: context.colors.line, width: 1),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Image.asset(asset, fit: BoxFit.cover),
-    );
-  }
-}
-
-/// 分类选择样式的紧凑二态切换器：灰底轨道 + 白色滑块（列表 / 网格）。
-///
-/// 做成有可见边界的胶囊，右边缘能和同列的开关轨道、chevron 对齐；
-/// 之前两枚裸图标按钮没有边界，看起来比其它行内缩一截。
-class _LayoutToggle extends StatelessWidget {
-  const _LayoutToggle({required this.value, required this.onChanged});
-
-  final CategoryPickerLayout value;
-  final ValueChanged<CategoryPickerLayout> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.colors.fill,
-        borderRadius: BorderRadius.circular(11),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ToggleIcon(
-            icon: FLucideIcons.list,
-            selected: value == CategoryPickerLayout.list,
-            onTap: () => onChanged(CategoryPickerLayout.list),
-          ),
-          _ToggleIcon(
-            icon: FLucideIcons.layoutGrid,
-            selected: value == CategoryPickerLayout.grid,
-            onTap: () => onChanged(CategoryPickerLayout.grid),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 记账页账单图片展示方式的二态切换器：整页背板 / 拍立得贴纸。
-///
-/// 与 [_LayoutToggle] 同一副胶囊长相，两行控件的右边缘才落在同一条线上。
-class _ImageStyleToggle extends StatelessWidget {
-  const _ImageStyleToggle({required this.value, required this.onChanged});
-
-  final TransactionImageStyle value;
-  final ValueChanged<TransactionImageStyle> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.colors.fill,
-        borderRadius: BorderRadius.circular(11),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ToggleIcon(
-            icon: FLucideIcons.wallpaper,
-            selected: value == TransactionImageStyle.backdrop,
-            onTap: () => onChanged(TransactionImageStyle.backdrop),
-          ),
-          _ToggleIcon(
-            icon: FLucideIcons.sticker,
-            selected: value == TransactionImageStyle.polaroid,
-            onTap: () => onChanged(TransactionImageStyle.polaroid),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 外观的三态切换器：跟随系统 / 浅色 / 深色。
-///
-/// 沿用 [_LayoutToggle] 的胶囊长相而不是另开一个二级弹窗——只有三个互斥
-/// 选项，摊平在行尾一眼就能看清当前档位，还省掉一次跳转；三枚 38 宽的格子
-/// 比同列的开关轨道宽一点，但右边缘仍对齐在同一条 16 内边距线上。
-///
-/// 每一档都是「显式指定」，没有「关闭」这种隐含态：用户选了浅色，就算系统
-/// 入夜也不该被翻成深色。
-class _ThemeModeToggle extends StatelessWidget {
-  const _ThemeModeToggle({required this.value, required this.onChanged});
-
-  final AppThemeMode value;
-  final ValueChanged<AppThemeMode> onChanged;
-
-  static const _icons = {
-    AppThemeMode.system: FLucideIcons.sunMoon,
-    AppThemeMode.light: FLucideIcons.sun,
-    AppThemeMode.dark: FLucideIcons.moon,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.colors.fill,
-        borderRadius: BorderRadius.circular(11),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final mode in AppThemeMode.values)
-            _ToggleIcon(
-              icon: _icons[mode]!,
-              selected: value == mode,
-              onTap: () => onChanged(mode),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 设置行右侧胶囊切换器里的单枚图标按钮，被上面几个切换器共用。
-class _ToggleIcon extends StatelessWidget {
-  const _ToggleIcon({
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        width: 38,
-        height: 28,
-        decoration: BoxDecoration(
-          color: selected ? colors.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x14000000),
-                    offset: Offset(0, 1),
-                    blurRadius: 3,
-                  ),
-                ]
-              : null,
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          icon,
-          size: 16,
-          color: selected ? colors.primary : colors.inactive,
         ),
       ),
     );

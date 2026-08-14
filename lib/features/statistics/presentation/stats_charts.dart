@@ -159,7 +159,7 @@ class TrendLineChart extends StatelessWidget {
               ],
               touchTooltipData: LineTouchTooltipData(
                 getTooltipColor: (_) => stats.tooltip,
-                tooltipBorderRadius: BorderRadius.circular(10),
+                tooltipBorderRadius: BorderRadius.circular(stats.radiusChip),
                 tooltipPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 8,
@@ -344,7 +344,7 @@ class CategoryTrendAreaChart extends StatelessWidget {
           ],
           touchTooltipData: LineTouchTooltipData(
             getTooltipColor: (_) => stats.tooltip,
-            tooltipBorderRadius: BorderRadius.circular(10),
+            tooltipBorderRadius: BorderRadius.circular(stats.radiusChip),
             tooltipPadding: const EdgeInsets.symmetric(
               horizontal: 10,
               vertical: 6,
@@ -415,33 +415,42 @@ class CategoryTrendAreaChart extends StatelessWidget {
   }
 }
 
-/// 「周期支出对比」柱状图：当期高亮，附均值参考线。
+/// 「周期对比」柱状图：当期高亮，附均值参考线。
 ///
 /// 相比原实现：
 /// - 每根柱加浅色背景轨道，金额为 0 时也有位置感，不再「凭空消失」
 /// - 当期柱用渐变 + 更大圆角，与历史柱形成明确主次
 /// - 加均值虚线，一眼看出本期高于还是低于近期平均
 /// - 柱顶直接标金额（紧凑格式），不必点按也能读数
+///
+/// 柱色不随 [kind] 变成收入绿：这里的配色表达的是「当期 vs 历史」的主次，
+/// 换成语义色会和「高亮渐变=当期」这条规则打架。算的是哪一边由卡片标题
+/// 与切换器交代。
 class PeriodBarChart extends StatelessWidget {
-  const PeriodBarChart({super.key, required this.bars});
+  const PeriodBarChart({super.key, required this.bars, this.kind = 0});
 
   final List<PeriodBar> bars;
+
+  /// 0 支出 / 1 收入。
+  final int kind;
+
+  int _valueOf(PeriodBar bar) => kind == 0 ? bar.expenseCents : bar.incomeCents;
 
   @override
   Widget build(BuildContext context) {
     final stats = StatsTokens.of(context);
     final maxCents = bars.fold<int>(
       0,
-      (value, bar) => math.max(value, bar.expenseCents),
+      (value, bar) => math.max(value, _valueOf(bar)),
     );
     // 顶部留 28% 给柱顶金额标签，否则最高柱的标签会被裁掉。
     final maxY = maxCents == 0 ? 100.0 : maxCents / 100 * 1.28;
 
-    // 均值只统计有支出的周期：把「还没记账的月份」算进分母会把均值拉得毫无意义。
-    final nonZero = bars.where((bar) => bar.expenseCents > 0).toList();
+    // 均值只统计有金额的周期：把「还没记账的月份」算进分母会把均值拉得毫无意义。
+    final nonZero = bars.where((bar) => _valueOf(bar) > 0).toList();
     final averageCents = nonZero.isEmpty
         ? 0
-        : nonZero.fold<int>(0, (sum, bar) => sum + bar.expenseCents) ~/
+        : nonZero.fold<int>(0, (sum, bar) => sum + _valueOf(bar)) ~/
               nonZero.length;
 
     final lastIndex = bars.length - 1;
@@ -483,7 +492,7 @@ class PeriodBarChart extends StatelessWidget {
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
             getTooltipColor: (_) => stats.tooltip,
-            tooltipBorderRadius: BorderRadius.circular(10),
+            tooltipBorderRadius: BorderRadius.circular(stats.radiusChip),
             tooltipPadding: const EdgeInsets.symmetric(
               horizontal: 12,
               vertical: 8,
@@ -493,7 +502,7 @@ class PeriodBarChart extends StatelessWidget {
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
               final bar = bars[groupIndex.clamp(0, lastIndex)];
               return BarTooltipItem(
-                formatMoney(bar.expenseCents),
+                formatMoney(_valueOf(bar)),
                 stats.tooltipText,
                 children: [
                   TextSpan(
@@ -561,7 +570,7 @@ class PeriodBarChart extends StatelessWidget {
               x: i,
               barRods: [
                 BarChartRodData(
-                  toY: bars[i].expenseCents / 100,
+                  toY: _valueOf(bars[i]) / 100,
                   width: 18,
                   gradient: i == lastIndex ? stats.barActiveGradient : null,
                   color: i == lastIndex ? null : stats.barIdle,
@@ -576,8 +585,8 @@ class PeriodBarChart extends StatelessWidget {
                   ),
                   label: BarChartRodLabel(
                     // 金额为 0 时不标（标个「0」纯属噪音）。
-                    show: bars[i].expenseCents > 0,
-                    text: formatAxisMoney(bars[i].expenseCents),
+                    show: _valueOf(bars[i]) > 0,
+                    text: formatAxisMoney(_valueOf(bars[i])),
                     style: i == lastIndex
                         ? stats.axisLabelActive
                         : stats.axisLabel,

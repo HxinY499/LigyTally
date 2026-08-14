@@ -56,9 +56,7 @@ Color customAccentPrimary({
   required Brightness brightness,
 }) => withRelativeLuminance(
   HSLColor.fromAHSL(1, hue % 360, saturation.clamp(0.0, 1.0), 0.5).toColor(),
-  brightness == Brightness.dark
-      ? _customDarkLuminance
-      : _customLightLuminance,
+  brightness == Brightness.dark ? _customDarkLuminance : _customLightLuminance,
 );
 
 /// 用户选定的强调色：六个 [AppAccent] 预设之一，或自选色相 + 饱和度。
@@ -135,9 +133,7 @@ class AccentChoice {
     if (hue == null || saturation == null) return initial;
     return AccentChoice.custom(
       hue: hue.clamp(0.0, 360.0).toDouble(),
-      saturation: saturation
-          .clamp(kAccentMinSaturation, 1.0)
-          .toDouble(),
+      saturation: saturation.clamp(kAccentMinSaturation, 1.0).toDouble(),
     );
   }
 

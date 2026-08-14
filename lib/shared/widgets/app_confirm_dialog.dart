@@ -30,7 +30,7 @@ Future<bool> showAppConfirmDialog(
       final accentColor = accent ?? colors.expense;
       return Dialog(
         backgroundColor: colors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: context.radii.sheetAll),
         insetPadding: const EdgeInsets.symmetric(horizontal: 40),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
@@ -57,7 +57,7 @@ Future<bool> showAppConfirmDialog(
                     side: BorderSide(color: accentColor, width: 1.5),
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
+                      borderRadius: context.radii.sheetAll,
                     ),
                   ),
                   child: Text(
@@ -78,7 +78,7 @@ Future<bool> showAppConfirmDialog(
                     foregroundColor: colors.ink,
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
+                      borderRadius: context.radii.sheetAll,
                     ),
                   ),
                   child: Text(

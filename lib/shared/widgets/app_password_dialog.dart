@@ -48,10 +48,11 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    const radius = BorderRadius.all(Radius.circular(14));
+    final radii = context.radii;
+    final radius = radii.blockAll;
     return Dialog(
       backgroundColor: colors.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedRectangleBorder(borderRadius: radii.sheetAll),
       insetPadding: const EdgeInsets.symmetric(horizontal: 40),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
@@ -93,13 +94,13 @@ class _PasswordDialogState extends State<_PasswordDialog> {
                   horizontal: 14,
                   vertical: 14,
                 ),
-                border: const OutlineInputBorder(
+                border: OutlineInputBorder(
                   borderRadius: radius,
-                  borderSide: BorderSide(color: Colors.transparent),
+                  borderSide: const BorderSide(color: Colors.transparent),
                 ),
-                enabledBorder: const OutlineInputBorder(
+                enabledBorder: OutlineInputBorder(
                   borderRadius: radius,
-                  borderSide: BorderSide(color: Colors.transparent),
+                  borderSide: const BorderSide(color: Colors.transparent),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: radius,
@@ -129,9 +130,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
                   foregroundColor: colors.primary,
                   side: BorderSide(color: colors.primary, width: 1.5),
                   padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: radii.sheetAll),
                 ),
                 child: Text(
                   widget.confirmLabel,
@@ -150,9 +149,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
                 style: TextButton.styleFrom(
                   foregroundColor: colors.ink,
                   padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: radii.sheetAll),
                 ),
                 child: const Text(
                   '取消',

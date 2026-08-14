@@ -341,9 +341,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: colors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: context.radii.sheetTop),
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setSheetState) {
           final visibleExisting = [
@@ -435,7 +433,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                         side: BorderSide(color: accent, width: 1.5),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(28),
+                          borderRadius: context.radii.sheetAll,
                         ),
                       ),
                       child: Text(
@@ -650,124 +648,130 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             image: backdrop,
             blurSigma: ref.watch(backdropBlurProvider),
           ),
-          AppTopBar(
-            backgroundColor: Colors.transparent,
-            title: _isEditing ? '编辑账单' : '记一笔',
-            // 只有编辑既有账单时才有得删；新建态放一颗永远灰着的垃圾桶
-            // 只会让人猜它什么时候能点。
-            actions: _isEditing
-                ? [
-                    AppHeaderAction(
-                      icon: FLucideIcons.trash2,
-                      tooltip: '删除账单',
-                      onTap: _saving ? null : _deleteTransaction,
-                    ),
-                  ]
-                : null,
-            body: SafeArea(
-              top: false,
+          LayoutBuilder(
+            builder: (context, constraints) {
               // 键盘区显示与否由两个条件把关，各管一头，见 _NumericKeypad 类文档：
               // 备注没聚焦（要不要留）、剩余高度够不够（能不能留）。
-              child: LayoutBuilder(
-                builder: (context, constraints) => Column(
-                  children: [
-                    Expanded(
-                      child: ListView(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                        children: [
-                          // 图片贴纸摆在最上面：一进页面第一眼就能看见自己拍的
-                          // 那张照片，这是它在本页唯一的作用。无图时整块不渲染，
-                          // 布局与没有图片功能时完全一致。
-                          if (polaroids.isNotEmpty) ...[
-                            _PolaroidStack(
-                              photos: polaroids,
-                              onTapPhoto: (index) =>
-                                  _openPhotoViewer(context, index),
-                            ),
-                            const SizedBox(height: 4),
-                          ],
-                          // 收支开关与「分类」同行：它切的就是下面这张网格，
-                          // 摆在一起从属关系自明，也省下独占一行的高度。
-                          Row(
-                            children: [
-                              const _SectionTitle(title: '分类'),
-                              const Spacer(),
-                              _KindSwitch(
-                                kind: _kind,
-                                onChanged: (value) {
-                                  HapticFeedback.selectionClick();
-                                  setState(() {
-                                    _kind = value;
-                                    _categoryId = null;
-                                    _prefilledCategory = false;
-                                  });
-                                },
-                              ),
-                            ],
+              //
+              // 页头已是滚动体内部的 sliver，量不到「页头之下还剩多少」，
+              // 只能从整页高度里把页头静止高度与底部安全区一起减掉。
+              final panelHeight =
+                  constraints.maxHeight -
+                  appHeaderRestingExtent(context) -
+                  MediaQuery.paddingOf(context).bottom;
+              return AppTopBar(
+                backgroundColor: Colors.transparent,
+                title: _isEditing ? '编辑账单' : '记一笔',
+                controller: _scrollController,
+                // 只有编辑既有账单时才有得删；新建态放一颗永远灰着的垃圾桶
+                // 只会让人猜它什么时候能点。
+                actions: _isEditing
+                    ? [
+                        AppHeaderAction(
+                          icon: FLucideIcons.trash2,
+                          tooltip: '删除账单',
+                          onTap: _saving ? null : _deleteTransaction,
+                        ),
+                      ]
+                    : null,
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    sliver: SliverList.list(
+                      children: [
+                        // 图片贴纸摆在最上面：一进页面第一眼就能看见自己拍的
+                        // 那张照片，这是它在本页唯一的作用。无图时整块不渲染，
+                        // 布局与没有图片功能时完全一致。
+                        if (polaroids.isNotEmpty) ...[
+                          _PolaroidStack(
+                            photos: polaroids,
+                            onTapPhoto: (index) =>
+                                _openPhotoViewer(context, index),
                           ),
-                          const SizedBox(height: 10),
-                          StreamBuilder<List<CategoryEntry>>(
-                            stream: database.watchCategories(_kind),
-                            builder: (context, snapshot) {
-                              final categories =
-                                  snapshot.data ?? const <CategoryEntry>[];
-                              if (categories.isEmpty) {
-                                return SizedBox(
-                                  height: 72,
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      color: context.colors.primary,
-                                    ),
-                                  ),
-                                );
-                              }
-                              _prefillLastCategory(categories);
-                              return _CategoryPicker(
-                                categories: categories,
-                                selectedId: _categoryId,
-                                accent: accent,
-                                onSelected: _onCategorySelected,
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 4),
                         ],
-                      ),
+                        // 收支开关与「分类」同行：它切的就是下面这张网格，
+                        // 摆在一起从属关系自明，也省下独占一行的高度。
+                        Row(
+                          children: [
+                            const _SectionTitle(title: '分类'),
+                            const Spacer(),
+                            _KindSwitch(
+                              kind: _kind,
+                              onChanged: (value) {
+                                HapticFeedback.selectionClick();
+                                setState(() {
+                                  _kind = value;
+                                  _categoryId = null;
+                                  _prefilledCategory = false;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        StreamBuilder<List<CategoryEntry>>(
+                          stream: database.watchCategories(_kind),
+                          builder: (context, snapshot) {
+                            final categories =
+                                snapshot.data ?? const <CategoryEntry>[];
+                            if (categories.isEmpty) {
+                              return SizedBox(
+                                height: 72,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: context.colors.primary,
+                                  ),
+                                ),
+                              );
+                            }
+                            _prefillLastCategory(categories);
+                            return _CategoryPicker(
+                              categories: categories,
+                              selectedId: _categoryId,
+                              accent: accent,
+                              onSelected: _onCategorySelected,
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                     ),
-                    // 金额显示 + 日期/时刻 + 备注/图片条 + 数字键盘合成一块常驻输入面板。
-                    _NumericKeypad(
-                      showKeys:
-                          !_noteFocus.hasFocus &&
-                          constraints.maxHeight >=
-                              _NumericKeypad.heightWithKeys,
-                      expression: _amountExpr,
-                      noteFocus: _noteFocus,
-                      amountValue: _amountValue,
-                      kind: _kind,
-                      grouped: grouped,
-                      accent: accent,
-                      canSave: _canSave,
-                      saving: _saving,
-                      noteController: _noteController,
-                      date: _date,
-                      time: _time,
-                      onPickDate: _selectDate,
-                      onPickTime: _selectTime,
-                      imageCount: _visibleImageCount,
-                      imagePreview: imagePreview,
-                      onImageTap: _showImageSheet,
-                      onInput: _onKeypadInput,
-                      onClear: _clearAmount,
-                      onSave: _canSave && !_saving ? () => _save() : null,
-                      onSaveContinue: _canSave && !_saving && !_isEditing
-                          ? () => _save(continueAfter: true)
-                          : null,
-                    ),
-                  ],
+                  ),
+                ],
+                // 金额显示 + 日期/时刻 + 备注/图片条 + 数字键盘合成一块常驻输入面板。
+                bottom: SafeArea(
+                  top: false,
+                  child: _NumericKeypad(
+                    showKeys:
+                        !_noteFocus.hasFocus &&
+                        panelHeight >= _NumericKeypad.heightWithKeys,
+                    expression: _amountExpr,
+                    noteFocus: _noteFocus,
+                    amountValue: _amountValue,
+                    kind: _kind,
+                    grouped: grouped,
+                    accent: accent,
+                    canSave: _canSave,
+                    saving: _saving,
+                    noteController: _noteController,
+                    date: _date,
+                    time: _time,
+                    onPickDate: _selectDate,
+                    onPickTime: _selectTime,
+                    imageCount: _visibleImageCount,
+                    imagePreview: imagePreview,
+                    onImageTap: _showImageSheet,
+                    onInput: _onKeypadInput,
+                    onClear: _clearAmount,
+                    onSave: _canSave && !_saving ? () => _save() : null,
+                    onSaveContinue: _canSave && !_saving && !_isEditing
+                        ? () => _save(continueAfter: true)
+                        : null,
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ],
       ),
@@ -1184,7 +1188,7 @@ class _ParentCategoryTile extends StatelessWidget {
     final color = selected ? accent : colors.muted;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: context.radii.blockAll,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
         child: Row(
@@ -1246,7 +1250,7 @@ class _ParentGridCell extends StatelessWidget {
     final color = selected ? accent : colors.muted;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: context.radii.blockAll,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
         child: Column(
@@ -1425,7 +1429,7 @@ class _ChildrenPanelState extends State<_ChildrenPanel>
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             decoration: BoxDecoration(
               color: colors.surface,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: context.radii.cardAll,
             ),
             child: Column(children: _childRows()),
           ),
@@ -1941,13 +1945,13 @@ class _DateTimeChip extends StatelessWidget {
     final colors = context.colors;
     return Material(
       color: colors.surface,
-      borderRadius: BorderRadius.circular(9),
+      borderRadius: context.radii.chipAll,
       child: InkWell(
         onTap: onTap,
         // 胶囊本身不该进焦点树：否则 PopupRoute 关闭时会把焦点交回这里，
         // 重建后再落到旁边的备注 TextField，系统键盘跟着弹出。
         canRequestFocus: false,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: context.radii.chipAll,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           child: Row(
@@ -1995,7 +1999,7 @@ class _CategoryCell extends StatelessWidget {
     final color = selected ? accent : colors.muted;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: context.radii.blockAll,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
         child: Column(
@@ -2050,7 +2054,7 @@ class _SheetImageTile extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: onTap,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.radii.blockAll,
                 child: child,
               ),
             ),
@@ -2093,13 +2097,13 @@ class _SheetAddTile extends StatelessWidget {
     final colors = context.colors;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: context.radii.blockAll,
       child: Container(
         width: 88,
         height: 88,
         decoration: BoxDecoration(
           color: colors.canvas,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.radii.blockAll,
         ),
         child: Center(
           child: Icon(FLucideIcons.camera, size: 26, color: colors.muted),
@@ -2123,8 +2127,8 @@ class _NoteField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    const border = OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(12)),
+    final border = OutlineInputBorder(
+      borderRadius: context.radii.blockAll,
       borderSide: BorderSide.none,
     );
     return TextField(
@@ -2179,7 +2183,7 @@ class _ImageEntry extends StatelessWidget {
             ? Container(
                 decoration: BoxDecoration(
                   color: colors.surface,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.radii.blockAll,
                 ),
                 child: Icon(FLucideIcons.camera, size: 20, color: colors.muted),
               )
@@ -2188,7 +2192,7 @@ class _ImageEntry extends StatelessWidget {
                 children: [
                   Positioned.fill(
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: context.radii.blockAll,
                       child: preview,
                     ),
                   ),
@@ -2489,11 +2493,11 @@ class _NumKey extends StatelessWidget {
     final isSymbol = value == '+' || value == '-';
     return Material(
       color: colors.surface,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: context.radii.blockAll,
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.radii.blockAll,
         child: Center(
           child: isBack
               ? Icon(FLucideIcons.delete, size: 22, color: colors.ink)
@@ -2524,10 +2528,10 @@ class _AgainKey extends StatelessWidget {
     final enabled = onTap != null;
     return Material(
       color: colors.surface,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: context.radii.blockAll,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.radii.blockAll,
         child: Center(
           child: Text(
             '再记一笔',
@@ -2562,10 +2566,10 @@ class _SaveKey extends StatelessWidget {
     final colors = context.colors;
     return Material(
       color: enabled ? accent : colors.surface,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: context.radii.blockAll,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.radii.blockAll,
         child: Center(
           child: loading
               ? const SizedBox(

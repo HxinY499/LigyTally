@@ -180,7 +180,7 @@ class _DeltaRow extends StatelessWidget {
             height: 34,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(11),
+              borderRadius: BorderRadius.circular(stats.radiusChip),
             ),
             child: CategoryIconView(
               iconKey: item.iconKey,

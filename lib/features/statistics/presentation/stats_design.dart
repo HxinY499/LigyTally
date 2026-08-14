@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/color_shift.dart';
 
@@ -13,38 +14,50 @@ import '../../../core/theme/color_shift.dart';
 /// 基色仍然复用 [AppColors]（品牌蓝 / 支出红 / 收入绿），
 /// 这里只做「统计场景专用」的扩展：图表配色梯度、卡片阴影、数字字阶。
 ///
-/// ## 为什么颜色是实例成员、几何是静态成员
+/// ## 为什么颜色和圆角是实例成员、间距是静态成员
 ///
-/// 深浅两套皮肤只影响颜色和带颜色的字阶，圆角 / 间距 / 时长在两套皮肤下
-/// 完全一致。把后者留作 `static const`，调用点（`StatsTokens.gutter`、
-/// `const EdgeInsets.all(StatsTokens.gapCard)`）可以继续写在 const 表达式里；
-/// 只有颜色相关的令牌需要 `StatsTokens.of(context)` 先解析亮度。
+/// 深浅两套皮肤只影响颜色和带颜色的字阶，间距 / 时长在两套皮肤下完全一致，
+/// 留作 `static const`，调用点（`StatsTokens.gutter`、
+/// `const EdgeInsets.all(StatsTokens.gapCard)`）可以继续写在 const 表达式里。
+/// 颜色和圆角则要先 `StatsTokens.of(context)` 解析——前者随亮度变，
+/// 后者随用户在设置里选的圆角档位变。
 class StatsTokens {
-  const StatsTokens._(this._colors, this._chart);
+  const StatsTokens._(this._colors, this._chart, this._radius);
 
-  /// 解析当前亮度下的统计令牌。
+  /// 解析当前主题下的统计令牌。
   ///
-  /// 颜色一律从 [AppColors] 转发，而不是自己再存一份——主题过渡动画里
-  /// [AppColors] 是插值出来的中间态，自己存一份会导致统计页在过渡途中
-  /// 和其它页面差半拍。
+  /// 颜色与圆角一律从 [AppColors] / [AppRadius] 转发，而不是自己再存一份——
+  /// 主题过渡动画里两者都是插值出来的中间态，自己存一份会导致统计页在过渡
+  /// 途中和其它页面差半拍。
   static StatsTokens of(BuildContext context) {
     final colors = AppColors.of(context);
-    return StatsTokens._(colors, colors.isDark ? _chartDark : _chartLight);
+    return StatsTokens._(
+      colors,
+      colors.isDark ? _chartDark : _chartLight,
+      AppRadius.of(context),
+    );
   }
 
   final AppColors _colors;
   final _StatsChartColors _chart;
+  final AppRadius _radius;
 
   // ---------------------------------------------------------------- 圆角
 
-  /// 卡片圆角。比全局 8更大，让密集图表区显得舒展、现代。
-  static const radiusCard = 20.0;
+  /// 图表卡圆角。与记账页日卡同一档：两屏的卡片是同一个视觉元素。
+  double get radiusCard => _radius.card;
 
-  /// 卡片内小块（分段轨道、徽章、图标底座）圆角。
-  static const radiusInner = 12.0;
+  /// 卡片内小块（分段轨道、排行行、图表 tooltip）圆角。
+  double get radiusInner => _radius.block;
 
-  ///胶囊圆角：分段选择器滑块、徽章。
-  static const radiusPill = 999.0;
+  /// 卡内图标底座这类小方块：比 [radiusInner] 再收一档，
+  /// 否则 34px 见方的底座会被圆角吃成一颗圆点。
+  double get radiusChip => _radius.chip;
+
+  /// 胶囊圆角：分段选择器滑块、徽章。
+  ///
+  /// 不跟着圆角档位走，见 [AppRadius] 的类文档。
+  static const radiusPill = AppRadius.pill;
 
   // ---------------------------------------------------------------- 间距
 

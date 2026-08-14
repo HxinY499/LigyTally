@@ -30,7 +30,7 @@ class _BackdropBlurSheet extends ConsumerWidget {
     final sigma = ref.watch(backdropBlurProvider);
     return Material(
       color: colors.surface,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: context.radii.sheetTop,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
@@ -119,7 +119,7 @@ class _BlurPreview extends StatelessWidget {
       height: 168,
       decoration: BoxDecoration(
         color: colors.canvas,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: context.radii.cardAll,
         border: Border.all(color: colors.line),
       ),
       clipBehavior: Clip.antiAlias,
@@ -158,7 +158,7 @@ class _BlurPreview extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: colors.surface,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: context.radii.blockAll,
                     border: Border.all(color: colors.line),
                   ),
                   child: Row(

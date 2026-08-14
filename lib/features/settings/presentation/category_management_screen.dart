@@ -229,89 +229,92 @@ class _CategoryManagementScreenState
   Widget build(BuildContext context) {
     final database = ref.watch(databaseProvider);
     return Scaffold(
-      body: AppTopBar(
-        title: '分类管理',
-        actions: [
-          // 点击必须由这里主动 toggle：forui 的 FPopoverMenu 只把 child 当锚点，
-          // 不像 Material 的 PopupMenuButton 那样帮你把 child 包成按钮
-          // （见 FPopover.defaultBuilder，它原样返回 child）。
-          // 之前这里传的是 `onTap: null` + 外层 IgnorePointer，
-          // 结果整个菜单永远打不开——图标是亮的，但点了没有任何反应。
-          FPopoverMenu(
-            control: FPopoverControl.managed(controller: _popoverController),
-            menu: [
-              FItemGroup(
-                children: [
-                  FItem(
-                    title: const Text('导出分类配置'),
-                    onPress: _busy
-                        ? null
-                        : () {
-                            _popoverController.hide();
-                            _exportConfig();
-                          },
-                  ),
-                  FItem(
-                    title: const Text('导入并替换配置'),
-                    onPress: _busy
-                        ? null
-                        : () {
-                            _popoverController.hide();
-                            _importConfig();
-                          },
+      // 分类流套在页头外面：页头是 pinned sliver，得和内容同处一个
+      // CustomScrollView 才能让内容滚到它背后去。
+      //
+      // activeOnly: false —— 管理页必须能看到停用的分类，
+      // 否则停用等于「弄丢了」，用户再也找不回来重新启用。
+      body: StreamBuilder<List<CategoryEntry>>(
+        stream: database.watchCategories(_kind, activeOnly: false),
+        builder: (context, snapshot) {
+          final categories = snapshot.data;
+          return AppTopBar(
+            title: '分类管理',
+            actions: [
+              // 点击必须由这里主动 toggle：forui 的 FPopoverMenu 只把 child 当锚点，
+              // 不像 Material 的 PopupMenuButton 那样帮你把 child 包成按钮
+              // （见 FPopover.defaultBuilder，它原样返回 child）。
+              // 之前这里传的是 `onTap: null` + 外层 IgnorePointer，
+              // 结果整个菜单永远打不开——图标是亮的，但点了没有任何反应。
+              FPopoverMenu(
+                control: FPopoverControl.managed(
+                  controller: _popoverController,
+                ),
+                menu: [
+                  FItemGroup(
+                    children: [
+                      FItem(
+                        title: const Text('导出分类配置'),
+                        onPress: _busy
+                            ? null
+                            : () {
+                                _popoverController.hide();
+                                _exportConfig();
+                              },
+                      ),
+                      FItem(
+                        title: const Text('导入并替换配置'),
+                        onPress: _busy
+                            ? null
+                            : () {
+                                _popoverController.hide();
+                                _importConfig();
+                              },
+                      ),
+                    ],
                   ),
                 ],
+                child: AppHeaderAction(
+                  icon: FLucideIcons.arrowLeftRight,
+                  tooltip: '导出 / 导入分类配置',
+                  onTap: _busy ? null : _popoverController.toggle,
+                ),
+              ),
+              AppHeaderAction(
+                icon: FLucideIcons.plus,
+                tooltip: '新建一级分类',
+                onTap: _busy ? null : () => _openEditor(),
               ),
             ],
-            child: AppHeaderAction(
-              icon: FLucideIcons.arrowLeftRight,
-              tooltip: '导出 / 导入分类配置',
-              onTap: _busy ? null : _popoverController.toggle,
-            ),
-          ),
-          AppHeaderAction(
-            icon: FLucideIcons.plus,
-            tooltip: '新建一级分类',
-            onTap: _busy ? null : () => _openEditor(),
-          ),
-        ],
-        body: StreamBuilder<List<CategoryEntry>>(
-          // activeOnly: false —— 管理页必须能看到停用的分类，
-          // 否则停用等于「弄丢了」，用户再也找不回来重新启用。
-          stream: database.watchCategories(_kind, activeOnly: false),
-          builder: (context, snapshot) {
-            final categories = snapshot.data;
-            return CustomScrollView(
-              slivers: [
-                // 收支切换吸顶：滑到下面还能直接换一侧，不用滚回顶部。
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: _KindBarDelegate(
-                    kind: _kind,
-                    onChanged: (value) => setState(() {
-                      _kind = value;
-                      _parentOrder = null;
-                      _childOrder.clear();
-                    }),
-                  ),
+            slivers: [
+              // 收支切换吸顶：滑到下面还能直接换一侧，不用滚回顶部。
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _KindBarDelegate(
+                  kind: _kind,
+                  onChanged: (value) => setState(() {
+                    _kind = value;
+                    _parentOrder = null;
+                    _childOrder.clear();
+                  }),
                 ),
-                if (categories == null)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 80),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: context.colors.primary,
-                        ),
+              ),
+              if (categories == null)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 80),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: context.colors.primary,
                       ),
                     ),
-                  )
-                else
-                  ..._buildContent(categories),
-              ],
-            );
-          },
-        ),
+                  ),
+                )
+              else
+                ..._buildContent(categories),
+            ],
+          );
+        },
       ),
     );
   }
@@ -452,7 +455,6 @@ class _CategoryCard extends StatelessWidget {
   final VoidCallback onAddChild;
   final void Function(String fromId, String toId) onReorderChildren;
 
-  static const _radius = 18.0;
   static const _columns = 5;
 
   Color _accent(AppColors colors) => kind == 0 ? colors.expense : colors.income;
@@ -462,15 +464,16 @@ class _CategoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final radii = context.radii;
     final active = parent.isActive;
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: const BorderRadius.all(Radius.circular(_radius)),
+        borderRadius: radii.cardAll,
         boxShadow: colors.shadowCard,
       ),
       child: Material(
         color: colors.surface,
-        borderRadius: BorderRadius.circular(_radius),
+        borderRadius: radii.cardAll,
         clipBehavior: Clip.antiAlias,
         child: Column(
           children: [
@@ -480,10 +483,10 @@ class _CategoryCard extends StatelessWidget {
                   child: InkWell(
                     onTap: onEditParent,
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(_radius),
+                      topLeft: Radius.circular(radii.card),
                       topRight: reorderable
                           ? Radius.zero
-                          : const Radius.circular(_radius),
+                          : Radius.circular(radii.card),
                     ),
                     highlightColor: colors.pressed,
                     splashColor: colors.ripple,
@@ -604,9 +607,7 @@ class _CategoryCard extends StatelessWidget {
             ),
             InkWell(
               onTap: onAddChild,
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(_radius),
-              ),
+              borderRadius: radii.cardBottom,
               highlightColor: colors.pressed,
               splashColor: colors.ripple,
               hoverColor: colors.ripple,
@@ -717,7 +718,7 @@ class _ChildCell extends StatelessWidget {
               color: hovering
                   ? accent.withValues(alpha: 0.12)
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.radii.blockAll,
             ),
             child: tile,
           ),
@@ -741,7 +742,7 @@ class _ChildDragFeedback extends StatelessWidget {
     return Material(
       elevation: 8,
       color: colors.surface,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: context.radii.blockAll,
       child: SizedBox(
         width: 72,
         height: 64,
@@ -795,7 +796,7 @@ class _ChildTile extends StatelessWidget {
     if (onTap == null) return content;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: context.radii.blockAll,
       highlightColor: colors.pressed,
       splashColor: colors.ripple,
       child: content,
@@ -848,14 +849,14 @@ class _AddParentCard extends StatelessWidget {
     final accent = kind == 0 ? colors.expense : colors.income;
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: context.radii.cardAll,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: context.radii.cardAll,
         highlightColor: colors.pressed,
         splashColor: colors.ripple,
         child: CustomPaint(
-          painter: _DashedBorderPainter(colors.line),
+          painter: _DashedBorderPainter(colors.line, context.radii.card),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 18),
             child: Row(
@@ -886,9 +887,12 @@ class _AddParentCard extends StatelessWidget {
 /// 用 [Path.computeMetrics] 沿圆角矩形均匀取段，四个角上的虚线才不会
 /// 因为「按边分别画」而在拐角处断得难看。
 class _DashedBorderPainter extends CustomPainter {
-  const _DashedBorderPainter(this.color);
+  const _DashedBorderPainter(this.color, this.radius);
 
   final Color color;
+
+  /// 虚线框圆角。要和外层 [Material] 的圆角对上，否则四角会露出来一截直线。
+  final double radius;
 
   static const _dash = 5.0;
   static const _gap = 4.0;
@@ -901,7 +905,7 @@ class _DashedBorderPainter extends CustomPainter {
       ..strokeWidth = 1.2;
     final path = Path()
       ..addRRect(
-        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(18)),
+        RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
       );
     for (final metric in path.computeMetrics()) {
       var distance = 0.0;

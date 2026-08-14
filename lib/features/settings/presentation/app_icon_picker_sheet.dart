@@ -30,7 +30,7 @@ class _AppIconPickerSheet extends StatelessWidget {
     final colors = context.colors;
     return Material(
       color: colors.surface,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: context.radii.sheetTop,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
@@ -114,14 +114,14 @@ class _IconOption extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: context.radii.cardAll,
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: selected ? colors.primarySoft : colors.surface,
-            borderRadius: BorderRadius.circular(26),
+            borderRadius: context.radii.cardAll,
             border: Border.all(color: borderColor, width: selected ? 2 : 1),
           ),
           child: AspectRatio(
@@ -131,7 +131,7 @@ class _IconOption extends StatelessWidget {
                 // 缩略图本身走圆角矩形裁剪，模拟系统桌面上的图标呈现
                 Positioned.fill(
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: context.radii.blockAll,
                     child: Image.asset(asset, fit: BoxFit.cover),
                   ),
                 ),

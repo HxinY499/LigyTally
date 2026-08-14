@@ -294,7 +294,10 @@ void main() {
             (decoration) =>
                 decoration.borderRadius ==
                     const BorderRadius.all(Radius.circular(18)) &&
-                decoration.boxShadow != null,
+                decoration.boxShadow != null &&
+                // 摘要 Hero 卡自从跟着圆角阶梯走之后也是 18 圆角，只能靠
+                // 「卡面是不是渐变」把它排除——它用的是主色阴影，不该进这条断言。
+                decoration.gradient == null,
           )
           .toList();
       expect(dayCards, isNotEmpty);

@@ -317,7 +317,7 @@ class CategoryRankRow extends StatelessWidget {
       opacity: dimmed ? 0.45 : 1,
       child: Material(
         color: highlighted ? color.withValues(alpha: 0.07) : Colors.transparent,
-        borderRadius: BorderRadius.circular(StatsTokens.radiusInner),
+        borderRadius: BorderRadius.circular(stats.radiusInner),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
@@ -330,13 +330,13 @@ class CategoryRankRow extends StatelessWidget {
                   height: 34,
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(11),
+                    borderRadius: BorderRadius.circular(stats.radiusChip),
                   ),
                   child: CategoryIconView(
                     iconKey: item.iconKey,
                     size: 17,
                     // 外层是 34 的圆角方块。图片铺满它，圆形裁剪会把
-                    // 11 的圆角一并吃掉——一颗小点看着像加载失败，
+                    // 底座那一圈圆角一并吃掉——一颗小点看着像加载失败，
                     // 满格的圆更接近「这是个图标」。
                     imageSize: 34,
                     color: color,

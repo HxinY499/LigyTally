@@ -88,7 +88,7 @@ class _CategoryTransactionsSheet extends ConsumerWidget {
       ),
       child: Material(
         color: stats.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: context.radii.sheetTop,
         clipBehavior: Clip.antiAlias,
         child: SafeArea(
           top: false,

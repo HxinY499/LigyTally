@@ -174,13 +174,19 @@ class StatisticsWindow {
     _ => '本期支出趋势',
   };
 
-  /// 对比卡标题。
-  String get comparisonTitle => switch (period) {
-    StatisticsPeriod.day => '日支出对比',
-    StatisticsPeriod.week => '周支出对比',
-    StatisticsPeriod.year => '年支出对比',
-    _ => '月支出对比',
-  };
+  /// 对比卡标题。[kind] 为 0 支出 / 1 收入。
+  ///
+  /// 收支口径写进标题而不是只靠卡内的切换器：这张卡在页面最下方，
+  /// 用户往往是滚到这里才看见它，标题必须自己说清算的是哪一边。
+  String comparisonTitle(int kind) {
+    final subject = kind == 0 ? '支出' : '收入';
+    return switch (period) {
+      StatisticsPeriod.day => '日$subject对比',
+      StatisticsPeriod.week => '周$subject对比',
+      StatisticsPeriod.year => '年$subject对比',
+      _ => '月$subject对比',
+    };
+  }
 
   /// 趋势卡副标题：说明聚合粒度，省得用户猜横轴是天还是月。
   String get trendCaption => groupByMonth ? '按月聚合' : '按天聚合';
