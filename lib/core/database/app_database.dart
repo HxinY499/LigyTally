@@ -560,55 +560,6 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  /// 区间内单笔金额的分档统计。
-  ///
-  /// 回答的是趋势图和分类图都答不了的一个问题：钱是被少数几笔大额吃掉的，
-  /// 还是被几十笔小额磨掉的。两种情况的对策完全不同，而在「分类合计」这个
-  /// 口径下它们长得一模一样。
-  ///
-  /// 只返回有账单的档位，空档由展示层补零——`GROUP BY` 不会给空分组产出行，
-  /// 与其在 SQL 里造六行常量再左连接，不如让 UI 按固定档位表对齐。
-  Stream<List<AmountBucket>> watchAmountBuckets(
-    LedgerDateRange range,
-    int kind,
-  ) {
-    // 档位边界与 [AmountBucket.thresholdsCents] 必须一致。
-    return customSelect(
-      '''
-      SELECT
-        CASE
-          WHEN amount_cents < 2000 THEN 0
-          WHEN amount_cents < 5000 THEN 1
-          WHEN amount_cents < 10000 THEN 2
-          WHEN amount_cents < 50000 THEN 3
-          ELSE 4
-        END AS bucket,
-        COUNT(*) AS entry_count,
-        SUM(amount_cents) AS total
-      FROM transactions
-      WHERE accounting_date >= ? AND accounting_date < ? AND kind = ?
-      GROUP BY bucket
-      ORDER BY bucket ASC
-      ''',
-      variables: [
-        Variable.withString(dateKey(range.start)),
-        Variable.withString(dateKey(range.endExclusive)),
-        Variable.withInt(kind),
-      ],
-      readsFrom: {transactions},
-    ).watch().map(
-      (rows) => rows
-          .map(
-            (row) => AmountBucket(
-              index: row.read<int>('bucket'),
-              entryCount: row.read<int>('entry_count'),
-              totalCents: row.read<int>('total'),
-            ),
-          )
-          .toList(),
-    );
-  }
-
   /// 一级分类在 [current] 与 [comparison] 两个区间内的金额对照。
   ///
   /// 归属口径与 [watchCategoryTotals] 完全一致（`COALESCE(parent_id, id)`），
@@ -924,41 +875,6 @@ class CategoryTotal {
   final String iconKey;
   final int totalCents;
   final int entryCount;
-}
-
-/// 单笔金额的一个档位。
-class AmountBucket {
-  const AmountBucket({
-    required this.index,
-    required this.entryCount,
-    required this.totalCents,
-  });
-
-  /// 档位下标，与 [thresholdsCents] 对应。
-  final int index;
-
-  final int entryCount;
-  final int totalCents;
-
-  /// 档位上界（分），最后一档没有上界。
-  ///
-  /// 取 20 / 50 / 100 / 500 元：前两档覆盖日常小额（一杯咖啡、一顿午饭），
-  /// 100–500 是单次采买或聚餐，500 以上基本属于要单独解释的支出。
-  /// 档位是固定的而不是按当期最大值动态分档——动态分档会让同一笔
-  /// 80 元的账单这个月落在「中档」、下个月落在「低档」，横向比较失效。
-  static const thresholdsCents = [2000, 5000, 10000, 50000];
-
-  /// 档位数量。
-  static const count = 5;
-
-  /// 档位展示名，如 `< ¥20`、`¥100 - 500`、`≥ ¥500`。
-  static String labelOf(int index) {
-    if (index == 0) return '< ¥${thresholdsCents.first ~/ 100}';
-    if (index == count - 1) return '≥ ¥${thresholdsCents.last ~/ 100}';
-    final low = thresholdsCents[index - 1] ~/ 100;
-    final high = thresholdsCents[index] ~/ 100;
-    return '¥$low - $high';
-  }
 }
 
 /// 一个一级分类在「本期」与「对照期」的金额对照。

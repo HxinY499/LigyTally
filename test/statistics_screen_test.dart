@@ -11,6 +11,7 @@ import 'package:ligy_tally/features/ledger/application/providers.dart';
 import 'package:ligy_tally/features/statistics/presentation/statistics_screen.dart';
 import 'package:ligy_tally/features/statistics/presentation/statistics_window.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_category.dart';
+import 'package:ligy_tally/features/statistics/presentation/stats_charts.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_design.dart';
 
 /// 统计页回归测试。
@@ -347,71 +348,6 @@ void main() {
     });
   });
 
-  group('单笔金额分布查询', () {
-    test('按 20 / 50 / 100 / 500 元分档，只返回有账单的档位', () async {
-      final database = AppDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(database.close);
-
-      final categories = await database.exportCategories();
-      final expense = categories.firstWhere(
-        (item) => item.kind == 0 && item.level == 1,
-      );
-      final income = categories.firstWhere(
-        (item) => item.kind == 1 && item.level == 1,
-      );
-
-      var seq = 0;
-      Future<void> add(int cents, {int kind = 0}) {
-        seq++;
-        return database.saveTransaction(
-          entry: TransactionsCompanion.insert(
-            id: 'bucket-$seq',
-            kind: kind,
-            amountCents: cents,
-            categoryId: kind == 0 ? expense.id : income.id,
-            accountingDate: '2026-08-05',
-            occurredAt: seq,
-            createdAt: seq,
-            updatedAt: seq,
-          ),
-          newImages: const [],
-          removedImageIds: const {},
-        );
-      }
-
-      // 档位是左闭右开：19.99 落第 0 档，20.00 落第 1 档。
-      await add(1999);
-      await add(500);
-      await add(2000);
-      await add(49999);
-      await add(50000);
-      // 收入不该混进支出的分档里。
-      await add(80000, kind: 1);
-
-      final buckets = await database
-          .watchAmountBuckets(
-            LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9)),
-            0,
-          )
-          .first;
-
-      // 第 2 档（¥50 - 100）没有账单，查询不返回该行。
-      expect(buckets.map((item) => item.index), [0, 1, 3, 4]);
-      final first = buckets.first;
-      expect(first.entryCount, 2);
-      expect(first.totalCents, 2499);
-      expect(buckets.last.index, AmountBucket.count - 1);
-      expect(buckets.last.totalCents, 50000);
-    });
-
-    test('档位文案覆盖首档、中间档和末档', () {
-      expect(AmountBucket.labelOf(0), '< ¥20');
-      expect(AmountBucket.labelOf(1), '¥20 - 50');
-      expect(AmountBucket.labelOf(3), '¥100 - 500');
-      expect(AmountBucket.labelOf(AmountBucket.count - 1), '≥ ¥500');
-    });
-  });
-
   group('分类走势查询', () {
     test('按一级分类过滤，子分类计入父级，其他分类不计入', () async {
       final database = AppDatabase.forTesting(NativeDatabase.memory());
@@ -536,11 +472,10 @@ void main() {
         expect(find.text(period.label), findsOneWidget);
       }
       // 无数据时给的是空状态文案，而不是空白或¥0.00 图表。
-      // 三张图表卡各自给出针对性的空态文案，而不是共用一句「暂无数据」。
+      // 每张图表卡各自给出针对性的空态文案，而不是共用一句「暂无数据」。
       expect(find.text('本期还没有支出'), findsOneWidget);
       expect(find.text('本期没有支出记录'), findsOneWidget);
       expect(find.text('本期与对照期都没有支出'), findsOneWidget);
-      expect(find.text('没有可分档的支出'), findsOneWidget);
       expect(find.text('近期没有可对比的支出'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
@@ -688,56 +623,6 @@ void main() {
       await teardownTree(tester);
     });
 
-    testWidgets('单笔金额分布卡：空档补零，并给出金额最集中的档位', (tester) async {
-      useTallViewport(tester);
-      final database = AppDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(database.close);
-
-      final expenseCategory = (await database.exportCategories()).firstWhere(
-        (item) => item.kind == 0 && item.level == 1,
-      );
-      final now = DateTime.now();
-      var seq = 0;
-      Future<void> add(int cents) {
-        seq++;
-        return database.saveTransaction(
-          entry: TransactionsCompanion.insert(
-            id: 'ui-bucket-$seq',
-            kind: 0,
-            amountCents: cents,
-            categoryId: expenseCategory.id,
-            accountingDate: dateKey(now),
-            occurredAt: now.millisecondsSinceEpoch + seq,
-            createdAt: now.millisecondsSinceEpoch,
-            updatedAt: now.millisecondsSinceEpoch,
-          ),
-          newImages: const [],
-          removedImageIds: const {},
-        );
-      }
-
-      // 15 / 80 / 600 元，分别落在第 0、2、4 档，第 1、3 档为空。
-      await add(1500);
-      await add(8000);
-      await add(60000);
-
-      await tester.pumpWidget(await host(database));
-      await settle(tester);
-
-      expect(find.text('单笔金额分布'), findsOneWidget);
-      // 五档始终占位，空档显示 0 笔。
-      expect(find.text('< ¥20'), findsOneWidget);
-      expect(find.text('≥ ¥500'), findsOneWidget);
-      expect(find.text('0 笔'), findsNWidgets(2));
-      expect(find.text('1 笔'), findsNWidgets(3));
-      // 600 / 695 = 86%。
-      expect(find.textContaining('支出金额最集中在 ≥ ¥500，占 86%'), findsOneWidget);
-      expect(find.text('金额占比'), findsOneWidget);
-      expect(find.text('笔数占比'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await teardownTree(tester);
-    });
-
     testWidgets('下钻面板：给出该分类近 6 个周期的走势与均值', (tester) async {
       useTallViewport(tester);
       final database = AppDatabase.forTesting(NativeDatabase.memory());
@@ -781,6 +666,13 @@ void main() {
       expect(find.text('最近 6 个月'), findsNWidgets(2));
       // 只有两个月有金额，均值 =（100 + 40）/ 2。
       expect(find.text('均值 ¥70.00'), findsOneWidget);
+      // 走势图本身要占到实际尺寸：曾经这里的图形宽度被压成 0，
+      // 只剩均值文字，卡片看起来是空的。
+      final chart = find.byType(CategoryTrendAreaChart);
+      expect(chart, findsOneWidget);
+      final chartSize = tester.getSize(chart);
+      expect(chartSize.width, greaterThan(0));
+      expect(chartSize.height, greaterThan(0));
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
     });

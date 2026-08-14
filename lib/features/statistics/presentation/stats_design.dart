@@ -1,8 +1,7 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/color_luminance.dart';
 
 /// 统计页设计令牌：配色、圆角、阴影、字阶、动效时长。
 ///
@@ -89,7 +88,10 @@ class StatsTokens {
       end: source.end,
       colors: [
         for (final stop in source.colors)
-          _matchLuminance(_rotate(stop, rotation), _relativeLuminance(stop)),
+          withRelativeLuminance(
+            _rotate(stop, rotation),
+            relativeLuminance(stop),
+          ),
       ],
       stops: source.stops,
     );
@@ -220,37 +222,6 @@ class StatsTokens {
       colors: [for (final c in gradient.colors) _rotate(c, rotation)],
       stops: gradient.stops,
     );
-  }
-
-  /// WCAG 2.1 相对亮度。
-  static double _relativeLuminance(Color color) {
-    double channel(double value) => value <= 0.03928
-        ? value / 12.92
-        : math.pow((value + 0.055) / 1.055, 2.4).toDouble();
-    return 0.2126 * channel(color.r) +
-        0.7152 * channel(color.g) +
-        0.0722 * channel(color.b);
-  }
-
-  /// 沿 HSL 明度轴二分，把 [color] 调到相对亮度 [target]，色相与饱和度不动。
-  ///
-  /// 明度与相对亮度单调同向，所以二分一定收敛；固定 12 步而不是「直到收敛」，
-  /// 是为了让这个 getter 的耗时可预测——它在 Hero 卡每次重建时都会跑。
-  static Color _matchLuminance(Color color, double target) {
-    final hsl = HSLColor.fromColor(color);
-    var low = 0.0;
-    var high = 1.0;
-    var result = color;
-    for (var i = 0; i < 12; i++) {
-      final mid = (low + high) / 2;
-      result = hsl.withLightness(mid).toColor();
-      if (_relativeLuminance(result) < target) {
-        low = mid;
-      } else {
-        high = mid;
-      }
-    }
-    return result;
   }
 
   /// 柱状图背景轨道：给每根柱一个浅槽，柱子矮时也不会「悬空」。

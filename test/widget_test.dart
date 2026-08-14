@@ -304,7 +304,7 @@ void main() {
       await tester.pump(Duration.zero);
     });
 
-    testWidgets('月度摘要卡用的是暖色阴影', (tester) async {
+    testWidgets('月度摘要卡用的是主色阴影', (tester) async {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
@@ -323,7 +323,7 @@ void main() {
         ),
       );
 
-      // 摘要卡是暖黄渐变，配中性灰阴影会发浊，必须用带暖色相的那组。
+      // 摘要卡是主题色渐变，配中性灰阴影会发浊，必须用带主色相的那组。
       final band = tester
           .widgetList<Container>(find.byType(Container))
           .map((container) => container.decoration)
@@ -331,7 +331,7 @@ void main() {
           .where((decoration) => decoration.gradient != null)
           .toList();
       expect(band, hasLength(1));
-      expect(band.single.boxShadow, AppColors.light.shadowHeroWarm);
+      expect(band.single.boxShadow, AppColors.light.shadowHeroPrimary);
     });
   });
 

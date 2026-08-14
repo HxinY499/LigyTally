@@ -39,7 +39,6 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.barrier,
     required this.shadowCard,
     required this.shadowHeroPrimary,
-    required this.shadowHeroWarm,
   });
 
   /// 从最近的 [Theme] 取色板。
@@ -83,7 +82,6 @@ class AppColors extends ThemeExtension<AppColors> {
     barrier: Color(0x73000000),
     shadowCard: _shadowCardLight,
     shadowHeroPrimary: _shadowHeroPrimaryLight,
-    shadowHeroWarm: _shadowHeroWarmLight,
   );
 
   /// 深色：沿用品牌 `ink` 的冷绿灰做中性轴，而不是纯黑/纯灰。
@@ -117,7 +115,6 @@ class AppColors extends ThemeExtension<AppColors> {
     barrier: Color(0x99000000),
     shadowCard: _shadowCardDark,
     shadowHeroPrimary: _shadowHeroPrimaryDark,
-    shadowHeroWarm: _shadowHeroWarmDark,
   );
 
   final Brightness brightness;
@@ -189,19 +186,19 @@ class AppColors extends ThemeExtension<AppColors> {
   /// 两层分工才能既有边界又有空气感。
   final List<BoxShadow> shadowCard;
 
-  /// 主色 Hero 卡阴影（统计页概览卡）：带品牌蓝色调，比中性灰更有发光感。
+  /// 主色 Hero 卡阴影（统计页概览卡、记账页月度摘要卡）：带主色调，
+  /// 比中性灰更有发光感。
   ///
   /// 彩色卡片配中性灰阴影会显得「脏」——阴影里必须掺入卡片自身的色相。
   final List<BoxShadow> shadowHeroPrimary;
 
-  /// 暖色 Hero 卡阴影（记账页月度摘要卡）：同 [shadowHeroPrimary] 的思路，
-  /// 色相换成摘要卡的暖黄，避免中性灰压在暖黄渐变上发浊。
-  final List<BoxShadow> shadowHeroWarm;
-
   bool get isDark => brightness == Brightness.dark;
 
-  /// 只重染强调色家族（主色、浅底、按下/水波、Hero 蓝阴影）。
-  /// 支出红 / 收入绿 / 暖黄摘要保持原样。
+  /// 只重染强调色家族（主色、浅底、按下/水波、Hero 阴影）。
+  /// 支出红 / 收入绿保持原样。
+  ///
+  /// 两张 Hero 卡（统计页概览、记账页月度摘要）的卡面不在这里重染：
+  /// 它们各自从 [primary] 现算，见 `StatsTokens.heroGradient` 与 `SummaryBand`。
   AppColors withAccent(Color primary) {
     final soft = isDark
         ? Color.lerp(primary, canvas, 0.78)!
@@ -280,7 +277,6 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? barrier,
     List<BoxShadow>? shadowCard,
     List<BoxShadow>? shadowHeroPrimary,
-    List<BoxShadow>? shadowHeroWarm,
   }) => AppColors(
     brightness: brightness ?? this.brightness,
     ink: ink ?? this.ink,
@@ -304,7 +300,6 @@ class AppColors extends ThemeExtension<AppColors> {
     barrier: barrier ?? this.barrier,
     shadowCard: shadowCard ?? this.shadowCard,
     shadowHeroPrimary: shadowHeroPrimary ?? this.shadowHeroPrimary,
-    shadowHeroWarm: shadowHeroWarm ?? this.shadowHeroWarm,
   );
 
   /// 主题切换时的过渡插值。
@@ -342,11 +337,6 @@ class AppColors extends ThemeExtension<AppColors> {
         other.shadowHeroPrimary,
         t,
       )!,
-      shadowHeroWarm: BoxShadow.lerpList(
-        shadowHeroWarm,
-        other.shadowHeroWarm,
-        t,
-      )!,
     );
   }
 }
@@ -373,16 +363,6 @@ const _shadowHeroPrimaryLight = [
 /// 深色下彩色光晕要收一半：深底上的高饱和光晕会糊成一团发光的雾。
 const _shadowHeroPrimaryDark = [
   BoxShadow(color: Color(0x2E4A7FE8), offset: Offset(0, 8), blurRadius: 24),
-  BoxShadow(color: Color(0x4D000000), offset: Offset(0, 2), blurRadius: 6),
-];
-
-const _shadowHeroWarmLight = [
-  BoxShadow(color: Color(0x2ED9A22B), offset: Offset(0, 8), blurRadius: 24),
-  BoxShadow(color: Color(0x1AD9A22B), offset: Offset(0, 2), blurRadius: 6),
-];
-
-const _shadowHeroWarmDark = [
-  BoxShadow(color: Color(0x29B07F1E), offset: Offset(0, 8), blurRadius: 24),
   BoxShadow(color: Color(0x4D000000), offset: Offset(0, 2), blurRadius: 6),
 ];
 

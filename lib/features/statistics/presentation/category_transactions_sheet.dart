@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
@@ -11,6 +9,7 @@ import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
 import '../../ledger/presentation/transaction_editor.dart';
+import 'stats_charts.dart';
 import 'stats_design.dart';
 import 'stats_states.dart';
 
@@ -267,11 +266,10 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// 该分类近几个周期的迷你柱状走势。
+/// 该分类近几个周期的走势：折线面积图 + 均值。
 ///
-/// 刻意不复用统计页的 [PeriodBarChart]：那张图带轴刻度、tooltip 和均值线，
-/// 196 高，放进面板会把明细列表挤到屏幕外，而这里的主体是列表。
-/// 这条走势只需要回答一个问题——本期这根柱比前几期高还是低。
+/// 画的是「这个分类」的曲线而不是统计页那条全局趋势线：下钻的问题是
+/// 本期这个分类的金额相对它自己的常态是高还是低，全局趋势答不了。
 class _CategoryTrend extends ConsumerWidget {
   const _CategoryTrend({
     required this.spans,
@@ -287,8 +285,8 @@ class _CategoryTrend extends ConsumerWidget {
   final int kind;
   final Color color;
 
-  /// 柱区高度。加上标题与刻度约占 92，面板高度上限有余量。
-  static const _barsHeight = 54.0;
+  /// 图区高度（含横轴刻度）。加上标题行约占 99，面板高度上限有余量。
+  static const _chartHeight = 76.0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -302,20 +300,21 @@ class _CategoryTrend extends ConsumerWidget {
         stream: database.watchPeriodBars(spans, rootCategoryId: rootCategoryId),
         builder: (context, snapshot) {
           final bars = snapshot.data;
-          if (bars == null || bars.isEmpty) {
-            return const SizedBox(height: _barsHeight + 34);
+          // 单个周期连不成折线，也谈不上「常态」，这时整块不出现。
+          if (bars == null || bars.length < 2) {
+            return const SizedBox(height: _chartHeight + 23);
           }
           final values = [
             for (final bar in bars)
               kind == 0 ? bar.expenseCents : bar.incomeCents,
           ];
-          final maxCents = values.fold<int>(0, math.max);
           // 均值只算有金额的周期：把「这个分类还没出现过」的月份算进分母，
           // 均值会被拉低到没有参考意义。
           final active = values.where((value) => value > 0).toList();
-          final average = active.isEmpty
-              ? 0
-              : active.reduce((a, b) => a + b) ~/ active.length;
+          final hasAverage = active.length >= 2;
+          final average = hasAverage
+              ? active.reduce((a, b) => a + b) ~/ active.length
+              : 0;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -323,7 +322,7 @@ class _CategoryTrend extends ConsumerWidget {
               Row(
                 children: [
                   Expanded(child: Text(caption, style: stats.rowMeta)),
-                  if (active.length >= 2)
+                  if (hasAverage)
                     Text(
                       '均值 ${formatMoney(average, grouped: grouped)}',
                       style: stats.rowMeta,
@@ -332,77 +331,18 @@ class _CategoryTrend extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               SizedBox(
-                height: _barsHeight,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    for (var i = 0; i < values.length; i++)
-                      Expanded(
-                        child: _MiniBar(
-                          ratio: maxCents == 0 ? 0 : values[i] / maxCents,
-                          // 末位是当期，与统计页「周期对比」的高亮规则一致。
-                          color: i == values.length - 1
-                              ? color
-                              : color.withValues(alpha: 0.28),
-                        ),
-                      ),
-                  ],
+                height: _chartHeight,
+                child: CategoryTrendAreaChart(
+                  bars: bars,
+                  kind: kind,
+                  color: color,
+                  // 只有一个有效周期时「均值」等于它自己，画出来是噪音。
+                  averageCents: average,
                 ),
-              ),
-              const SizedBox(height: 5),
-              Row(
-                children: [
-                  for (var i = 0; i < bars.length; i++)
-                    Expanded(
-                      child: Text(
-                        bars[i].label,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.clip,
-                        style: i == bars.length - 1
-                            ? stats.axisLabel.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: stats.textMuted,
-                              )
-                            : stats.axisLabel,
-                      ),
-                    ),
-                ],
               ),
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-class _MiniBar extends StatelessWidget {
-  const _MiniBar({required this.ratio, required this.color});
-
-  final double ratio;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    // 金额为 0 时留一条底线而不是彻底消失：空缺和「很小」要能分辨，
-    // 同时又不能让空缺看起来像有值。
-    final factor = ratio <= 0 ? 0.03 : math.max(ratio, 0.08);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: FractionallySizedBox(
-          heightFactor: factor.clamp(0.0, 1.0),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(3),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

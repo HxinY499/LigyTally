@@ -231,6 +231,190 @@ class TrendLineChart extends StatelessWidget {
   }
 }
 
+/// 分类下钻面板里的近期走势：折线 + 面积填充，附均值虚线。
+///
+/// 不复用 [TrendLineChart]：那张卡有 176 的高度和左侧纵轴，这里嵌在明细列表
+/// 上方只有约 80 可用高度，纵轴刻度和网格线必须让位给数据本身——需要读准确
+/// 数值时点一下有 tooltip。
+///
+/// 描边与填充用**分类色**而不是 [StatsTokens.trendLineGradient] 的主色：
+/// 这张图和面板头的色点、环形图里那一片讲的是同一个分类，换成主色就断了。
+class CategoryTrendAreaChart extends StatelessWidget {
+  const CategoryTrendAreaChart({
+    super.key,
+    required this.bars,
+    required this.kind,
+    required this.color,
+    required this.averageCents,
+  });
+
+  final List<PeriodBar> bars;
+
+  /// 0 = 支出，1 = 收入。
+  final int kind;
+
+  /// 分类色，与面板头、环形图扇区同一支。
+  final Color color;
+
+  /// 均值虚线的位置（分）。<= 0 时不画，口径（只算有金额的周期）由调用方决定。
+  final int averageCents;
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
+    final values = [
+      for (final bar in bars) kind == 0 ? bar.expenseCents : bar.incomeCents,
+    ];
+    final maxCents = values.fold<int>(0, math.max);
+    // 顶部留 18% 余量：峰值贴到顶端会显得被截断。
+    // 全为 0 时给一个最小刻度，避免除零，曲线贴底也仍然画得出来。
+    final maxY = maxCents == 0 ? 100.0 : maxCents / 100 * 1.18;
+    final lastIndex = values.length - 1;
+
+    return LineChart(
+      LineChartData(
+        minY: 0,
+        maxY: maxY,
+        minX: 0,
+        maxX: lastIndex.toDouble(),
+        gridData: const FlGridData(show: false),
+        borderData: FlBorderData(show: false),
+        // 均值线在这里替代网格线：唯一需要的横向参照就是「本期比常态高还是低」。
+        // 数值已在标题行写明，线上不再重复标签。
+        extraLinesData: ExtraLinesData(
+          horizontalLines: [
+            if (averageCents > 0)
+              HorizontalLine(
+                y: averageCents / 100,
+                color: stats.textFaint.withValues(alpha: 0.45),
+                strokeWidth: 1,
+                dashArray: const [4, 4],
+              ),
+          ],
+        ),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          leftTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 20,
+              interval: 1,
+              getTitlesWidget: (value, meta) {
+                final index = value.round();
+                if (index < 0 || index >= bars.length) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    bars[index].label,
+                    style: index == lastIndex
+                        ? stats.axisLabelActive
+                        : stats.axisLabel,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        lineTouchData: LineTouchData(
+          touchSpotThreshold: 24,
+          getTouchedSpotIndicator: (barData, indexes) => [
+            for (final _ in indexes)
+              TouchedSpotIndicatorData(
+                FlLine(color: color, strokeWidth: 1.5, dashArray: const [3, 3]),
+                FlDotData(
+                  getDotPainter: (spot, percent, bar, index) =>
+                      FlDotCirclePainter(
+                        radius: 4.5,
+                        color: stats.surface,
+                        strokeWidth: 3,
+                        strokeColor: color,
+                      ),
+                ),
+              ),
+          ],
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => stats.tooltip,
+            tooltipBorderRadius: BorderRadius.circular(10),
+            tooltipPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 6,
+            ),
+            fitInsideHorizontally: true,
+            fitInsideVertically: true,
+            getTooltipItems: (touched) => [
+              for (final spot in touched)
+                LineTooltipItem(
+                  formatMoney((spot.y * 100).round()),
+                  stats.tooltipText,
+                  children: [
+                    TextSpan(
+                      text:
+                          '\n${bars[spot.x.round().clamp(0, lastIndex)].label}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1.5,
+                        fontWeight: FontWeight.w400,
+                        color: stats.onTooltip.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: [
+              for (var i = 0; i < values.length; i++)
+                FlSpot(i.toDouble(), values[i] / 100),
+            ],
+            isCurved: true,
+            curveSmoothness: 0.28,
+            preventCurveOverShooting: true,
+            color: color,
+            barWidth: 2,
+            isStrokeCapRound: true,
+            isStrokeJoinRound: true,
+            // 六个点全画：点少时不画点，「哪个月是 0」会被曲线糊过去。
+            // 末位（当期）画大一档实心点，与柱状图高亮当期的规则一致。
+            dotData: FlDotData(
+              getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+                radius: index == lastIndex ? 3.5 : 2.5,
+                color: index == lastIndex ? color : stats.surface,
+                strokeWidth: 2,
+                strokeColor: color,
+              ),
+            ),
+            belowBarData: BarAreaData(
+              show: true,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  color.withValues(alpha: 0.28),
+                  color.withValues(alpha: 0),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      duration: StatsTokens.durChart,
+      curve: StatsTokens.curveEnter,
+    );
+  }
+}
+
 /// 「周期支出对比」柱状图：当期高亮，附均值参考线。
 ///
 /// 相比原实现：

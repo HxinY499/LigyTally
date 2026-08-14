@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ligy_tally/core/database/app_database.dart';
 import 'package:ligy_tally/core/preferences/theme_mode.dart';
+import 'package:ligy_tally/core/theme/app_accent.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/shared/widgets/summary_band.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -152,39 +153,56 @@ void main() {
     });
   });
 
-  testWidgets('暖黄摘要卡的字色不跟着皮肤翻', (tester) async {
-    // 这张卡的卡面在两套皮肤下都是固定暖黄渐变。字色一旦跟着 colors.ink 走，
-    // 深色下就是近白字压浅黄底，等于看不见——这是迁移时最容易踩的坑。
+  testWidgets('摘要卡的白字不跟皮肤翻，每套强调色下都压得住 AA', (tester) async {
+    // 卡面是主题色沿明度轴压出来的深色渐变，深浅两套皮肤下一样深。字色一旦
+    // 跟着 colors.ink 走，浅色下就是深墨字压深卡面，等于看不见——这是这类
+    // 「彩色卡 + 固定前景色」最容易踩的坑。
+    //
+    // 另一半是「换强调色不能把字压瞎」：卡面色停钉的是**相对亮度**而不是 HSL
+    // 明度，所以六套强调色要逐一验，只验默认蓝会漏掉青、橙这些同明度下
+    // 实际亮得多的色相。
     SharedPreferences.setMockInitialValues({});
-    late Color amountColor;
-    for (final brightness in Brightness.values) {
-      await tester.pumpWidget(
-        ProviderScope(
-          child: MaterialApp(
-            theme: buildMaterialTheme(brightness),
-            home: const Scaffold(
-              body: SummaryBand(
-                summary: LedgerSummary(
-                  incomeCents: 10000,
-                  expenseCents: 3575,
-                  entryCount: 2,
-                  activeDayCount: 2,
+    for (final accent in AppAccent.values) {
+      for (final brightness in Brightness.values) {
+        await tester.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              theme: buildMaterialTheme(brightness, accent),
+              home: const Scaffold(
+                body: SummaryBand(
+                  summary: LedgerSummary(
+                    incomeCents: 10000,
+                    expenseCents: 3575,
+                    entryCount: 2,
+                    activeDayCount: 2,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final amount = tester.widget<Text>(find.text('35.75'));
-      final color = amount.style!.color!;
-      if (brightness == Brightness.values.first) {
-        amountColor = color;
-      } else {
-        expect(color, amountColor);
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.widget<Text>(find.text('35.75')).style!.color,
+          Colors.white,
+          reason: '${accent.label} / $brightness 下大数字不是白字',
+        );
+
+        // 大数字在左上角，压的是渐变最浅的那个色停——AA 要按它算，
+        // 按平均色算会把最糟的那一角放过去。
+        final face = tester
+            .widgetList<Container>(find.byType(Container))
+            .map((container) => container.decoration)
+            .whereType<BoxDecoration>()
+            .firstWhere((decoration) => decoration.gradient != null);
+        final lightest = (face.gradient! as LinearGradient).colors.first;
+        expect(
+          _contrast(Colors.white, lightest),
+          greaterThan(4.5),
+          reason: '${accent.label} / $brightness 下白字压不住卡面',
+        );
       }
-      // 深墨字压暖黄底，两套皮肤下都必须达到 AA。
-      expect(_contrast(color, const Color(0xFFF8D98A)), greaterThan(4.5));
     }
   });
 }
