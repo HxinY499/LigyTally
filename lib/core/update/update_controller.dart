@@ -90,10 +90,11 @@ class UpdateController extends StateNotifier<UpdateState> {
   }
 
   /// 用户手动触发检查（设置页入口用）。
-  /// 与启动检查不同，这里需要把「已是最新」也反馈给用户。
+  /// 与启动检查不同：要反馈「已是最新」，且不理会「忽略此版本」——
+  /// 忽略只关掉启动弹窗，手动检查仍应能看到这个版本。
   Future<String> checkManually() async {
     final current = await _service.currentVersion();
-    final info = await _service.checkForUpdate();
+    final info = await _service.checkForUpdate(respectIgnore: false);
     if (!mounted) return '';
     if (info == null) {
       final label = current == null ? '' : ' (v$current)';

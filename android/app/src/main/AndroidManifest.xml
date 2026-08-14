@@ -6,7 +6,7 @@
          因此可以使用该权限；若将来要上架应用商店需移除并改为跳转浏览器下载。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
-        android:label="Ligy Tally"
+        android:label="Ligy记账"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <!-- 把下载好的 APK 以 content:// 形式交给系统安装器。
@@ -55,7 +55,7 @@
             android:enabled="true"
             android:exported="true"
             android:icon="@mipmap/ic_launcher"
-            android:label="Ligy Tally"
+            android:label="Ligy记账"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -68,7 +68,7 @@
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_launcher_light"
-            android:label="Ligy Tally"
+            android:label="Ligy记账"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>

@@ -179,11 +179,20 @@ class StatsExpandToggle extends StatelessWidget {
 ///
 /// [index] 用来做阶梯延迟，让卡片自上而下依次落位，
 /// 比整屏同时淡入更有秩序感。延迟封顶，避免卡片多时最后一张迟迟不出现。
+///
+/// [skip] 为 true 时直接停在终态。明细页是虚拟列表，滑出再滑回会重建
+/// 子项；父级用它记住「这一格已经播过」，避免同一张卡反复入场。
 class StatsEntrance extends StatefulWidget {
-  const StatsEntrance({super.key, required this.index, required this.child});
+  const StatsEntrance({
+    super.key,
+    required this.index,
+    required this.child,
+    this.skip = false,
+  });
 
   final int index;
   final Widget child;
+  final bool skip;
 
   @override
   State<StatsEntrance> createState() => _StatsEntranceState();
@@ -216,6 +225,11 @@ class _StatsEntranceState extends State<StatsEntrance>
       begin: const Offset(0, 0.06),
       end: Offset.zero,
     ).animate(curve);
+
+    if (widget.skip) {
+      _controller.value = 1;
+      return;
+    }
 
     // 阶梯延迟：每张卡晚 60ms，最多累到 240ms。
     final delay = Duration(milliseconds: 60 * widget.index.clamp(0, 4));

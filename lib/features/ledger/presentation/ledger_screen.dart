@@ -14,6 +14,7 @@ import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/image_backdrop.dart';
 import '../../../shared/widgets/summary_band.dart';
+import '../../statistics/presentation/stats_card.dart';
 import '../application/providers.dart';
 import 'transaction_editor.dart';
 
@@ -29,6 +30,10 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   bool _searching = false;
   String _query = '';
   late final TextEditingController _searchController;
+
+  /// 已经播过入场的槽位。明细是虚拟列表，滑出再滑回会重建子项，
+  /// 靠这个集合让 [StatsEntrance] 只在本页生命周期里播一次。
+  final Set<int> _entrancePlayed = {};
 
   @override
   void initState() {
@@ -59,6 +64,13 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   Future<void> _pickMonth() async {
     final picked = await showMonthPicker(context, initial: _month);
     if (picked != null && mounted) setState(() => _month = picked);
+  }
+
+  /// 与统计页同一套入场：淡入 + 上移 + 按 index 阶梯延迟。
+  Widget _enter(int index, Widget child) {
+    final skip = _entrancePlayed.contains(index);
+    _entrancePlayed.add(index);
+    return StatsEntrance(index: index, skip: skip, child: child);
   }
 
   void _toggleSearch() {
@@ -131,7 +143,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
-                    child: SummaryBand(summary: summary),
+                    child: _enter(0, SummaryBand(summary: summary)),
                   ),
                 ),
                 // 吸顶月份/收支条：紧贴页头，粘在顶部。
@@ -141,6 +153,8 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                     month: _month,
                     summary: summary,
                     onPick: _pickMonth,
+                    skipEntrance: _entrancePlayed.contains(1),
+                    onEntranceBuilt: () => _entrancePlayed.add(1),
                   ),
                 ),
                 // 列表。图片路径单独订阅一条流：它变得远比账单本身少，
@@ -155,10 +169,13 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                       builder: (context, snapshot) {
                         if (snapshot.hasError) {
                           return SliverToBoxAdapter(
-                            child: _MessageState(
-                              icon: FLucideIcons.circleAlert,
-                              title: '账单加载失败',
-                              detail: '${snapshot.error}',
+                            child: _enter(
+                              2,
+                              _MessageState(
+                                icon: FLucideIcons.circleAlert,
+                                title: '账单加载失败',
+                                detail: '${snapshot.error}',
+                              ),
                             ),
                           );
                         }
@@ -191,14 +208,19 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                                   .toList();
                         if (items.isEmpty) {
                           return SliverToBoxAdapter(
-                            child: _MessageState(
-                              icon: keyword.isEmpty
-                                  ? FLucideIcons.receipt
-                                  : FLucideIcons.searchX,
-                              title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
-                              detail: keyword.isEmpty
-                                  ? '点击右下角加号记下第一笔'
-                                  : '换一个关键词再试',
+                            child: _enter(
+                              2,
+                              _MessageState(
+                                icon: keyword.isEmpty
+                                    ? FLucideIcons.receipt
+                                    : FLucideIcons.searchX,
+                                title: keyword.isEmpty
+                                    ? '这个月还没有记录'
+                                    : '没有匹配的账单',
+                                detail: keyword.isEmpty
+                                    ? '点击右下角加号记下第一笔'
+                                    : '换一个关键词再试',
+                              ),
                             ),
                           );
                         }
@@ -223,18 +245,21 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                               final group = entries[index];
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 14),
-                                child: _DayCard(
-                                  day: dateFromKey(group.key),
-                                  items: group.value,
-                                  imagePaths: imagePaths,
-                                  onTapHeader: () => _addTransactionForDay(
-                                    dateFromKey(group.key),
+                                child: _enter(
+                                  2 + index,
+                                  _DayCard(
+                                    day: dateFromKey(group.key),
+                                    items: group.value,
+                                    imagePaths: imagePaths,
+                                    onTapHeader: () => _addTransactionForDay(
+                                      dateFromKey(group.key),
+                                    ),
+                                    onTapItem: _edit,
+                                    onLongPressItem: (item) {
+                                      HapticFeedback.mediumImpact();
+                                      _confirmDelete(item);
+                                    },
                                   ),
-                                  onTapItem: _edit,
-                                  onLongPressItem: (item) {
-                                    HapticFeedback.mediumImpact();
-                                    _confirmDelete(item);
-                                  },
                                 ),
                               );
                             },
@@ -628,11 +653,15 @@ class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
     required this.month,
     required this.summary,
     required this.onPick,
+    required this.skipEntrance,
+    required this.onEntranceBuilt,
   });
 
   final DateTime month;
   final LedgerSummary summary;
   final VoidCallback onPick;
+  final bool skipEntrance;
+  final VoidCallback onEntranceBuilt;
 
   static const double _height = 44;
 
@@ -643,64 +672,69 @@ class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
     bool overlapsContent,
   ) {
     final colors = context.colors;
-    return Consumer(
-      builder: (context, ref, _) {
-        final grouped = ref.watch(moneyGroupedProvider);
-        return Material(
-          // 吸顶条自己提供 Material：它铺的是页面灰底，
-          // 若沿用 Container(color:) 则月份按钮的水波同样会被灰底盖掉。
-          color: colors.canvas,
-          child: Container(
-            height: _height,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: onPick,
-                  borderRadius: BorderRadius.circular(8),
-                  highlightColor: colors.pressed,
-                  splashColor: colors.ripple,
-                  hoverColor: colors.ripple,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 4,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          formatMonth(month),
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
+    onEntranceBuilt();
+    return StatsEntrance(
+      index: 1,
+      skip: skipEntrance,
+      child: Consumer(
+        builder: (context, ref, _) {
+          final grouped = ref.watch(moneyGroupedProvider);
+          return Material(
+            // 吸顶条自己提供 Material：它铺的是页面灰底，
+            // 若沿用 Container(color:) 则月份按钮的水波同样会被灰底盖掉。
+            color: colors.canvas,
+            child: Container(
+              height: _height,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  InkWell(
+                    onTap: onPick,
+                    borderRadius: BorderRadius.circular(8),
+                    highlightColor: colors.pressed,
+                    splashColor: colors.ripple,
+                    hoverColor: colors.ripple,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            formatMonth(month),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: colors.ink,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            FLucideIcons.chevronDown,
+                            size: 16,
                             color: colors.ink,
                           ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          FLucideIcons.chevronDown,
-                          size: 16,
-                          color: colors.ink,
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  '支 ${formatMoney(summary.expenseCents, grouped: grouped)}',
-                  style: TextStyle(fontSize: 13, color: colors.muted),
-                ),
-                const SizedBox(width: 14),
-                Text(
-                  '收 ${formatMoney(summary.incomeCents, grouped: grouped)}',
-                  style: TextStyle(fontSize: 13, color: colors.muted),
-                ),
-              ],
+                  const Spacer(),
+                  Text(
+                    '支 ${formatMoney(summary.expenseCents, grouped: grouped)}',
+                    style: TextStyle(fontSize: 13, color: colors.muted),
+                  ),
+                  const SizedBox(width: 14),
+                  Text(
+                    '收 ${formatMoney(summary.incomeCents, grouped: grouped)}',
+                    style: TextStyle(fontSize: 13, color: colors.muted),
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -714,7 +748,8 @@ class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(covariant _MonthStickyBarDelegate oldDelegate) {
     return oldDelegate.month != month ||
         oldDelegate.summary.expenseCents != summary.expenseCents ||
-        oldDelegate.summary.incomeCents != summary.incomeCents;
+        oldDelegate.summary.incomeCents != summary.incomeCents ||
+        oldDelegate.skipEntrance != skipEntrance;
   }
 }
 

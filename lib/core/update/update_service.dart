@@ -81,7 +81,7 @@ class UpdateService {
   static const _latestReleaseApi =
       'https://api.github.com/repos/HxinY499/LigyTally-Releases/releases/latest';
 
-  /// 记录用户选择「忽略」的版本号，之后不再为该版本提示。
+  /// 记录用户选择「忽略」的版本号，之后启动时不再为该版本弹窗。
   static const _prefsIgnoredVersion = 'update.ignored_version';
 
   /// 读取当前安装的版本号（原生 PackageInfo，避免引入 package_info_plus）。
@@ -99,11 +99,15 @@ class UpdateService {
     }
   }
 
-  /// 查询是否有新版本。
+  /// 查询是否有比当前安装更新的版本。
   ///
-  /// 返回 null 表示「不需要提示」，涵盖：已是最新、网络失败、
-  /// 接口限流、响应格式不认识、用户已忽略该版本。
-  Future<UpdateInfo?> checkForUpdate() async {
+  /// 返回 null 表示「没有可用更新」，涵盖：已是最新、网络失败、
+  /// 接口限流、响应格式不认识。
+  ///
+  /// [respectIgnore] 只给启动自动检查用。用户点「忽略」的意思是
+  /// 「这个版本别再弹启动提示」，不是「这个版本不存在」——
+  /// 设置页手动检查必须传 false，否则忽略后会误报已是最新。
+  Future<UpdateInfo?> checkForUpdate({bool respectIgnore = true}) async {
     final current = await currentVersion();
     if (current == null) return null;
 
@@ -118,11 +122,12 @@ class UpdateService {
 
     if (!latest.version.isNewerThan(current)) return null;
 
-    // 用户忽略过这个版本
-    final prefs = await SharedPreferences.getInstance();
-    final ignored = prefs.getString(_prefsIgnoredVersion);
-    if (ignored != null && ignored == latest.version.toString()) {
-      return null;
+    if (respectIgnore) {
+      final prefs = await SharedPreferences.getInstance();
+      final ignored = prefs.getString(_prefsIgnoredVersion);
+      if (ignored != null && ignored == latest.version.toString()) {
+        return null;
+      }
     }
 
     return latest;
@@ -178,7 +183,7 @@ class UpdateService {
     );
   }
 
-  /// 记住用户忽略的版本。
+  /// 记住用户忽略的版本。只影响启动自动提示，不影响手动检查。
   Future<void> ignoreVersion(AppVersion version) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsIgnoredVersion, version.toString());
