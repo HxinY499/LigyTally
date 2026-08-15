@@ -778,6 +778,38 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  /// 全部账单图片，新的在前。占用空间页用来浏览和批量删除。
+  ///
+  /// 只返回库里有记录的图，不扫磁盘：分类图标、缩略图副本、孤儿文件
+  /// 都不该出现在「账单图」里。同一笔的多张按 [sortOrder] 排在一起。
+  Stream<List<LedgerImageItem>> watchAllImages() {
+    final query =
+        select(transactionImages).join([
+          innerJoin(
+            transactions,
+            transactions.id.equalsExp(transactionImages.transactionId),
+          ),
+        ])..orderBy([
+          OrderingTerm.desc(transactions.accountingDate),
+          OrderingTerm.desc(transactions.occurredAt),
+          OrderingTerm.asc(transactionImages.sortOrder),
+        ]);
+    return query.watch().map(
+      (rows) => [
+        for (final row in rows)
+          LedgerImageItem(
+            image: row.readTable(transactionImages),
+            transaction: row.readTable(transactions),
+          ),
+      ],
+    );
+  }
+
+  Future<void> deleteImages(Set<String> ids) async {
+    if (ids.isEmpty) return;
+    await (delete(transactionImages)..where((row) => row.id.isIn(ids))).go();
+  }
+
   Future<void> saveTransaction({
     required TransactionsCompanion entry,
     required List<TransactionImagesCompanion> newImages,
@@ -800,6 +832,21 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> deleteTransaction(String id) async {
     await (delete(transactions)..where((row) => row.id.equals(id))).go();
+  }
+
+  /// 主库文件的绝对路径。内存库没有文件，返回 null。
+  ///
+  /// 占用空间必须拿这条路径去读磁盘，不能用 `transaction_images.size_bytes`
+  /// 加总：那一列只有原图，不含缩略图、分类图标和 WAL。
+  Future<String?> mainDatabaseFilePath() async {
+    final rows = await customSelect('PRAGMA database_list').get();
+    for (final row in rows) {
+      if (row.read<String>('name') != 'main') continue;
+      final path = row.read<String>('file');
+      if (path.isEmpty || path == ':memory:') return null;
+      return path;
+    }
+    return null;
   }
 
   Future<List<CategoryEntry>> exportCategories() => select(categories).get();
@@ -838,6 +885,13 @@ class LedgerItem {
 
   final TransactionEntry transaction;
   final CategoryEntry category;
+}
+
+class LedgerImageItem {
+  const LedgerImageItem({required this.image, required this.transaction});
+
+  final TransactionImageEntry image;
+  final TransactionEntry transaction;
 }
 
 class LedgerSummary {

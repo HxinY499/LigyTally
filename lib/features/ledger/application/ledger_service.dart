@@ -91,4 +91,18 @@ class LedgerService {
     await database.deleteTransaction(item.transaction.id);
     await imageStorage.deleteTransactionDirectory(item.transaction.id);
   }
+
+  /// 只删图片，不动账单。
+  ///
+  /// 先改库再删文件：库失败时文件还在，账单打开仍看得到图。
+  /// 文件删除失败会留下孤儿，和编辑页移除图片同一条补偿路径。
+  Future<void> deleteImages(Iterable<TransactionImageEntry> images) async {
+    final list = images.toList();
+    if (list.isEmpty) return;
+    await database.deleteImages({for (final image in list) image.id});
+    for (final image in list) {
+      await imageStorage.deleteFile(image.imagePath);
+      await imageStorage.deleteFile(image.thumbnailPath);
+    }
+  }
 }

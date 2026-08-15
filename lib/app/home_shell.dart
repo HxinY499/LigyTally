@@ -71,7 +71,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         controller: _controller,
         onPageChanged: (value) => setState(() => _index = value),
         physics: const ClampingScrollPhysics(),
-        children: const [LedgerScreen(), StatisticsScreen(), SettingsScreen()],
+        children: [
+          const LedgerScreen(),
+          const StatisticsScreen(),
+          SettingsScreen(active: _index == 2),
+        ],
       ),
       // 记一笔：居中悬浮在导航栏上方，只在首页（明细）出现，
       // 避免遮挡统计/设置页内容。居中比右下角更好按，左右手都够得到。

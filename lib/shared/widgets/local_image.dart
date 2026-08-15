@@ -6,7 +6,7 @@ import 'package:forui/forui.dart';
 import '../../core/media/image_storage.dart';
 import '../../core/theme/app_theme.dart';
 
-class LocalImage extends StatelessWidget {
+class LocalImage extends StatefulWidget {
   const LocalImage({
     super.key,
     required this.storage,
@@ -19,10 +19,37 @@ class LocalImage extends StatelessWidget {
   final BoxFit fit;
 
   @override
+  State<LocalImage> createState() => _LocalImageState();
+}
+
+class _LocalImageState extends State<LocalImage> {
+  late Future<File?> _file;
+
+  @override
+  void initState() {
+    super.initState();
+    _file = _resolve();
+  }
+
+  @override
+  void didUpdateWidget(LocalImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.relativePath != widget.relativePath ||
+        oldWidget.storage != widget.storage) {
+      _file = _resolve();
+    }
+  }
+
+  Future<File?> _resolve() async {
+    final file = await widget.storage.resolve(widget.relativePath);
+    return await file.exists() ? file : null;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return FutureBuilder<File>(
-      future: storage.resolve(relativePath),
+    return FutureBuilder<File?>(
+      future: _file,
       builder: (context, snapshot) {
         final file = snapshot.data;
         if (file == null) {
@@ -33,7 +60,7 @@ class LocalImage extends StatelessWidget {
         }
         return Image.file(
           file,
-          fit: fit,
+          fit: widget.fit,
           errorBuilder: (_, _, _) {
             return ColoredBox(
               color: colors.fill,

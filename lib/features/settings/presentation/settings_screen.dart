@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 
 import '../../../core/preferences/money_grouped.dart';
 import '../../../core/preferences/quick_tally_mode.dart';
+import '../../../core/storage/storage_usage.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/update/update_controller.dart';
 import '../../../core/utils/ledger_date.dart';
@@ -13,9 +14,16 @@ import 'appearance_screen.dart';
 import 'category_management_screen.dart';
 import 'csv_export_sheet.dart';
 import 'settings_widgets.dart';
+import 'storage_images_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.active = true});
+
+  /// 当前是否停在设置 tab。
+  ///
+  /// 底栏用 PageView，三页都挂在树上。占用空间若只算一次，记完账再滑过来
+  /// 仍是旧数字。切到这一页时重新扫盘。
+  final bool active;
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -23,6 +31,14 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _busy = false;
+
+  @override
+  void didUpdateWidget(SettingsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) {
+      ref.read(storageUsageProvider.notifier).refresh();
+    }
+  }
 
   Future<String?> _askPassword(String title) =>
       showAppPasswordDialog(context, title: title);
@@ -98,6 +114,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
       if (confirmed) {
         await service.restore(file, password: password);
+        ref.invalidate(storageUsageProvider);
         if (mounted) _showMessage('数据恢复完成', level: AppToastLevel.success);
       }
     } catch (error) {
@@ -114,6 +131,47 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     AppToastLevel level = AppToastLevel.info,
   }) {
     showAppToast(context, message: message, level: level);
+  }
+
+  Future<void> _openStorageImages() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const StorageImagesScreen()),
+    );
+    if (mounted) ref.read(storageUsageProvider.notifier).refresh();
+  }
+
+  /// 占用空间行：右侧合计，副标题拆开图片和数据库。
+  ///
+  /// 扫盘失败只说「无法计算」，不把路径或异常原文铺到设置列表里。
+  /// 整行可点进账单图库，回来后重算体积。
+  SettingsItem _storageItem() {
+    final usage = ref.watch(storageUsageProvider);
+    return usage.when(
+      loading: () => SettingsItem(
+        icon: FLucideIcons.hardDrive,
+        title: '占用空间',
+        showChevron: true,
+        onTap: _openStorageImages,
+        trailing: const RowSpinner(),
+      ),
+      error: (_, _) => SettingsItem(
+        icon: FLucideIcons.hardDrive,
+        title: '占用空间',
+        subtitle: '无法计算',
+        showChevron: true,
+        onTap: _openStorageImages,
+      ),
+      data: (value) => SettingsItem(
+        icon: FLucideIcons.hardDrive,
+        title: '占用空间',
+        subtitle:
+            '图片 ${formatStorageBytes(value.mediaBytes)}'
+            ' · 数据 ${formatStorageBytes(value.databaseBytes)}',
+        value: formatStorageBytes(value.totalBytes),
+        showChevron: true,
+        onTap: _openStorageImages,
+      ),
+    );
   }
 
   @override
@@ -199,6 +257,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     trailing: _busy ? const RowSpinner() : null,
                     onTap: _busy ? null : _restoreBackup,
                   ),
+                  _storageItem(),
                 ],
               ),
               const SizedBox(height: 18),

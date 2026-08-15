@@ -5,6 +5,7 @@ import '../../../core/category_config/category_config_service.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/export/csv_export_service.dart';
 import '../../../core/media/image_storage.dart';
+import '../../../core/storage/storage_usage.dart';
 import 'ledger_service.dart';
 
 final databaseProvider = Provider<AppDatabase>((ref) {
@@ -39,3 +40,28 @@ final categoryConfigServiceProvider = Provider<CategoryConfigService>((ref) {
     ref.watch(imageStorageProvider),
   );
 });
+
+final storageUsageServiceProvider = Provider<StorageUsageService>((ref) {
+  return StorageUsageService(
+    ref.watch(databaseProvider),
+    ref.watch(imageStorageProvider),
+  );
+});
+
+final storageUsageProvider =
+    AsyncNotifierProvider<StorageUsageController, StorageUsage>(
+      StorageUsageController.new,
+    );
+
+class StorageUsageController extends AsyncNotifier<StorageUsage> {
+  @override
+  Future<StorageUsage> build() {
+    return ref.read(storageUsageServiceProvider).measure();
+  }
+
+  Future<void> refresh() async {
+    state = await AsyncValue.guard(
+      () => ref.read(storageUsageServiceProvider).measure(),
+    );
+  }
+}

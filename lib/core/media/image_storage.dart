@@ -62,7 +62,7 @@ class ImageStorage {
   Future<String> supportRoot() => _supportRoot();
 
   Future<Directory> _root() async {
-    final root = Directory(p.join(await _supportRoot(), 'media'));
+    final root = Directory(p.join(await _supportRoot(), kMediaDirName));
     await root.create(recursive: true);
     return root;
   }
@@ -78,7 +78,7 @@ class ImageStorage {
     required String iconId,
   }) async {
     final root = await _root();
-    final directory = Directory(p.join(root.path, _categoryIconDirName));
+    final directory = Directory(p.join(root.path, kCategoryIconDirName));
     await directory.create(recursive: true);
     final target = File(p.join(directory.path, '$iconId.jpg'));
     final compressed = await FlutterImageCompress.compressAndGetFile(
@@ -102,7 +102,7 @@ class ImageStorage {
     required List<int> bytes,
   }) async {
     final root = await _root();
-    final directory = Directory(p.join(root.path, _categoryIconDirName));
+    final directory = Directory(p.join(root.path, kCategoryIconDirName));
     await directory.create(recursive: true);
     await File(
       p.join(directory.path, '$iconId.jpg'),
@@ -120,7 +120,7 @@ class ImageStorage {
   /// 放在 `category_icons.dart`，存储层不该跟着懂它。
   Future<void> pruneCategoryIcons(Set<String> liveIconIds) async {
     final directory = Directory(
-      p.join((await _root()).path, _categoryIconDirName),
+      p.join((await _root()).path, kCategoryIconDirName),
     );
     if (!await directory.exists()) return;
     await for (final entity in directory.list()) {
@@ -204,12 +204,15 @@ class ImageStorage {
   }
 }
 
+/// 账单图片与分类图标的根目录名（相对 support 目录）。
+const kMediaDirName = 'media';
+
 /// 分类图标目录名（相对 `media/`）。
-const _categoryIconDirName = 'category_icons';
+const kCategoryIconDirName = 'category_icons';
 
 /// 分类自定义图标的相对存储路径。
 ///
 /// 路径由 iconId 纯计算得出、不查磁盘，所以库里只需要存 `custom:<iconId>`，
 /// 不必额外开一列存路径 —— 少一列就少一次 drift 表结构迁移。
 String categoryIconRelativePath(String iconId) =>
-    p.join('media', _categoryIconDirName, '$iconId.jpg');
+    p.join(kMediaDirName, kCategoryIconDirName, '$iconId.jpg');
