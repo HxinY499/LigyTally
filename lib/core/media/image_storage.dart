@@ -184,6 +184,61 @@ class ImageStorage {
     return result;
   }
 
+  /// 把一张已存下的原图重新压到 [maxSide] 以内，返回压完的新指标。
+  ///
+  /// 用于「不删图也能省空间」：早期版本按 2048px/q85 存，一张常有 700KB 以上，
+  /// 而账单图的用途是事后核对金额，1280px 完全够看。
+  ///
+  /// 返回 null 表示这张不该动——文件不在、压不出更小的结果、或压完读不出
+  /// 尺寸。任何一种情况都保留原图：省下几十 KB 不值得换来一张坏图。
+  Future<({int sizeBytes, int width, int height})?> recompress({
+    required String relativePath,
+    int maxSide = kRecompressMaxSide,
+    int quality = kRecompressQuality,
+  }) async {
+    final target = await resolve(relativePath);
+    if (!await target.exists()) return null;
+    final originalBytes = await target.length();
+
+    // 先压到旁边的临时文件：compressAndGetFile 的源和目标不能是同一个路径，
+    // 而且压失败时原图必须原封不动。
+    final staging = File('${target.path}.recompress');
+    try {
+      final compressed = await FlutterImageCompress.compressAndGetFile(
+        target.path,
+        staging.path,
+        minWidth: maxSide,
+        minHeight: maxSide,
+        quality: quality,
+        format: CompressFormat.jpeg,
+        keepExif: false,
+      );
+      if (compressed == null) return null;
+      final newBytes = await staging.length();
+      if (newBytes >= originalBytes) return null;
+
+      final frame = await (await ui.instantiateImageCodec(
+        await staging.readAsBytes(),
+      )).getNextFrame();
+      final width = frame.image.width;
+      final height = frame.image.height;
+      frame.image.dispose();
+
+      await staging.rename(target.path);
+      return (sizeBytes: newBytes, width: width, height: height);
+    } on Exception {
+      return null;
+    } finally {
+      if (await staging.exists()) {
+        try {
+          await staging.delete();
+        } on FileSystemException {
+          // rename 成功后这里本就不存在；删不掉的残件由孤儿清理兜底。
+        }
+      }
+    }
+  }
+
   Future<File> resolve(String relativePath) async {
     return File(p.join(await _supportRoot(), relativePath));
   }
@@ -203,6 +258,14 @@ class ImageStorage {
     }
   }
 }
+
+/// 重压的目标长边与质量。
+///
+/// 比首次入库的 2048px/q85 更狠：入库时不知道用户以后会不会放大看细节，
+/// 留了余量；而主动点「压缩图片」的人是在拿画质换空间，这时候 1280px
+/// 仍然能看清小票上的金额，体积却常常只剩三分之一。
+const kRecompressMaxSide = 1280;
+const kRecompressQuality = 80;
 
 /// 账单图片与分类图标的根目录名（相对 support 目录）。
 const kMediaDirName = 'media';

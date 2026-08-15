@@ -5,12 +5,27 @@ import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/media/image_storage.dart';
+import '../../../core/storage/storage_usage.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/local_image.dart';
 import '../../../shared/widgets/photo_viewer.dart';
 import '../../ledger/application/providers.dart';
+
+/// 图库的浏览方式。
+///
+/// 三种对应三个真实目的：翻找某笔账单的图（[newest]）、腾空间时先删掉最大的
+/// 几张（[largest]）、看清「哪几笔账单最占地方」（[byTransaction]）。
+enum _GalleryMode {
+  newest('最新'),
+  largest('最大'),
+  byTransaction('按账单');
+
+  const _GalleryMode(this.label);
+
+  final String label;
+}
 
 /// 占用空间里的账单图库：浏览全部账单图，并批量删除以腾出空间。
 ///
@@ -26,10 +41,50 @@ class StorageImagesScreen extends ConsumerStatefulWidget {
 class _StorageImagesScreenState extends ConsumerState<StorageImagesScreen> {
   bool _selecting = false;
   bool _busy = false;
+  _GalleryMode _mode = _GalleryMode.newest;
   final Set<String> _selected = {};
-  late final Stream<List<LedgerImageItem>> _images = ref
-      .read(databaseProvider)
-      .watchAllImages();
+  late Stream<List<LedgerImageItem>> _images = _streamFor(_mode);
+
+  /// 按账单分组时仍取「新的在前」，组内顺序才是自然的；组之间再按合计大小
+  /// 重排（见 [_groupsOf]）——跨行汇总排序在这条 SQL 里做不到。
+  Stream<List<LedgerImageItem>> _streamFor(_GalleryMode mode) {
+    return ref
+        .read(databaseProvider)
+        .watchAllImages(
+          sort: mode == _GalleryMode.largest
+              ? LedgerImageSort.largest
+              : LedgerImageSort.newest,
+        );
+  }
+
+  void _switchMode(_GalleryMode mode) {
+    if (_mode == mode) return;
+    setState(() {
+      _mode = mode;
+      _images = _streamFor(mode);
+    });
+  }
+
+  /// 按账单聚合，合计大的在前。
+  List<_ImageGroup> _groupsOf(List<LedgerImageItem> items) {
+    final grouped = <String, List<LedgerImageItem>>{};
+    for (final item in items) {
+      grouped.putIfAbsent(item.transaction.id, () => []).add(item);
+    }
+    final groups = [
+      for (final entry in grouped.values)
+        _ImageGroup(
+          transaction: entry.first.transaction,
+          items: entry,
+          totalBytes: entry.fold(
+            0,
+            (sum, item) => sum + item.image.sizeBytes,
+          ),
+        ),
+    ];
+    groups.sort((a, b) => b.totalBytes.compareTo(a.totalBytes));
+    return groups;
+  }
 
   void _pruneSelection(List<LedgerImageItem> items) {
     final live = {for (final item in items) item.image.id};
@@ -74,6 +129,20 @@ class _StorageImagesScreenState extends ConsumerState<StorageImagesScreen> {
         _selected
           ..clear()
           ..addAll(items.map((item) => item.image.id));
+      }
+    });
+  }
+
+  /// 整笔账单的图一起选中 / 取消。腾空间时「这笔的图都不要了」比逐张点快得多。
+  void _toggleGroup(_ImageGroup group) {
+    final ids = group.items.map((item) => item.image.id).toSet();
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_selected.containsAll(ids)) {
+        _selected.removeAll(ids);
+      } else {
+        _selecting = true;
+        _selected.addAll(ids);
       }
     });
   }
@@ -200,48 +269,235 @@ class _StorageImagesScreenState extends ConsumerState<StorageImagesScreen> {
       ];
     }
     return [
-      SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        sliver: SliverGrid(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisSpacing: 6,
-            crossAxisSpacing: 6,
-          ),
-          delegate: SliverChildBuilderDelegate((context, index) {
-            final item = items[index];
-            return Consumer(
-              builder: (context, ref, _) {
-                return _ImageTile(
-                  item: item,
-                  storage: ref.watch(imageStorageProvider),
-                  selected: _selected.contains(item.image.id),
-                  selecting: _selecting,
-                  onTap: _busy
-                      ? null
-                      : () {
-                          if (_selecting) {
-                            _toggle(item.image.id);
-                          } else {
-                            _openViewer(items, index);
-                          }
-                        },
-                  onLongPress: _busy
-                      ? null
-                      : () {
-                          if (_selecting) {
-                            _toggle(item.image.id);
-                          } else {
-                            _enterSelect(item.image.id);
-                          }
-                        },
-                );
-              },
-            );
-          }, childCount: items.length),
-        ),
+      SliverToBoxAdapter(
+        child: _ModeBar(current: _mode, onSelect: _switchMode),
       ),
+      if (_mode == _GalleryMode.byTransaction)
+        _groupedSliver(items)
+      else
+        _gridSliver(items),
     ];
+  }
+
+  Widget _gridSliver(List<LedgerImageItem> items) {
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          mainAxisSpacing: 6,
+          crossAxisSpacing: 6,
+        ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          return _tile(items, index, showSize: _mode == _GalleryMode.largest);
+        }, childCount: items.length),
+      ),
+    );
+  }
+
+  Widget _groupedSliver(List<LedgerImageItem> items) {
+    final groups = _groupsOf(items);
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      sliver: SliverList.separated(
+        itemCount: groups.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 14),
+        itemBuilder: (context, index) {
+          final group = groups[index];
+          final ids = group.items.map((item) => item.image.id).toSet();
+          return _GroupCard(
+            group: group,
+            allSelected: _selected.containsAll(ids),
+            selecting: _selecting,
+            onToggleGroup: _busy ? null : () => _toggleGroup(group),
+            tileBuilder: (position) =>
+                _tile(group.items, position, showSize: true),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 一格缩略图。[items] 是它所在的那一串——全屏浏览要按这一串左右翻。
+  Widget _tile(
+    List<LedgerImageItem> items,
+    int index, {
+    required bool showSize,
+  }) {
+    final item = items[index];
+    return Consumer(
+      builder: (context, ref, _) {
+        return _ImageTile(
+          item: item,
+          storage: ref.watch(imageStorageProvider),
+          selected: _selected.contains(item.image.id),
+          selecting: _selecting,
+          // 按大小翻的时候日期没用，用户要看的是这张到底多大。
+          caption: showSize
+              ? formatStorageBytes(item.image.sizeBytes)
+              : formatDay(dateFromKey(item.transaction.accountingDate)),
+          onTap: _busy
+              ? null
+              : () {
+                  if (_selecting) {
+                    _toggle(item.image.id);
+                  } else {
+                    _openViewer(items, index);
+                  }
+                },
+          onLongPress: _busy
+              ? null
+              : () {
+                  if (_selecting) {
+                    _toggle(item.image.id);
+                  } else {
+                    _enterSelect(item.image.id);
+                  }
+                },
+        );
+      },
+    );
+  }
+}
+
+/// 一笔账单和它的全部图片。
+class _ImageGroup {
+  const _ImageGroup({
+    required this.transaction,
+    required this.items,
+    required this.totalBytes,
+  });
+
+  final TransactionEntry transaction;
+  final List<LedgerImageItem> items;
+  final int totalBytes;
+}
+
+/// 浏览方式切换条。
+class _ModeBar extends StatelessWidget {
+  const _ModeBar({required this.current, required this.onSelect});
+
+  final _GalleryMode current;
+  final ValueChanged<_GalleryMode> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Row(
+        children: [
+          for (final mode in _GalleryMode.values) ...[
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onSelect(mode),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: mode == current ? colors.primarySoft : colors.fill,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  mode.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: mode == current ? colors.primary : colors.inactive,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 按账单聚合时的一组：标题交代这笔多大，下面是这笔的图。
+class _GroupCard extends StatelessWidget {
+  const _GroupCard({
+    required this.group,
+    required this.allSelected,
+    required this.selecting,
+    required this.onToggleGroup,
+    required this.tileBuilder,
+  });
+
+  final _ImageGroup group;
+  final bool allSelected;
+  final bool selecting;
+  final VoidCallback? onToggleGroup;
+  final Widget Function(int index) tileBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final day = dateFromKey(group.transaction.accountingDate);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onToggleGroup,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${formatDay(day)} · '
+                    '${formatMoney(group.transaction.amountCents)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: colors.ink,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '${group.items.length} 张 · '
+                  '${formatStorageBytes(group.totalBytes)}',
+                  style: TextStyle(fontSize: 12.5, color: colors.muted),
+                ),
+                if (selecting) ...[
+                  const SizedBox(width: 8),
+                  Icon(
+                    allSelected
+                        ? FLucideIcons.circleCheckBig
+                        : FLucideIcons.circle,
+                    size: 16,
+                    color: allSelected ? colors.primary : colors.faint,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 6.0;
+            final side = (constraints.maxWidth - spacing * 2) / 3;
+            return Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                for (var i = 0; i < group.items.length; i++)
+                  SizedBox(width: side, height: side, child: tileBuilder(i)),
+              ],
+            );
+          },
+        ),
+      ],
+    );
   }
 }
 
@@ -251,6 +507,7 @@ class _ImageTile extends StatelessWidget {
     required this.storage,
     required this.selected,
     required this.selecting,
+    required this.caption,
     required this.onTap,
     required this.onLongPress,
   });
@@ -259,13 +516,15 @@ class _ImageTile extends StatelessWidget {
   final ImageStorage storage;
   final bool selected;
   final bool selecting;
+
+  /// 压在缩略图下沿的一行小字：日期或体积，由浏览方式决定。
+  final String caption;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final day = dateFromKey(item.transaction.accountingDate);
     return Material(
       color: colors.fill,
       borderRadius: BorderRadius.circular(12),
@@ -292,7 +551,7 @@ class _ImageTile extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(6, 14, 6, 6),
                   child: Text(
-                    formatDay(day),
+                    caption,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(

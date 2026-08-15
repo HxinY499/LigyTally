@@ -14,7 +14,7 @@ import 'appearance_screen.dart';
 import 'category_management_screen.dart';
 import 'csv_export_sheet.dart';
 import 'settings_widgets.dart';
-import 'storage_images_screen.dart';
+import 'storage_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key, this.active = true});
@@ -133,17 +133,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     showAppToast(context, message: message, level: level);
   }
 
-  Future<void> _openStorageImages() async {
+  Future<void> _openStorage() async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const StorageImagesScreen()),
+      MaterialPageRoute(builder: (_) => const StorageScreen()),
     );
     if (mounted) ref.read(storageUsageProvider.notifier).refresh();
   }
 
-  /// 占用空间行：右侧合计，副标题拆开图片和数据库。
+  /// 占用空间行：右侧合计，副标题优先报「有多少能直接清掉」。
   ///
+  /// 副标题不再拆「图片 · 数据」——那是进去之后才需要的明细；在设置列表里
+  /// 唯一值得占一行的信息是「要不要点进去」，所以有可清理的就报数量。
   /// 扫盘失败只说「无法计算」，不把路径或异常原文铺到设置列表里。
-  /// 整行可点进账单图库，回来后重算体积。
   SettingsItem _storageItem() {
     final usage = ref.watch(storageUsageProvider);
     return usage.when(
@@ -151,7 +152,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         icon: FLucideIcons.hardDrive,
         title: '占用空间',
         showChevron: true,
-        onTap: _openStorageImages,
+        onTap: _openStorage,
         trailing: const RowSpinner(),
       ),
       error: (_, _) => SettingsItem(
@@ -159,17 +160,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         title: '占用空间',
         subtitle: '无法计算',
         showChevron: true,
-        onTap: _openStorageImages,
+        onTap: _openStorage,
       ),
       data: (value) => SettingsItem(
         icon: FLucideIcons.hardDrive,
         title: '占用空间',
-        subtitle:
-            '图片 ${formatStorageBytes(value.mediaBytes)}'
-            ' · 数据 ${formatStorageBytes(value.databaseBytes)}',
+        subtitle: value.reclaimableBytes > 0
+            ? '${formatStorageBytes(value.reclaimableBytes)} 可清理'
+            : '图片 ${formatStorageBytes(value.mediaBytes)}'
+                  ' · 数据 ${formatStorageBytes(value.databaseBytes)}',
         value: formatStorageBytes(value.totalBytes),
         showChevron: true,
-        onTap: _openStorageImages,
+        onTap: _openStorage,
       ),
     );
   }

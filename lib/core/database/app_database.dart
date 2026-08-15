@@ -778,11 +778,17 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  /// 全部账单图片，新的在前。占用空间页用来浏览和批量删除。
+  /// 全部账单图片。占用空间页用来浏览和批量删除。
   ///
   /// 只返回库里有记录的图，不扫磁盘：分类图标、缩略图副本、孤儿文件
-  /// 都不该出现在「账单图」里。同一笔的多张按 [sortOrder] 排在一起。
-  Stream<List<LedgerImageItem>> watchAllImages() {
+  /// 都不该出现在「账单图」里。
+  ///
+  /// [sort] 决定顺序：默认新的在前、同一笔按 [sortOrder] 挨着；
+  /// [LedgerImageSort.largest] 是给「腾空间」用的，先删最大的那几张
+  /// 比按时间翻找有效得多。
+  Stream<List<LedgerImageItem>> watchAllImages({
+    LedgerImageSort sort = LedgerImageSort.newest,
+  }) {
     final query =
         select(transactionImages).join([
           innerJoin(
@@ -790,6 +796,8 @@ class AppDatabase extends _$AppDatabase {
             transactions.id.equalsExp(transactionImages.transactionId),
           ),
         ])..orderBy([
+          if (sort == LedgerImageSort.largest)
+            OrderingTerm.desc(transactionImages.sizeBytes),
           OrderingTerm.desc(transactions.accountingDate),
           OrderingTerm.desc(transactions.occurredAt),
           OrderingTerm.asc(transactionImages.sortOrder),
@@ -808,6 +816,32 @@ class AppDatabase extends _$AppDatabase {
   Future<void> deleteImages(Set<String> ids) async {
     if (ids.isEmpty) return;
     await (delete(transactionImages)..where((row) => row.id.isIn(ids))).go();
+  }
+
+  /// 重压之后写回图片的实际尺寸与体积。
+  ///
+  /// 必须写回：占用空间的「平均每张」和图库的按大小排序都读这一列，
+  /// 不更新的话重压完列表还按旧体积排，用户会以为没压。
+  Future<void> updateImageMetrics({
+    required String id,
+    required int sizeBytes,
+    required int width,
+    required int height,
+  }) async {
+    await (update(transactionImages)..where((row) => row.id.equals(id))).write(
+      TransactionImagesCompanion(
+        sizeBytes: Value(sizeBytes),
+        width: Value(width),
+        height: Value(height),
+      ),
+    );
+  }
+
+  /// 回收数据库文件里的空闲页，让删除后的文件真正变小。
+  ///
+  /// VACUUM 会重建整个库文件，不能包在事务里，所以这里直接发裸语句。
+  Future<void> compact() async {
+    await customStatement('VACUUM');
   }
 
   Future<void> saveTransaction({
@@ -892,6 +926,15 @@ class LedgerImageItem {
 
   final TransactionImageEntry image;
   final TransactionEntry transaction;
+}
+
+/// 图库的排序方式。
+enum LedgerImageSort {
+  /// 新的在前，同一笔的图挨在一起。翻找某笔账单的图时用这个。
+  newest,
+
+  /// 大的在前。腾空间时用这个。
+  largest,
 }
 
 class LedgerSummary {

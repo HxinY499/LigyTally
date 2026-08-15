@@ -105,4 +105,67 @@ class LedgerService {
       await imageStorage.deleteFile(image.thumbnailPath);
     }
   }
+
+  /// 把长边超过 [kRecompressMaxSide] 的账单原图重新压小，账单和图都保留。
+  ///
+  /// 只挑「长边确实超标」的压：已经小于目标的图再压一次只会白掉画质，
+  /// 体积也省不下多少。库里 width 为 0 的是早期数据，尺寸未知，一并尝试——
+  /// [ImageStorage.recompress] 压不出更小的结果时会自己放弃。
+  ///
+  /// 缩略图不动：它本来就是 320px，占的是零头。
+  ///
+  /// 先落盘再写库：文件已经变小而库还写着旧体积，最坏是排序和统计偏大，
+  /// 下次重压会修正；反过来库说压过了、文件其实没动，就再也不会被处理了。
+  Future<RecompressResult> recompressLargeImages({
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final targets = [
+      for (final image in await database.exportImages())
+        if (image.width == 0 ||
+            image.width > kRecompressMaxSide ||
+            image.height > kRecompressMaxSide)
+          image,
+    ];
+
+    var processed = 0;
+    var freed = 0;
+    onProgress?.call(0, targets.length);
+    for (final image in targets) {
+      final result = await imageStorage.recompress(
+        relativePath: image.imagePath,
+      );
+      if (result != null) {
+        await database.updateImageMetrics(
+          id: image.id,
+          sizeBytes: result.sizeBytes,
+          width: result.width,
+          height: result.height,
+        );
+        freed += image.sizeBytes - result.sizeBytes;
+        processed++;
+      }
+      onProgress?.call(processed, targets.length);
+    }
+    return RecompressResult(
+      candidateCount: targets.length,
+      compressedCount: processed,
+      freedBytes: freed < 0 ? 0 : freed,
+    );
+  }
+}
+
+/// 一次批量重压的结果。
+///
+/// [candidateCount] 和 [compressedCount] 分开报：挑中 40 张、真压小 12 张是
+/// 正常结果（其余压完反而更大，被放弃了），只报一个数字会让用户以为出错。
+class RecompressResult {
+  const RecompressResult({
+    required this.candidateCount,
+    required this.compressedCount,
+    required this.freedBytes,
+  });
+
+  final int candidateCount;
+  final int compressedCount;
+  final int freedBytes;
 }

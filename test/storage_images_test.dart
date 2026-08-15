@@ -29,6 +29,8 @@ void main() {
     required DateTime date,
     int imageCount = 0,
     int hour = 9,
+    int imageBytes = 10,
+    int width = 0,
   }) async {
     final food = (await database.exportCategories()).firstWhere(
       (item) => item.name == '三餐',
@@ -53,7 +55,9 @@ void main() {
             transactionId: id,
             imagePath: 'media/$id/$i.jpg',
             thumbnailPath: 'media/$id/${i}_thumb.jpg',
-            sizeBytes: 10,
+            width: Value(width),
+            height: Value(width),
+            sizeBytes: imageBytes,
             sortOrder: Value(i),
             createdAt: now,
           ),
@@ -132,6 +136,130 @@ void main() {
     });
   });
 
+  group('按大小排序', () {
+    test('largest 把大图排到最前，跨账单也一样', () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await addTx(
+        database,
+        id: 'old',
+        date: DateTime(2026, 7, 1),
+        imageCount: 1,
+        imageBytes: 900,
+      );
+      await addTx(
+        database,
+        id: 'new',
+        date: DateTime(2026, 8, 15),
+        imageCount: 2,
+        imageBytes: 100,
+      );
+
+      final newest = await database
+          .watchAllImages(sort: LedgerImageSort.newest)
+          .first;
+      expect(newest.first.image.id, 'new-img-0');
+
+      final largest = await database
+          .watchAllImages(sort: LedgerImageSort.largest)
+          .first;
+      expect(largest.first.image.id, 'old-img-0');
+      expect(largest.map((item) => item.image.sizeBytes), [900, 100, 100]);
+    });
+  });
+
+  group('批量重压', () {
+    late Directory dir;
+    late AppDatabase database;
+
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('ligy_recompress');
+      database = AppDatabase.forTesting(NativeDatabase.memory());
+    });
+
+    tearDown(() async {
+      await database.close();
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    test('只挑长边超标和尺寸未知的，写回新体积', () async {
+      await addTx(
+        database,
+        id: 'big',
+        date: DateTime(2026, 8, 15),
+        imageCount: 1,
+        imageBytes: 1000,
+        width: 3000,
+      );
+      await addTx(
+        database,
+        id: 'small',
+        date: DateTime(2026, 8, 14),
+        imageCount: 1,
+        imageBytes: 200,
+        width: 800,
+      );
+
+      final storage = _FakeStorage(dir.path, compressedBytes: 250);
+      final service = LedgerService(database, storage);
+      final result = await service.recompressLargeImages();
+
+      expect(storage.touched, ['media/big/0.jpg']);
+      expect(result.candidateCount, 1);
+      expect(result.compressedCount, 1);
+      expect(result.freedBytes, 750);
+
+      final images = await database.exportImages();
+      final big = images.firstWhere((row) => row.id == 'big-img-0');
+      final small = images.firstWhere((row) => row.id == 'small-img-0');
+      expect(big.sizeBytes, 250);
+      expect(big.width, kRecompressMaxSide);
+      expect(small.sizeBytes, 200);
+    });
+
+    test('压不出更小结果时保留原图，不写库也不算进节省', () async {
+      await addTx(
+        database,
+        id: 'big',
+        date: DateTime(2026, 8, 15),
+        imageCount: 1,
+        imageBytes: 1000,
+        width: 3000,
+      );
+
+      final service = LedgerService(database, _FakeStorage(dir.path));
+      final result = await service.recompressLargeImages();
+
+      expect(result.candidateCount, 1);
+      expect(result.compressedCount, 0);
+      expect(result.freedBytes, 0);
+      final row = (await database.exportImages()).single;
+      expect(row.sizeBytes, 1000);
+      expect(row.width, 3000);
+    });
+
+    test('进度从 0 报到总数，让页面能显示 n / N', () async {
+      await addTx(
+        database,
+        id: 'big',
+        date: DateTime(2026, 8, 15),
+        imageCount: 2,
+        imageBytes: 900,
+        width: 3000,
+      );
+
+      final seen = <String>[];
+      await LedgerService(
+        database,
+        _FakeStorage(dir.path, compressedBytes: 450),
+      ).recompressLargeImages(onProgress: (done, total) {
+        seen.add('$done/$total');
+      });
+
+      expect(seen, ['0/2', '1/2', '2/2']);
+    });
+  });
+
   group('账单图片页', () {
     void usePhone(WidgetTester tester) {
       tester.view.physicalSize = const Size(1200, 2700);
@@ -170,7 +298,32 @@ void main() {
 
       expect(find.text('还没有账单图片'), findsOneWidget);
       expect(find.text('选择'), findsNothing);
+      // 一张图都没有时不该先摆出三个浏览方式让人选。
+      expect(find.text('按账单'), findsNothing);
       await teardown(tester);
     });
   });
+}
+
+/// 只按固定比例「压缩」的假存储：真压缩要走 platform channel，单测里跑不了，
+/// 而这里要守的是挑图规则和写回逻辑，不是 JPEG 编码本身。
+class _FakeStorage extends ImageStorage {
+  _FakeStorage(super.root, {this.compressedBytes}) : super.atRoot();
+
+  /// 压完的体积；null 表示压不出更小的结果，走放弃分支。
+  final int? compressedBytes;
+
+  final List<String> touched = [];
+
+  @override
+  Future<({int sizeBytes, int width, int height})?> recompress({
+    required String relativePath,
+    int maxSide = kRecompressMaxSide,
+    int quality = kRecompressQuality,
+  }) async {
+    touched.add(relativePath);
+    final bytes = compressedBytes;
+    if (bytes == null) return null;
+    return (sizeBytes: bytes, width: maxSide, height: maxSide);
+  }
 }

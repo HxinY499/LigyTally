@@ -11,6 +11,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_version.dart';
 
+/// 安装包在临时目录下的子目录名。
+///
+/// 与 `update_provider_paths.xml` 里 FileProvider 的声明一一对应；占用空间
+/// 统计也要认这个目录才能把几十 MB 的残包算成可清理缓存。
+const kUpdateCacheDirName = 'updates';
+
 /// 线上可用的新版本信息。
 class UpdateInfo {
   const UpdateInfo({
@@ -309,7 +315,7 @@ class UpdateService {
   /// 缓存目录下的 updates/，与 FileProvider 的 update_provider_paths.xml 对应。
   Future<Directory> _updateDir() async {
     final cache = await getTemporaryDirectory();
-    final dir = Directory(p.join(cache.path, 'updates'));
+    final dir = Directory(p.join(cache.path, kUpdateCacheDirName));
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
