@@ -31,6 +31,7 @@ void main() {
     int hour = 9,
     int imageBytes = 10,
     int width = 0,
+    String note = '',
   }) async {
     final food = (await database.exportCategories()).firstWhere(
       (item) => item.name == '三餐',
@@ -45,6 +46,7 @@ void main() {
         categoryId: food.id,
         accountingDate: dateKey(date),
         occurredAt: occurred.millisecondsSinceEpoch,
+        note: Value(note),
         createdAt: now,
         updatedAt: now,
       ),
@@ -91,6 +93,26 @@ void main() {
         'new-img-1',
         'old-img-0',
       ]);
+    });
+
+    test('每张图都带回它所属的分类，且不会因为连表多出行', () async {
+      await addTx(
+        database,
+        id: 'tx',
+        date: DateTime(2026, 8, 15),
+        imageCount: 2,
+        note: '和同事聚餐',
+      );
+
+      final items = await database.watchAllImages().first;
+      // 连了 categories 之后最容易出的错是行数翻倍或丢行。
+      expect(items, hasLength(2));
+      expect(items.map((item) => item.category.name), ['三餐', '三餐']);
+      expect(items.first.transaction.note, '和同事聚餐');
+      // 组标题要跳到这笔账单，编辑页收的是完整的 LedgerItem。
+      final ledger = items.first.ledgerItem;
+      expect(ledger.transaction.id, 'tx');
+      expect(ledger.category.name, '三餐');
     });
 
     test('删图片只去图，账单还在', () async {
@@ -302,6 +324,7 @@ void main() {
       expect(find.text('按账单'), findsNothing);
       await teardown(tester);
     });
+
   });
 }
 

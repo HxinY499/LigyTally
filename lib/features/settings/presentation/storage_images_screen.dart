@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/media/image_storage.dart';
+import '../../../core/preferences/money_grouped.dart';
 import '../../../core/storage/storage_usage.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
@@ -12,6 +13,7 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/local_image.dart';
 import '../../../shared/widgets/photo_viewer.dart';
 import '../../ledger/application/providers.dart';
+import '../../ledger/presentation/transaction_editor.dart';
 
 /// 图库的浏览方式。
 ///
@@ -66,24 +68,33 @@ class _StorageImagesScreenState extends ConsumerState<StorageImagesScreen> {
   }
 
   /// 按账单聚合，合计大的在前。
+  ///
+  /// 占比按 `sizeBytes` 之和算，分母是当前列表里的全部图片——这一页本来就是
+  /// 「全部账单图」，用它当 100% 才和用户看到的一致。
   List<_ImageGroup> _groupsOf(List<LedgerImageItem> items) {
     final grouped = <String, List<LedgerImageItem>>{};
     for (final item in items) {
       grouped.putIfAbsent(item.transaction.id, () => []).add(item);
     }
+    final total = items.fold(0, (sum, item) => sum + item.image.sizeBytes);
     final groups = [
       for (final entry in grouped.values)
         _ImageGroup(
-          transaction: entry.first.transaction,
           items: entry,
-          totalBytes: entry.fold(
-            0,
-            (sum, item) => sum + item.image.sizeBytes,
-          ),
+          totalBytes: entry.fold(0, (sum, item) => sum + item.image.sizeBytes),
+          allBytes: total,
         ),
     ];
     groups.sort((a, b) => b.totalBytes.compareTo(a.totalBytes));
     return groups;
+  }
+
+  Future<void> _openTransaction(_ImageGroup group) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => TransactionEditor(existing: group.items.first.ledgerItem),
+      ),
+    );
   }
 
   void _pruneSelection(List<LedgerImageItem> items) {
@@ -297,6 +308,7 @@ class _StorageImagesScreenState extends ConsumerState<StorageImagesScreen> {
 
   Widget _groupedSliver(List<LedgerImageItem> items) {
     final groups = _groupsOf(items);
+    final grouped = ref.watch(moneyGroupedProvider);
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       sliver: SliverList.separated(
@@ -309,7 +321,12 @@ class _StorageImagesScreenState extends ConsumerState<StorageImagesScreen> {
             group: group,
             allSelected: _selected.containsAll(ids),
             selecting: _selecting,
-            onToggleGroup: _busy ? null : () => _toggleGroup(group),
+            grouped: grouped,
+            onTap: _busy
+                ? null
+                : () => _selecting
+                      ? _toggleGroup(group)
+                      : _openTransaction(group),
             tileBuilder: (position) =>
                 _tile(group.items, position, showSize: true),
           );
@@ -363,14 +380,29 @@ class _StorageImagesScreenState extends ConsumerState<StorageImagesScreen> {
 /// 一笔账单和它的全部图片。
 class _ImageGroup {
   const _ImageGroup({
-    required this.transaction,
     required this.items,
     required this.totalBytes,
+    required this.allBytes,
   });
 
-  final TransactionEntry transaction;
   final List<LedgerImageItem> items;
   final int totalBytes;
+
+  /// 当前列表里全部图片的字节数，用来算这一笔的占比。
+  final int allBytes;
+
+  TransactionEntry get transaction => items.first.transaction;
+
+  CategoryEntry get category => items.first.category;
+
+  /// 「占 12%」里的那个数。不足 1% 的笔数很多，全显示 0% 没有意义，
+  /// 所以留给调用方用 [shareLabel] 拿现成的文案。
+  String get shareLabel {
+    if (allBytes <= 0) return '';
+    final percent = totalBytes * 100 / allBytes;
+    if (percent < 1) return '<1%';
+    return '${percent.round()}%';
+  }
 }
 
 /// 浏览方式切换条。
@@ -425,48 +457,110 @@ class _GroupCard extends StatelessWidget {
     required this.group,
     required this.allSelected,
     required this.selecting,
-    required this.onToggleGroup,
+    required this.grouped,
+    required this.onTap,
     required this.tileBuilder,
   });
 
   final _ImageGroup group;
   final bool allSelected;
   final bool selecting;
-  final VoidCallback? onToggleGroup;
+
+  /// 金额是否按千分位显示，跟随全局偏好。
+  final bool grouped;
+
+  /// 浏览时进这笔账单，多选时整笔全选——同一个位置按当前模式给一个动作，
+  /// 不并排摆两个按钮让人先挑。
+  final VoidCallback? onTap;
   final Widget Function(int index) tileBuilder;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final day = dateFromKey(group.transaction.accountingDate);
+    final transaction = group.transaction;
+    final isExpense = transaction.kind == 0;
+    final amountColor = isExpense ? colors.expense : colors.income;
+    final softColor = isExpense ? colors.expenseSoft : colors.incomeSoft;
+    final day = dateFromKey(transaction.accountingDate);
+    final occurredAt = DateTime.fromMillisecondsSinceEpoch(
+      transaction.occurredAt,
+    );
+    final note = transaction.note.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: onToggleGroup,
+          onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
-                Expanded(
-                  child: Text(
-                    '${formatDay(day)} · '
-                    '${formatMoney(group.transaction.amountCents)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                      color: colors.ink,
-                    ),
+                Container(
+                  width: 34,
+                  height: 34,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: softColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: CategoryIconView(
+                    iconKey: group.category.iconKey,
+                    color: amountColor,
+                    size: 18,
+                    imageSize: 34,
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  '${group.items.length} 张 · '
-                  '${formatStorageBytes(group.totalBytes)}',
-                  style: TextStyle(fontSize: 12.5, color: colors.muted),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        group.category.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: colors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          formatDay(day),
+                          formatClock(occurredAt),
+                          if (note.isNotEmpty) note,
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11.5, color: colors.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${isExpense ? '-' : '+'}'
+                      '${formatMoney(transaction.amountCents, grouped: grouped)}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: amountColor,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${group.items.length} 张 · '
+                      '${formatStorageBytes(group.totalBytes)}'
+                      '${group.shareLabel.isEmpty ? '' : ' · 占 ${group.shareLabel}'}',
+                      style: TextStyle(fontSize: 11.5, color: colors.muted),
+                    ),
+                  ],
                 ),
                 if (selecting) ...[
                   const SizedBox(width: 8),

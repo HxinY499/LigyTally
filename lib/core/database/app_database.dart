@@ -795,6 +795,9 @@ class AppDatabase extends _$AppDatabase {
             transactions,
             transactions.id.equalsExp(transactionImages.transactionId),
           ),
+          // 连分类：图库按账单分组时要靠分类图标和名字认出「这是哪笔账」，
+          // 光有日期和金额认不出来；跳去编辑这笔账也需要完整的 LedgerItem。
+          innerJoin(categories, categories.id.equalsExp(transactions.categoryId)),
         ])..orderBy([
           if (sort == LedgerImageSort.largest)
             OrderingTerm.desc(transactionImages.sizeBytes),
@@ -808,6 +811,7 @@ class AppDatabase extends _$AppDatabase {
           LedgerImageItem(
             image: row.readTable(transactionImages),
             transaction: row.readTable(transactions),
+            category: row.readTable(categories),
           ),
       ],
     );
@@ -922,10 +926,19 @@ class LedgerItem {
 }
 
 class LedgerImageItem {
-  const LedgerImageItem({required this.image, required this.transaction});
+  const LedgerImageItem({
+    required this.image,
+    required this.transaction,
+    required this.category,
+  });
 
   final TransactionImageEntry image;
   final TransactionEntry transaction;
+  final CategoryEntry category;
+
+  /// 这张图所属的账单，可直接交给编辑页。
+  LedgerItem get ledgerItem =>
+      LedgerItem(transaction: transaction, category: category);
 }
 
 /// 图库的排序方式。
