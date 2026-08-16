@@ -36,6 +36,7 @@ class StorageUsage {
     required this.imageBytes,
     required this.imageCount,
     required this.categoryIconBytes,
+    required this.wallpaperBytes,
     required this.databaseBytes,
     required this.cacheBytes,
     required this.orphanBytes,
@@ -51,6 +52,13 @@ class StorageUsage {
   /// 仍被分类引用的自定义图标。
   final int categoryIconBytes;
 
+  /// 全局壁纸。
+  ///
+  /// 必须单列一项，哪怕它永远只有一个文件：它躺在 `media/` 下面却**不在库里**，
+  /// 不特判就会被 [clearOrphans] 当成孤儿删掉——用户点一下「清理」，
+  /// 壁纸就没了，而清理面板上还写着「这些是掉队的文件」。
+  final int wallpaperBytes;
+
   /// SQLite 主库 + WAL / SHM / journal。
   final int databaseBytes;
 
@@ -62,7 +70,7 @@ class StorageUsage {
 
   final int orphanFileCount;
 
-  int get mediaBytes => imageBytes + categoryIconBytes;
+  int get mediaBytes => imageBytes + categoryIconBytes + wallpaperBytes;
 
   /// 账本本体：删缓存和孤儿之后仍会占着的部分。
   int get ledgerBytes => mediaBytes + databaseBytes;
@@ -98,6 +106,7 @@ class StorageUsageService {
 
     var imageBytes = 0;
     var iconBytes = 0;
+    var wallpaperBytes = 0;
     var orphanBytes = 0;
     var orphanCount = 0;
     await for (final file in _files(media)) {
@@ -107,6 +116,8 @@ class StorageUsageService {
         imageBytes += bytes;
       } else if (live.icons.contains(relative)) {
         iconBytes += bytes;
+      } else if (_isWallpaper(relative)) {
+        wallpaperBytes += bytes;
       } else if (await _isOldEnough(file)) {
         orphanBytes += bytes;
         orphanCount++;
@@ -128,6 +139,7 @@ class StorageUsageService {
       imageBytes: imageBytes,
       imageCount: live.imageCount,
       categoryIconBytes: iconBytes,
+      wallpaperBytes: wallpaperBytes,
       databaseBytes: await _databaseBytes(),
       cacheBytes: cacheBytes,
       orphanBytes: orphanBytes,
@@ -158,7 +170,10 @@ class StorageUsageService {
     var freed = 0;
     await for (final file in _files(media)) {
       final relative = p.relative(file.path, from: support);
-      if (live.images.contains(relative) || live.icons.contains(relative)) {
+      if (live.images.contains(relative) ||
+          live.icons.contains(relative) ||
+          // 壁纸躺在 media/ 下面但不在库里，不特判就会被当成孤儿删掉。
+          _isWallpaper(relative)) {
         continue;
       }
       if (!await _isOldEnough(file)) continue;
@@ -180,6 +195,15 @@ class StorageUsageService {
     await _pruneEmptyDirectories(media);
     return freed;
   }
+
+  /// 这个相对路径是不是全局壁纸。
+  ///
+  /// 按分隔符归一化再比：库里存的相对路径在 Windows 上是 `\` 分隔的，
+  /// 而 [kWallpaperRelativePath] 是写死的 `/`。测试在 macOS / Linux 上跑不到
+  /// 这个差别，真机上也不会——但这个判断错了的后果是删掉用户的壁纸，
+  /// 不值得赌。
+  bool _isWallpaper(String relative) =>
+      relative.replaceAll(r'\', '/') == kWallpaperRelativePath;
 
   /// 对数据库做 VACUUM，返回文件缩小的字节数。
   ///

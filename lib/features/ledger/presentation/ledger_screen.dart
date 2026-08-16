@@ -353,10 +353,16 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                         ),
                     ];
                     return SliverPadding(
-                      // 底部留白只需避开居中悬浮的「记一笔」FAB
-                      // （56 直径 + 16 浮起边距+ 余量）；
-                      // 导航栏已贴底固定，不再覆盖列表。
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 84),
+                      // 84 是避开居中悬浮的「记一笔」FAB（56 直径 + 16 浮起
+                      // 边距 + 余量）。再加上 MediaQuery 的底部留白：贴底档下
+                      // 它是 0（那块留白由底栏自己吃掉），悬浮档下它是
+                      // 「胶囊盖住的高度 + 系统安全区」，见 `home_shell.dart`。
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        12,
+                        16,
+                        84 + MediaQuery.paddingOf(context).bottom,
+                      ),
                       sliver: SliverList.builder(
                         itemCount: entries.length,
                         itemBuilder: (context, index) {

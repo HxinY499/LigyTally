@@ -68,17 +68,44 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final floating = ref.watch(navBarStyleProvider) == NavBarStyle.floating;
+    final pages = PageView(
+      controller: _controller,
+      onPageChanged: (value) => setState(() => _index = value),
+      physics: const ClampingScrollPhysics(),
+      children: [
+        const LedgerScreen(),
+        const StatisticsScreen(),
+        SettingsScreen(active: _index == 2),
+      ],
+    );
     return Scaffold(
-      body: PageView(
-        controller: _controller,
-        onPageChanged: (value) => setState(() => _index = value),
-        physics: const ClampingScrollPhysics(),
-        children: [
-          const LedgerScreen(),
-          const StatisticsScreen(),
-          SettingsScreen(active: _index == 2),
-        ],
-      ),
+      // 悬浮档要的是内容真的从胶囊底下穿过去，而不是给它留一条空带子——
+      // 留白的方案看起来就是「一条底栏，只是形状改成了胶囊」。
+      extendBody: floating,
+      // 内容穿过去之后，三个一级页必须知道底部有多少高度被盖住了，否则
+      // 最后一张卡会压在胶囊下面。
+      //
+      // 走 MediaQuery 的 padding 而不是从这里往下传一个数：贴底档下 Scaffold
+      // 自己就会把底部安全区从 body 的 MediaQuery 里摘掉（那块留白由底栏自己
+      // 吃），于是页面侧只要一律加上 `paddingOf(context).bottom`，两档就都对了，
+      // 不需要在页面里判断当前是哪一档。
+      body: floating
+          ? Builder(
+              builder: (context) {
+                final media = MediaQuery.of(context);
+                return MediaQuery(
+                  data: media.copyWith(
+                    padding: media.padding.copyWith(
+                      bottom:
+                          media.padding.bottom + _BottomNavBar.floatingOverlap,
+                    ),
+                  ),
+                  child: pages,
+                );
+              },
+            )
+          : pages,
       // 记一笔：居中悬浮在导航栏上方，只在首页（明细）出现，
       // 避免遮挡统计/设置页内容。居中比右下角更好按，左右手都够得到。
       // 用 centerFloat 而非 centerDocked：docked 会让 FAB 半嵌进栏里，
@@ -108,7 +135,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       bottomNavigationBar: _BottomNavBar(
         index: _index,
         onChange: _jumpTo,
-        style: ref.watch(navBarStyleProvider),
+        floating: floating,
       ),
     );
   }
@@ -121,20 +148,22 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 ///
 /// 两种形态（见 [NavBarStyle]）共用同一个 [Row]，区别只在外壳：
 /// - 贴底：铺满 + 一道极淡顶线，安全区留白吃在栏内；
-/// - 悬浮：四周留白的胶囊 + 阴影，安全区留白吃在栏外。
+/// - 悬浮：四周留白的胶囊 + 阴影，内容从它底下穿过去。
 ///
-/// 悬浮档**没有**让内容滚到栏下面。那需要三个一级页各自重算滚动内边距，
-/// 而用户感知到的「悬浮」全部来自这圈留白和圆角，穿透与否看不出来。
+/// 悬浮档必须配 `Scaffold.extendBody`。只给胶囊加一圈外边距是不够的：
+/// 那圈留白会露出 Scaffold 的底色，看起来仍然是「一条完整的底栏，
+/// 只是里面画了个胶囊」——留白和栏在观感上是一回事。真正让人觉得它浮着的，
+/// 是能看见内容在它旁边和底下继续流动。
 class _BottomNavBar extends StatelessWidget {
   const _BottomNavBar({
     required this.index,
     required this.onChange,
-    required this.style,
+    required this.floating,
   });
 
   final int index;
   final ValueChanged<int> onChange;
-  final NavBarStyle style;
+  final bool floating;
 
   static const _items = [
     (icon: FLucideIcons.receiptText, label: '明细'),
@@ -142,16 +171,23 @@ class _BottomNavBar extends StatelessWidget {
     (icon: FLucideIcons.settings2, label: '设置'),
   ];
 
-  /// 内容区高度（不含系统安全区）。
+  /// 贴底档的内容区高度（不含系统安全区）。
   static const _barHeight = 58.0;
-
-  /// 悬浮档的胶囊四周留白。左右取 16 与一级页内容的 gutter 同源；
-  /// 底部 10 是「离屏幕边缘足够远才像浮着」与「别把内容挤太多」之间的折中。
-  static const _floatInset = EdgeInsets.fromLTRB(16, 0, 16, 10);
 
   /// 悬浮档的胶囊高度。比贴底档矮一档：它已经靠阴影和留白分层了，
   /// 不需要再靠高度撑存在感，矮一点还能把留白的成本抵掉一半。
   static const _floatHeight = 54.0;
+
+  /// 胶囊左右留白，与一级页内容的 gutter 同源。
+  static const _floatSideInset = 16.0;
+
+  /// 胶囊离屏幕下沿的距离：太小不像浮着，太大又白吃掉一截内容。
+  static const _floatBottomInset = 10.0;
+
+  /// 悬浮档下这条栏盖住的内容高度（不含系统安全区）。
+  ///
+  /// 一级页靠它撑出底部留白，否则最后一张卡会压在胶囊下面。
+  static const floatingOverlap = _floatHeight + _floatBottomInset;
 
   @override
   Widget build(BuildContext context) {
@@ -171,9 +207,14 @@ class _BottomNavBar extends StatelessWidget {
       ],
     );
 
-    if (style == NavBarStyle.floating) {
+    if (floating) {
       return Padding(
-        padding: _floatInset.add(EdgeInsets.only(bottom: bottomInset)),
+        padding: EdgeInsets.fromLTRB(
+          _floatSideInset,
+          0,
+          _floatSideInset,
+          _floatBottomInset + bottomInset,
+        ),
         child: Container(
           height: _floatHeight,
           decoration: BoxDecoration(

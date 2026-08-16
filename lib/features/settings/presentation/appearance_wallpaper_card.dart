@@ -108,7 +108,6 @@ class _AppearanceWallpaperCardState
         SettingsItem(
           icon: FLucideIcons.wallpaper,
           title: wallpaper.enabled ? '换一张' : '选择壁纸',
-          subtitle: wallpaper.enabled ? null : '照片只出现在卡片之间，正文仍压在白卡上',
           trailing: _busy ? const RowSpinner() : null,
           showChevron: !_busy,
           onTap: _busy ? null : _pick,

@@ -104,29 +104,53 @@ class ImageStorage {
   /// Flutter 的图片缓存里那条同路径的记录赶走——[FileImage] 是按路径缓存的，
   /// 不 evict 的话换了图还是显示旧的。
   ///
-  /// 压到 1440px 而不是入库账单图的 2048px：壁纸永远铺满屏幕且盖着一层
-  /// 蒙版，再高的分辨率一个像素都看不出来，只是让备份包变大。
+  /// ## 为什么要压
+  ///
+  /// 相册里随手一张是 4000×3000 / 5MB 起。它会进备份包，而且这张图是**整屏
+  /// 常驻**的——Flutter 要把它整幅解码进内存（4000×3000 的 RGBA 是 48MB），
+  /// 而屏幕上真正用到的不超过 1440 宽，还盖着一层至少 50% 的蒙版。
+  /// 压到 1440px / q82 之后通常是 200~400KB，肉眼分辨不出差别。
+  ///
+  /// 比入库账单图的 2048px 更狠：账单图要留「以后放大看小票金额」的余量，
+  /// 壁纸没有这种用途。
   Future<int> storeWallpaper(XFile source) async {
     final root = await _root();
     await root.create(recursive: true);
     final target = File(p.join(await _supportRoot(), kWallpaperRelativePath));
-    final compressed = await FlutterImageCompress.compressAndGetFile(
-      source.path,
-      // 直接压到目标路径会踩「源和目标同路径」——用户可以把当前壁纸
-      // 再选一次。先压到旁边，成了再换过去。
-      '${target.path}.staging',
-      minWidth: kWallpaperMaxSide,
-      minHeight: kWallpaperMaxSide,
-      quality: kWallpaperQuality,
-      format: CompressFormat.jpeg,
-      keepExif: false,
-    );
-    if (compressed == null) {
-      throw StateError('壁纸图片处理失败');
+    // 先压到旁边再换过去：`compressAndGetFile` 的源和目标不能是同一个路径，
+    // 而用户完全可以把当前这张壁纸再选一次。
+    //
+    // 暂存名的**扩展名必须还是 .jpg**：压缩库按目标文件名的后缀校验格式，
+    // 给它 `wallpaper.jpg.staging` 会直接抛
+    // 「CompressFormat.jpeg requires the target file name to end with .jpg」。
+    final staging = File(p.join(root.path, 'wallpaper.staging.jpg'));
+    try {
+      final compressed = await FlutterImageCompress.compressAndGetFile(
+        source.path,
+        staging.path,
+        minWidth: kWallpaperMaxSide,
+        minHeight: kWallpaperMaxSide,
+        quality: kWallpaperQuality,
+        format: CompressFormat.jpeg,
+        keepExif: false,
+      );
+      if (compressed == null) {
+        throw StateError('壁纸图片处理失败');
+      }
+      await File(compressed.path).rename(target.path);
+      await FileImage(target).evict();
+      return DateTime.now().millisecondsSinceEpoch;
+    } finally {
+      // rename 成功后这里本就不存在；失败时别把半张图留在 media 目录里，
+      // 否则它会被算进「占用空间」还没人认领。
+      if (await staging.exists()) {
+        try {
+          await staging.delete();
+        } on FileSystemException {
+          // 删不掉的残件由孤儿清理兜底。
+        }
+      }
     }
-    await File(compressed.path).rename(target.path);
-    await FileImage(target).evict();
-    return DateTime.now().millisecondsSinceEpoch;
   }
 
   /// 删掉壁纸文件。文件本来就不在也算成功——调用方只关心「之后没有壁纸」。

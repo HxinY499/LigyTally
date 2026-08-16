@@ -249,6 +249,24 @@ void main() {
       expect(await fresh.exists(), isTrue);
     });
 
+    test('壁纸躺在 media 下面却不在库里，但它不是孤儿', () async {
+      // 这条是防一次真实的数据丢失：壁纸和账单图放在同一个目录下，
+      // 而它唯一的「引用」在外观偏好里、不在数据库里。少了特判，
+      // 用户点一下「清理无主文件」壁纸就没了，而那个按钮上写的是
+      // 「这些是掉队的文件」。
+      final wallpaper = await writeFile(support, kWallpaperRelativePath, 300);
+      await makeOld(wallpaper);
+
+      final usage = await service.measure();
+      expect(usage.wallpaperBytes, 300);
+      expect(usage.orphanBytes, 0, reason: '壁纸被当成孤儿了');
+      // 也要算进「图片」那一档，否则合计对不上磁盘上真实的占用。
+      expect(usage.mediaBytes, 300);
+
+      expect(await service.clearOrphans(), 0);
+      expect(await wallpaper.exists(), isTrue, reason: '壁纸被清理掉了');
+    });
+
     test('文件库把主库和 wal/shm/journal 算进数据', () async {
       await database.close();
       final dbFile = File(p.join(support.path, 'ligy.sqlite'));
@@ -450,6 +468,7 @@ class _FixedUsage extends StorageUsageController {
       imageBytes: 5 * 1024 * 1024,
       imageCount: 12,
       categoryIconBytes: 0,
+      wallpaperBytes: 0,
       databaseBytes: 512 * 1024,
       cacheBytes: 1024 * 1024,
       orphanBytes: 1024 * 1024,

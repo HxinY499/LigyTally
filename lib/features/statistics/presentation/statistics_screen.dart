@@ -83,8 +83,11 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
       title: '统计',
       slivers: [
         SliverPadding(
-          // 导航栏已贴底固定、本页无 FAB，底部只留收尾留白。
-          padding: const EdgeInsets.only(bottom: 28),
+          // 本页无 FAB，28 只是收尾留白。MediaQuery 的底部留白在贴底档下是 0
+          // （那块由底栏自己吃掉），悬浮档下是胶囊盖住的高度，见 `home_shell.dart`。
+          padding: EdgeInsets.only(
+            bottom: 28 + MediaQuery.paddingOf(context).bottom,
+          ),
           sliver: SliverList.list(
             children: [
               Padding(

@@ -73,10 +73,11 @@ class AppearanceScreen extends ConsumerWidget {
               const SizedBox(height: 10),
               SettingsCard(
                 children: [
+                  // 不带副标题：「主题码」是什么、壁纸算不算在内，浮层里
+                  // 已经用两行说清了，列表里再说一遍只是把这一屏堆得更长。
                   SettingsItem(
                     icon: FLucideIcons.share2,
                     title: '主题码',
-                    subtitle: '把整套外观发给别人，或套用别人的',
                     showChevron: true,
                     onTap: () => _openCodeSheet(context),
                   ),
@@ -136,7 +137,6 @@ class AppearanceScreen extends ConsumerWidget {
                   SettingsItem(
                     icon: FLucideIcons.textCursorInput,
                     title: '显示密度',
-                    subtitle: '字号与行高，决定一屏能看几笔',
                     value: config.density.label,
                     showChevron: true,
                     onTap: () => _pickDensity(context, notifier, config),
@@ -169,7 +169,6 @@ class AppearanceScreen extends ConsumerWidget {
                   SettingsItem(
                     icon: FLucideIcons.creditCard,
                     title: '摘要卡样式',
-                    subtitle: '明细页与统计页顶部那张大卡',
                     value: config.heroStyle.label,
                     showChevron: true,
                     onTap: () => _pickHeroStyle(context, notifier, config),
@@ -184,7 +183,6 @@ class AppearanceScreen extends ConsumerWidget {
                   SettingsItem(
                     icon: FLucideIcons.zap,
                     title: '动效强度',
-                    subtitle: '也影响页面切换的过渡',
                     value: config.motion.label,
                     showChevron: true,
                     onTap: () => _pickMotion(context, notifier, config),
@@ -245,7 +243,6 @@ class AppearanceScreen extends ConsumerWidget {
                   SettingsItem(
                     icon: FLucideIcons.smartphone,
                     title: '应用图标',
-                    subtitle: '仅影响桌面上的图标',
                     trailing: AppIconPreview(style: ref.watch(appIconProvider)),
                     showChevron: true,
                     onTap: () => _pickAppIcon(context, ref),
@@ -621,35 +618,27 @@ class _CornerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
+    // 卡里只有这一排档位，没有说明文字：五枚方块本身就是一条从方到圆的梯子，
+    // 而顶部样张会当场跟着变形——这两样加起来比一行小字说得清楚。
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       decoration: BoxDecoration(
-        color: colors.surface,
+        color: context.colors.surface,
         borderRadius: context.radii.cardAll,
       ),
-      child: Column(
+      child: Row(
         children: [
-          Row(
-            children: [
-              for (final style in AppCornerStyle.values)
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: _CornerOption(
-                      style: style,
-                      selected: style == value,
-                      onTap: () => onChanged(style),
-                    ),
-                  ),
+          for (final style in AppCornerStyle.values)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: _CornerOption(
+                  style: style,
+                  selected: style == value,
+                  onTap: () => onChanged(style),
                 ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            '卡片、弹窗、输入框整体缩放；开关和徽章保持胶囊',
-            style: TextStyle(fontSize: 11.5, color: colors.inactive),
-          ),
+              ),
+            ),
         ],
       ),
     );

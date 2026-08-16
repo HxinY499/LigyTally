@@ -195,7 +195,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       title: '设置',
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+          // MediaQuery 的底部留白在贴底档下是 0（那块由底栏自己吃掉），
+          // 悬浮档下是胶囊盖住的高度，见 `home_shell.dart`。
+          padding: EdgeInsets.fromLTRB(
+            16,
+            4,
+            16,
+            100 + MediaQuery.paddingOf(context).bottom,
+          ),
           sliver: SliverList.list(
             children: [
               const SectionLabel('偏好'),
@@ -221,7 +228,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   SettingsItem(
                     icon: FLucideIcons.paintbrush,
                     title: '外观',
-                    subtitle: '风格、配色、圆角、密度、壁纸',
                     showChevron: true,
                     onTap: () => Navigator.of(context).push<void>(
                       MaterialPageRoute(
