@@ -482,6 +482,50 @@ void main() {
       await teardownTree(tester);
     });
 
+    testWidgets('趋势卡：可切换查看收入趋势', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final categories = await database.exportCategories();
+      final incomeCategory = categories.firstWhere(
+        (item) => item.kind == 1 && item.level == 1,
+      );
+      final now = DateTime.now();
+
+      await database.saveTransaction(
+        entry: TransactionsCompanion.insert(
+          id: 'trend-income',
+          kind: 1,
+          amountCents: 88000,
+          categoryId: incomeCategory.id,
+          accountingDate: dateKey(now),
+          occurredAt: now.millisecondsSinceEpoch,
+          createdAt: now.millisecondsSinceEpoch,
+          updatedAt: now.millisecondsSinceEpoch,
+        ),
+        newImages: const [],
+        removedImageIds: const {},
+      );
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      expect(find.text('本期还没有支出'), findsOneWidget);
+
+      final incomeChip = find.descendant(
+        of: find.byKey(const ValueKey('trend-kind-toggle')),
+        matching: find.text('收入'),
+      );
+      await tester.tap(incomeChip);
+      await settle(tester);
+
+      expect(find.text('本期还没有支出'), findsNothing);
+      expect(find.text('880.00'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
     testWidgets('有账单：概览与分类排行显示真实金额', (tester) async {
       useTallViewport(tester);
       final database = AppDatabase.forTesting(NativeDatabase.memory());
@@ -723,6 +767,52 @@ void main() {
       // 所以「150%」应当同时出现在 Hero 徽章和这一行上——
       // 两处对不上就说明两张卡用了不同的对照区间。
       expect(find.text('150%'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
+    testWidgets('概览卡：点击环比徽章展开对照说明', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final categories = await database.exportCategories();
+      final expenseCategory = categories.firstWhere(
+        (item) => item.kind == 0 && item.level == 1,
+      );
+      final now = DateTime.now();
+      final lastMonthFirst = DateTime(now.year, now.month - 1, 1);
+
+      Future<void> add(String id, int cents, DateTime date) {
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: id,
+            kind: 0,
+            amountCents: cents,
+            categoryId: expenseCategory.id,
+            accountingDate: dateKey(date),
+            occurredAt: date.millisecondsSinceEpoch,
+            createdAt: date.millisecondsSinceEpoch,
+            updatedAt: date.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      await add('explain-current', 10000, now);
+      await add('explain-previous', 4000, lastMonthFirst);
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      await tester.tap(find.text('150%').first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.textContaining('本期（'), findsOneWidget);
+      expect(find.textContaining('对照（'), findsOneWidget);
+      expect(find.textContaining('多出 ¥60.00'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
     });

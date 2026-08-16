@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import 'stats_design.dart';
 import 'statistics_window.dart';
@@ -185,7 +186,8 @@ class StatsOverviewCard extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: _DeltaBadge(
-                      previousLabel: window.previousLabel,
+                      window: window,
+                      grouped: grouped,
                       currentCents: summary.expenseCents,
                       previousCents: previous?.expenseCents,
                     ),
@@ -391,60 +393,248 @@ class _RangeArrow extends StatelessWidget {
   }
 }
 
-/// 环比徽章：半透明白底 + 箭头 + 百分比。
+/// 环比徽章：半透明白底 + 箭头 + 百分比；点击展开对照说明。
 ///
 /// 支出场景下「涨」是负面信号，所以上涨用暖色（浅红），下降用浅绿。
 /// 放在Hero 卡里不能用纯饱和红绿——在蓝底上会显得刺眼且降低可读性，
 /// 因此选了两个偏亮的低饱和色。
-class _DeltaBadge extends StatelessWidget {
+class _DeltaBadge extends StatefulWidget {
   const _DeltaBadge({
-    required this.previousLabel,
+    required this.window,
+    required this.grouped,
     required this.currentCents,
     required this.previousCents,
   });
 
-  final String previousLabel;
+  final StatisticsWindow window;
+  final bool grouped;
   final int currentCents;
-
-  /// null 表示上期数据还在加载。
   final int? previousCents;
 
   @override
+  State<_DeltaBadge> createState() => _DeltaBadgeState();
+}
+
+class _DeltaBadgeState extends State<_DeltaBadge>
+    with SingleTickerProviderStateMixin {
+  late final FPopoverController _popover = FPopoverController(vsync: this);
+
+  @override
+  void dispose() {
+    _popover.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final base = previousCents;
-    if (base == null) return const SizedBox.shrink();
+    final previousCents = widget.previousCents;
+    if (previousCents == null) return const SizedBox.shrink();
 
     final stats = StatsTokens.of(context);
-    final diff = currentCents - base;
-    // 没有基数时算不出百分比：区分「上期也是0」和「上期为 0 但本期有支出」。
-    if (base == 0) {
-      final text = currentCents == 0
+    final previousLabel = widget.window.previousLabel;
+    final diff = widget.currentCents - previousCents;
+    final Widget shell;
+    if (previousCents == 0) {
+      final text = widget.currentCents == 0
           ? '$previousLabel 持平'
           : '$previousLabel 新增';
-      return _BadgeShell(
-        icon: currentCents == 0 ? FLucideIcons.minus : FLucideIcons.arrowUp,
+      shell = _BadgeShell(
+        icon: widget.currentCents == 0
+            ? FLucideIcons.minus
+            : FLucideIcons.arrowUp,
         text: text,
-        color: currentCents == 0
+        color: widget.currentCents == 0
             ? stats.onHeroSecondary
             : stats.onHeroDeltaUp,
       );
-    }
-    if (diff == 0) {
-      return _BadgeShell(
+    } else if (diff == 0) {
+      shell = _BadgeShell(
         icon: FLucideIcons.minus,
         text: '$previousLabel 持平',
         color: stats.onHeroSecondary,
       );
+    } else {
+      final up = diff > 0;
+      final percent = diff.abs() / previousCents * 100;
+      shell = _BadgeShell(
+        icon: up ? FLucideIcons.arrowUp : FLucideIcons.arrowDown,
+        text: '${percent.toStringAsFixed(percent >= 100 ? 0 : 1)}%',
+        color: up ? stats.onHeroDeltaUp : stats.onHeroDeltaDown,
+      );
     }
 
-    final up = diff > 0;
-    final percent = diff.abs() / base * 100;
-    return _BadgeShell(
-      icon: up ? FLucideIcons.arrowUp : FLucideIcons.arrowDown,
-      text: '${percent.toStringAsFixed(percent >= 100 ? 0 : 1)}%',
-      color: up ? stats.onHeroDeltaUp : stats.onHeroDeltaDown,
+    return FPopover(
+      control: FPopoverControl.managed(controller: _popover),
+      constraints: const FPortalConstraints(maxWidth: 280),
+      popoverAnchor: Alignment.bottomCenter,
+      childAnchor: Alignment.topCenter,
+      spacing: const FPortalSpacing(8),
+      popoverBuilder: (context, controller) => _DeltaExplain(
+        window: widget.window,
+        grouped: widget.grouped,
+        currentCents: widget.currentCents,
+        previousCents: previousCents,
+      ),
+      child: Semantics(
+        button: true,
+        label: '查看环比说明',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              _popover.toggle();
+            },
+            borderRadius: BorderRadius.circular(StatsTokens.radiusPill),
+            splashColor: stats.onHeroFill,
+            highlightColor: stats.onHeroFill,
+            child: shell,
+          ),
+        ),
+      ),
     );
   }
+}
+
+/// 环比说明气泡：把对照区间、两期金额和差额摊开。
+class _DeltaExplain extends StatelessWidget {
+  const _DeltaExplain({
+    required this.window,
+    required this.grouped,
+    required this.currentCents,
+    required this.previousCents,
+  });
+
+  final StatisticsWindow window;
+  final bool grouped;
+  final int currentCents;
+  final int previousCents;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final diff = currentCents - previousCents;
+    final title = _explainTitle(
+      label: window.previousLabel,
+      currentCents: currentCents,
+      previousCents: previousCents,
+      diff: diff,
+    );
+    final currentRange = _compactRangeLabel(window.range);
+    final comparisonRange = _compactRangeLabel(window.comparisonRange);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+              color: colors.ink,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _ExplainLine(
+            label: '本期（$currentRange）',
+            amount: formatMoney(currentCents, grouped: grouped),
+          ),
+          const SizedBox(height: 6),
+          _ExplainLine(
+            label: '对照（$comparisonRange）',
+            amount: formatMoney(previousCents, grouped: grouped),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _diffSummary(diff, grouped: grouped),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+              color: colors.muted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExplainLine extends StatelessWidget {
+  const _ExplainLine({required this.label, required this.amount});
+
+  final String label;
+  final String amount;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.35,
+              color: colors.muted,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          amount,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            height: 1.35,
+            color: colors.ink,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _explainTitle({
+  required String label,
+  required int currentCents,
+  required int previousCents,
+  required int diff,
+}) {
+  if (previousCents == 0) {
+    return currentCents == 0 ? '$label 持平' : '$label 新增';
+  }
+  if (diff == 0) return '$label 持平';
+  final percent = diff.abs() / previousCents * 100;
+  final sign = diff > 0 ? '+' : '-';
+  return '$label $sign${percent.toStringAsFixed(percent >= 100 ? 0 : 1)}%';
+}
+
+String _diffSummary(int diff, {required bool grouped}) {
+  if (diff == 0) return '与对照期持平';
+  final abs = formatMoney(diff.abs(), grouped: grouped);
+  return diff > 0 ? '多出 $abs' : '少花 $abs';
+}
+
+/// 紧凑日期区间，例如 `8/1–8/16`；单日则 `8/16`。
+String _compactRangeLabel(LedgerDateRange range) {
+  final start = range.start;
+  final end = range.endExclusive.subtract(const Duration(days: 1));
+  if (start.year == end.year &&
+      start.month == end.month &&
+      start.day == end.day) {
+    return '${start.month}/${start.day}';
+  }
+  if (start.year == end.year && start.month == end.month) {
+    return '${start.month}/${start.day}–${end.day}';
+  }
+  return '${start.month}/${start.day}–${end.month}/${end.day}';
 }
 
 class _BadgeShell extends StatelessWidget {

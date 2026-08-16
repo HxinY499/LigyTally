@@ -7,18 +7,27 @@ import '../../../core/database/app_database.dart';
 import '../../../core/utils/ledger_date.dart';
 import 'stats_design.dart';
 
-/// 支出趋势折线图。
+/// 收支趋势折线图。
 ///
-/// 相比原实现的改动都围绕「别让人猜数值」和「别糊成一团」：
+/// [kind] 为 0 支出 / 1 收入。相比原实现的改动都围绕「别让人猜数值」和
+/// 「别糊成一团」：
 /// - 补左侧纵轴刻度（原来完全没有轴标签，只能靠点按tooltip 猜量级）
 /// - 网格线改虚线 + 更淡的颜色，从「格子纸」退回背景
 /// - 描边改渐变 + 下方加面积填充，单条细线在浅色卡片上太单薄
 /// - 横轴标签按可用宽度动态抽稀，并首尾对齐，杜绝文字重叠
 /// - 触摸时画竖向指示线 + 实心圆点，tooltip 带日期与金额两行
 class TrendLineChart extends StatelessWidget {
-  const TrendLineChart({super.key, required this.points});
+  const TrendLineChart({super.key, required this.points, this.kind = 0});
 
   final List<TrendPoint> points;
+
+  /// 0 = 支出，1 = 收入。
+  final int kind;
+
+  int _valueOf(TrendPoint point) =>
+      kind == 0 ? point.expenseCents : point.incomeCents;
+
+  String get _kindLabel => kind == 0 ? '支出' : '收入';
 
   /// 把 `2026-08-09` / `2026-08` 转成轴标签。
   ///
@@ -43,18 +52,33 @@ class TrendLineChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stats = StatsTokens.of(context);
+    final lineColor = kind == 0 ? stats.expense : stats.income;
+    final lineGradient = LinearGradient(
+      colors: [
+        Color.lerp(lineColor, Colors.white, 0.28)!,
+        lineColor,
+      ],
+    );
+    final areaGradient = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        lineColor.withValues(alpha: 0.22),
+        lineColor.withValues(alpha: 0),
+      ],
+    );
     final maxCents = points.fold<int>(
       0,
-      (value, point) => math.max(value, point.expenseCents),
+      (value, point) => math.max(value, _valueOf(point)),
     );
     // 顶部留 22% 余量：曲线峰值贴到卡片上沿会显得被「切掉」。
-    // maxCents 为 0（区间内全是收入）时给一个最小刻度，避免除零。
+    // maxCents 为 0 时给一个最小刻度，避免除零。
     final maxY = maxCents == 0 ? 100.0 : maxCents / 100 * 1.22;
     final step = maxY / 3;
 
     final spots = [
       for (var i = 0; i < points.length; i++)
-        FlSpot(i.toDouble(), points[i].expenseCents / 100),
+        FlSpot(i.toDouble(), _valueOf(points[i]) / 100),
     ];
 
     // 单点区间（例如「日」视图只有一天）无法构成折线，
@@ -140,7 +164,7 @@ class TrendLineChart extends StatelessWidget {
                 for (final _ in indexes)
                   TouchedSpotIndicatorData(
                     FlLine(
-                      color: stats.primary,
+                      color: lineColor,
                       strokeWidth: 1.5,
                       dashArray: const [3, 3],
                     ),
@@ -152,7 +176,7 @@ class TrendLineChart extends StatelessWidget {
                             // 「挖」出来的空心点，深色卡上填白会比数据本身更抢眼。
                             color: stats.surface,
                             strokeWidth: 3,
-                            strokeColor: stats.primary,
+                            strokeColor: lineColor,
                           ),
                     ),
                   ),
@@ -170,7 +194,7 @@ class TrendLineChart extends StatelessWidget {
                 getTooltipItems: (touched) => [
                   for (final spot in touched)
                     LineTooltipItem(
-                      formatMoney((spot.y * 100).round()),
+                      '$_kindLabel ${formatMoney((spot.y * 100).round())}',
                       stats.tooltipText,
                       children: [
                         TextSpan(
@@ -200,7 +224,7 @@ class TrendLineChart extends StatelessWidget {
                 isCurved: true,
                 curveSmoothness: 0.28,
                 preventCurveOverShooting: true,
-                gradient: stats.trendLineGradient,
+                gradient: lineGradient,
                 barWidth: 2.5,
                 isStrokeCapRound: true,
                 isStrokeJoinRound: true,
@@ -213,12 +237,12 @@ class TrendLineChart extends StatelessWidget {
                         radius: 3,
                         color: stats.surface,
                         strokeWidth: 2,
-                        strokeColor: stats.primary,
+                        strokeColor: lineColor,
                       ),
                 ),
                 belowBarData: BarAreaData(
                   show: true,
-                  gradient: stats.trendAreaGradient,
+                  gradient: areaGradient,
                 ),
               ),
             ],
@@ -421,7 +445,8 @@ class CategoryTrendAreaChart extends StatelessWidget {
 /// - 每根柱加浅色背景轨道，金额为 0 时也有位置感，不再「凭空消失」
 /// - 当期柱用渐变 + 更大圆角，与历史柱形成明确主次
 /// - 加均值虚线，一眼看出本期高于还是低于近期平均
-/// - 柱顶直接标金额（紧凑格式），不必点按也能读数
+/// - 柱顶金额标在柱外上方（fl_chart 的 offset.dy 为正才是往上抬）
+/// - 均值数字不绑在虚线上：靠近均值的柱顶金额会和它抢同一条高度
 ///
 /// 柱色不随 [kind] 变成收入绿：这里的配色表达的是「当期 vs 历史」的主次，
 /// 换成语义色会和「高亮渐变=当期」这条规则打架。算的是哪一边由卡片标题
@@ -443,8 +468,8 @@ class PeriodBarChart extends StatelessWidget {
       0,
       (value, bar) => math.max(value, _valueOf(bar)),
     );
-    // 顶部留 28% 给柱顶金额标签，否则最高柱的标签会被裁掉。
-    final maxY = maxCents == 0 ? 100.0 : maxCents / 100 * 1.28;
+    // 顶部留白：柱顶金额在柱顶上方，不能和柱体或均值线抢同一条高度。
+    final maxY = maxCents == 0 ? 100.0 : maxCents / 100 * 1.38;
 
     // 均值只统计有金额的周期：把「还没记账的月份」算进分母会把均值拉得毫无意义。
     final nonZero = bars.where((bar) => _valueOf(bar) > 0).toList();
@@ -454,151 +479,163 @@ class PeriodBarChart extends StatelessWidget {
               nonZero.length;
 
     final lastIndex = bars.length - 1;
+    final showAverage = nonZero.length >= 2;
 
-    return BarChart(
-      BarChartData(
-        maxY: maxY,
-        alignment: BarChartAlignment.spaceAround,
-        gridData: FlGridData(
-          drawVerticalLine: false,
-          horizontalInterval: maxY / 3,
-          getDrawingHorizontalLine: (_) => FlLine(
-            color: stats.gridLine,
-            strokeWidth: 1,
-            dashArray: const [4, 4],
+    return Column(
+      children: [
+        if (showAverage)
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              '均值 ${formatAxisMoney(averageCents)}',
+              style: stats.axisLabel,
+            ),
           ),
-        ),
-        borderData: FlBorderData(show: false),
-        // 均值参考线：只在有两个以上有效周期时才画，
-        // 单个周期的「均值」等于它自己，画出来是噪音。
-        extraLinesData: ExtraLinesData(
-          horizontalLines: [
-            if (nonZero.length >= 2)
-              HorizontalLine(
-                y: averageCents / 100,
-                color: stats.textFaint.withValues(alpha: 0.55),
-                strokeWidth: 1,
-                dashArray: const [5, 5],
-                label: HorizontalLineLabel(
-                  show: true,
-                  alignment: Alignment.topRight,
-                  padding: const EdgeInsets.only(right: 2, bottom: 3),
-                  style: stats.axisLabel,
-                  labelResolver: (_) => '均值 ${formatAxisMoney(averageCents)}',
+        Expanded(
+          child: BarChart(
+            BarChartData(
+              maxY: maxY,
+              alignment: BarChartAlignment.spaceAround,
+              gridData: FlGridData(
+                drawVerticalLine: false,
+                horizontalInterval: maxY / 3,
+                getDrawingHorizontalLine: (_) => FlLine(
+                  color: stats.gridLine,
+                  strokeWidth: 1,
+                  dashArray: const [4, 4],
                 ),
               ),
-          ],
-        ),
-        barTouchData: BarTouchData(
-          touchTooltipData: BarTouchTooltipData(
-            getTooltipColor: (_) => stats.tooltip,
-            tooltipBorderRadius: BorderRadius.circular(stats.radiusChip),
-            tooltipPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
-            ),
-            fitInsideHorizontally: true,
-            fitInsideVertically: true,
-            getTooltipItem: (group, groupIndex, rod, rodIndex) {
-              final bar = bars[groupIndex.clamp(0, lastIndex)];
-              return BarTooltipItem(
-                formatMoney(_valueOf(bar)),
-                stats.tooltipText,
-                children: [
-                  TextSpan(
-                    text: '\n${groupIndex == lastIndex ? '本期' : bar.label}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      height: 1.5,
-                      fontWeight: FontWeight.w400,
-                      color: stats.onTooltip.withValues(alpha: 0.7),
+              borderData: FlBorderData(show: false),
+              // 只画虚线，不在线上写字：3 月接近均值时，线上的「均值 xx」
+              // 会和柱顶金额叠成一团。数字改到图外右上角。
+              extraLinesData: ExtraLinesData(
+                horizontalLines: [
+                  if (showAverage)
+                    HorizontalLine(
+                      y: averageCents / 100,
+                      color: stats.textFaint.withValues(alpha: 0.55),
+                      strokeWidth: 1,
+                      dashArray: const [5, 5],
+                    ),
+                ],
+              ),
+              barTouchData: BarTouchData(
+                touchTooltipData: BarTouchTooltipData(
+                  getTooltipColor: (_) => stats.tooltip,
+                  tooltipBorderRadius: BorderRadius.circular(stats.radiusChip),
+                  tooltipPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  fitInsideHorizontally: true,
+                  fitInsideVertically: true,
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                    final bar = bars[groupIndex.clamp(0, lastIndex)];
+                    return BarTooltipItem(
+                      formatMoney(_valueOf(bar)),
+                      stats.tooltipText,
+                      children: [
+                        TextSpan(
+                          text:
+                              '\n${groupIndex == lastIndex ? '本期' : bar.label}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.5,
+                            fontWeight: FontWeight.w400,
+                            color: stats.onTooltip.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              titlesData: FlTitlesData(
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 38,
+                    interval: maxY / 3,
+                    maxIncluded: false,
+                    getTitlesWidget: (value, meta) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        formatAxisMoney((value * 100).round()),
+                        textAlign: TextAlign.right,
+                        style: stats.axisLabel,
+                      ),
                     ),
                   ),
-                ],
-              );
-            },
-          ),
-        ),
-        titlesData: FlTitlesData(
-          topTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          rightTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 38,
-              interval: maxY / 3,
-              maxIncluded: false,
-              getTitlesWidget: (value, meta) => Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Text(
-                  formatAxisMoney((value * 100).round()),
-                  textAlign: TextAlign.right,
-                  style: stats.axisLabel,
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 28,
+                    interval: 1,
+                    getTitlesWidget: (value, meta) {
+                      final index = value.round();
+                      if (index < 0 || index >= bars.length) {
+                        return const SizedBox.shrink();
+                      }
+                      final isLast = index == lastIndex;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(
+                          isLast ? '本期' : bars[index].label,
+                          style: isLast
+                              ? stats.axisLabelActive
+                              : stats.axisLabel,
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 28,
-              interval: 1,
-              getTitlesWidget: (value, meta) {
-                final index = value.round();
-                if (index < 0 || index >= bars.length) {
-                  return const SizedBox.shrink();
-                }
-                final isLast = index == lastIndex;
-                return Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Text(
-                    isLast ? '本期' : bars[index].label,
-                    style: isLast ? stats.axisLabelActive : stats.axisLabel,
+              barGroups: [
+                for (var i = 0; i < bars.length; i++)
+                  BarChartGroupData(
+                    x: i,
+                    barRods: [
+                      BarChartRodData(
+                        toY: _valueOf(bars[i]) / 100,
+                        width: 18,
+                        gradient: i == lastIndex
+                            ? stats.barActiveGradient
+                            : null,
+                        color: i == lastIndex ? null : stats.barIdle,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(6),
+                        ),
+                        backDrawRodData: BackgroundBarChartRodData(
+                          show: true,
+                          toY: maxY,
+                          color: stats.barTrack,
+                        ),
+                        label: BarChartRodLabel(
+                          show: _valueOf(bars[i]) > 0,
+                          text: formatAxisMoney(_valueOf(bars[i])),
+                          style: i == lastIndex
+                              ? stats.axisLabelActive
+                              : stats.axisLabel,
+                          // fl_chart：正 dy 才是往柱顶上方抬。负值会把字推进柱体。
+                          offset: const Offset(0, 8),
+                        ),
+                      ),
+                    ],
                   ),
-                );
-              },
-            ),
-          ),
-        ),
-        barGroups: [
-          for (var i = 0; i < bars.length; i++)
-            BarChartGroupData(
-              x: i,
-              barRods: [
-                BarChartRodData(
-                  toY: _valueOf(bars[i]) / 100,
-                  width: 18,
-                  gradient: i == lastIndex ? stats.barActiveGradient : null,
-                  color: i == lastIndex ? null : stats.barIdle,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(6),
-                  ),
-                  // 背景轨道铺满整个 Y 轴，给每个周期一个「槽位」。
-                  backDrawRodData: BackgroundBarChartRodData(
-                    show: true,
-                    toY: maxY,
-                    color: stats.barTrack,
-                  ),
-                  label: BarChartRodLabel(
-                    // 金额为 0 时不标（标个「0」纯属噪音）。
-                    show: _valueOf(bars[i]) > 0,
-                    text: formatAxisMoney(_valueOf(bars[i])),
-                    style: i == lastIndex
-                        ? stats.axisLabelActive
-                        : stats.axisLabel,
-                    offset: const Offset(0, -6),
-                  ),
-                ),
               ],
             ),
-        ],
-      ),
-      duration: StatsTokens.durChart,
-      curve: StatsTokens.curveEnter,
+            duration: StatsTokens.durChart,
+            curve: StatsTokens.curveEnter,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -667,7 +704,9 @@ class CategoryDonut extends StatelessWidget {
               startDegreeOffset: -90,
               pieTouchData: PieTouchData(
                 touchCallback: (event, response) {
-                  if (!event.isInterestedForInteractions) return;
+                  // 只认抬手：按下会连发 FlPanDown + FlTapDown，选中立刻被
+                  // 再切回去，体感就是「点了没反应，长按才高亮」。
+                  if (event is! FlTapUpEvent) return;
                   final index = response?.touchedSection?.touchedSectionIndex;
                   if (index == null || index < 0) return;
                   // 再点一次已选中的扇区 = 取消选中，回到总额视图。

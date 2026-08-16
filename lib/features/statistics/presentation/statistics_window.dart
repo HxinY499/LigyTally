@@ -166,12 +166,12 @@ class StatisticsWindow {
     }
   }
 
-  /// 趋势卡标题。
+  /// 趋势卡标题。收支口径由卡内切换器表达，标题只说明时间范围。
   String get trendTitle => switch (period) {
-    StatisticsPeriod.day => '当日支出趋势',
-    StatisticsPeriod.week => '本周支出趋势',
-    StatisticsPeriod.year => '年度支出趋势',
-    _ => '本期支出趋势',
+    StatisticsPeriod.day => '当日趋势',
+    StatisticsPeriod.week => '本周趋势',
+    StatisticsPeriod.year => '年度趋势',
+    _ => '本期趋势',
   };
 
   /// 对比卡标题。[kind] 为 0 支出 / 1 收入。

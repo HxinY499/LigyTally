@@ -17,7 +17,7 @@ import 'statistics_window.dart';
 
 /// 收支统计页。
 ///
-/// 结构：页头 → 周期选择器 → 概览 Hero 卡 → 趋势 → 分类构成 → 周期对比。
+/// 结构：页头 → 周期选择器 → 概览 Hero 卡 → 收支趋势 → 分类构成 → 周期对比。
 /// 页面本身只做「组合 + 状态派发」，日期语义在 [StatisticsWindow]，
 /// 样式令牌在 [StatsTokens]，图表在 stats_charts.dart，
 /// 加载/空/异常态在 stats_states.dart。
@@ -31,6 +31,7 @@ class StatisticsScreen extends ConsumerStatefulWidget {
 class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   StatisticsWindow _window = StatisticsWindow.now();
   int _categoryKind = 0;
+  int _trendKind = 0;
 
   /// 周期对比卡的收支口径。
   ///
@@ -113,7 +114,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                 ),
               ),
 
-              // ---------------------------------------------- 支出趋势
+              // ---------------------------------------------- 收支趋势
               _Slot(
                 child: StatsCard(
                   child: Column(
@@ -122,6 +123,12 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       StatsSectionHeader(
                         title: _window.trendTitle,
                         caption: _window.trendCaption,
+                        trailing: _KindToggle(
+                          key: const ValueKey('trend-kind-toggle'),
+                          selected: _trendKind,
+                          onChanged: (value) =>
+                              setState(() => _trendKind = value),
+                        ),
                       ),
                       const SizedBox(height: 18),
                       SizedBox(
@@ -133,19 +140,26 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                           ),
                           loading: const StatsChartSkeleton(height: 176),
                           builder: (context, points) {
-                            // 区间内只有收入、没有任何支出时，趋势图画出来
-                            // 是一条贴底的直线，不如直接说明。
-                            final hasExpense = points.any(
-                              (point) => point.expenseCents > 0,
+                            final hasData = points.any(
+                              (point) => _trendKind == 0
+                                  ? point.expenseCents > 0
+                                  : point.incomeCents > 0,
                             );
-                            if (!hasExpense) {
-                              return const StatsEmpty(
-                                title: '本期还没有支出',
-                                body: '记一笔支出后，这里会显示金额随时间的变化趋势',
+                            if (!hasData) {
+                              return StatsEmpty(
+                                title:
+                                    '本期还没有${_trendKind == 0 ? '支出' : '收入'}',
+                                body:
+                                    '记一笔${_trendKind == 0 ? '支出' : '收入'}后，'
+                                    '这里会显示金额随时间的变化趋势',
                                 height: 176,
                               );
                             }
-                            return TrendLineChart(points: points);
+                            return TrendLineChart(
+                              key: ValueKey(_trendKind),
+                              points: points,
+                              kind: _trendKind,
+                            );
                           },
                         ),
                       ),
@@ -368,7 +382,7 @@ class _OverviewSlot extends ConsumerWidget {
 /// 单独实现而不复用 [AppSegmentedControl]：后者是 44px 高的表单级按钮，
 /// 放进卡片标题行会把标题挤下去。这里需要 28px 的紧凑版。
 class _KindToggle extends StatelessWidget {
-  const _KindToggle({required this.selected, required this.onChanged});
+  const _KindToggle({super.key, required this.selected, required this.onChanged});
 
   final int selected;
   final ValueChanged<int> onChanged;
