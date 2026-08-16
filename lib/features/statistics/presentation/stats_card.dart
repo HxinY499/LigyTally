@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import 'stats_design.dart';
@@ -171,89 +169,6 @@ class StatsExpandToggle extends StatelessWidget {
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ),
-    );
-  }
-}
-
-/// 入场动画包装：淡入 + 轻微上移。
-///
-/// [index] 用来做阶梯延迟，让卡片自上而下依次落位，
-/// 比整屏同时淡入更有秩序感。延迟封顶，避免卡片多时最后一张迟迟不出现。
-///
-/// [skip] 为 true 时直接停在终态。明细页是虚拟列表，滑出再滑回会重建
-/// 子项；父级用它记住「这一格已经播过」，避免同一张卡反复入场。
-class StatsEntrance extends StatefulWidget {
-  const StatsEntrance({
-    super.key,
-    required this.index,
-    required this.child,
-    this.skip = false,
-  });
-
-  final int index;
-  final Widget child;
-  final bool skip;
-
-  @override
-  State<StatsEntrance> createState() => _StatsEntranceState();
-}
-
-class _StatsEntranceState extends State<StatsEntrance>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _fade;
-  late final Animation<Offset> _slide;
-
-  /// 阶梯延迟用的定时器。必须持有引用并在 dispose 时取消——
-  /// 裸用 `Future.delayed` 的话，widget 提前销毁后定时器仍挂在事件循环上，
-  /// 在 widget 测试里会直接触发「A Timer is still pending」断言。
-  Timer? _delay;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: StatsTokens.durEnter,
-      vsync: this,
-    );
-    final curve = CurvedAnimation(
-      parent: _controller,
-      curve: StatsTokens.curveEnter,
-    );
-    _fade = curve;
-    _slide = Tween(
-      begin: const Offset(0, 0.06),
-      end: Offset.zero,
-    ).animate(curve);
-
-    if (widget.skip) {
-      _controller.value = 1;
-      return;
-    }
-
-    // 阶梯延迟：每张卡晚 60ms，最多累到 240ms。
-    final delay = Duration(milliseconds: 60 * widget.index.clamp(0, 4));
-    if (delay == Duration.zero) {
-      _controller.forward();
-    } else {
-      _delay = Timer(delay, () {
-        if (mounted) _controller.forward();
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _delay?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fade,
-      child: SlideTransition(position: _slide, child: widget.child),
     );
   }
 }

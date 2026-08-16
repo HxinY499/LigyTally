@@ -105,7 +105,6 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
               // ---------------------------------------------- 概览 Hero 卡
               _Slot(
-                index: 0,
                 child: _OverviewSlot(
                   window: _window,
                   grouped: grouped,
@@ -116,7 +115,6 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
               // ---------------------------------------------- 支出趋势
               _Slot(
-                index: 1,
                 child: StatsCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -158,7 +156,6 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
               // ---------------------------------------------- 分类构成
               _Slot(
-                index: 2,
                 child: StatsCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -211,7 +208,6 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
               // ---------------------------------------------- 分类环比
               _Slot(
-                index: 3,
                 child: StatsCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -244,7 +240,6 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
               // ---------------------------------------------- 周期对比
               _Slot(
-                index: 4,
                 child: StatsCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -305,11 +300,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   }
 }
 
-/// 卡片槽位：统一左右边距、卡间距与入场动画。
+/// 卡片槽位：统一左右边距与卡间距。
 class _Slot extends StatelessWidget {
-  const _Slot({required this.index, required this.child});
+  const _Slot({required this.child});
 
-  final int index;
   final Widget child;
 
   @override
@@ -321,7 +315,7 @@ class _Slot extends StatelessWidget {
         StatsTokens.gutter,
         0,
       ),
-      child: StatsEntrance(index: index, child: child),
+      child: child,
     );
   }
 }

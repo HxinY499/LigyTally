@@ -367,16 +367,13 @@ class StatsTokens {
 
   // ---------------------------------------------------------------- 动效
 
-  /// 卡片入场 / 状态切换时长。
-  static const durEnter = Duration(milliseconds: 420);
-
   /// 交互反馈（点击高亮、分段滑动）时长。
   static const durTap = Duration(milliseconds: 220);
 
   /// 图表数值变化时长。
   static const durChart = Duration(milliseconds: 520);
 
-  /// 入场与滑动统一用这条缓动：起步快、收尾稳，不回弹。
+  /// 图表与滑动统一用这条缓动：起步快、收尾稳，不回弹。
   static const curveEnter = Curves.easeOutCubic;
 }
 

@@ -446,11 +446,11 @@ void main() {
       await tester.pump(Duration.zero);
     }
 
-    /// 推进到「数据已到位、入场动画已结束」。
+    /// 推进到「数据已到位、图表补间已结束」。
     ///
     /// 不能用 pumpAndSettle：加载骨架的 shimmer 是 repeat() 无限动画，
     /// pumpAndSettle 会一直等不到静止帧而挂死。这里按固定时长推进，
-    /// 覆盖 stream 首帧 + 卡片阶梯入场(最多 240ms) + 图表补间(520ms)。
+    /// 覆盖 stream 首帧 + 图表补间(520ms)。
     Future<void> settle(WidgetTester tester) async {
       await tester.pump();
       for (var i = 0; i < 6; i++) {
