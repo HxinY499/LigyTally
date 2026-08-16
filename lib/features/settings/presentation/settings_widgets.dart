@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
+import '../../../core/theme/app_density.dart';
+import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/app_widgets.dart';
 
@@ -102,14 +104,21 @@ class SettingsItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final density = context.density;
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        // 垂直内边距跟着显示密度缩，水平不跟：左右留白是版面骨架，
+        // 紧凑档跟着缩会让图标贴到卡片边缘。
+        padding: EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: density.space(12),
+        ),
         // minHeight 40：让「只有标题」「标题+副标题」「带开关」三种行
         // 的高度都落在 64，否则开关（39 高）会把那一行顶得比邻居高。
+        // 这条下限也跟着密度走，否则紧凑档只能压掉内边距那 3px。
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 40),
+          constraints: BoxConstraints(minHeight: density.space(40)),
           child: Row(
             children: [
               Container(
@@ -266,7 +275,7 @@ class SettingsToggleIcon extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        duration: context.motion(const Duration(milliseconds: 160)),
         width: kToggleIconWidth,
         height: kToggleIconHeight,
         decoration: BoxDecoration(

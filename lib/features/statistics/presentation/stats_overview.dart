@@ -136,11 +136,16 @@ class StatsOverviewCard extends StatelessWidget {
     final canGoForward = !window.includesToday;
     final elapsed = window.elapsedDayCount;
 
+    final hero = stats.hero;
+
     return Container(
       decoration: BoxDecoration(
-        gradient: stats.heroGradient,
+        // gradient 与 color 总有一个是 null，同时传给 BoxDecoration 合法。
+        gradient: hero.gradient,
+        color: hero.color,
+        border: hero.border,
         borderRadius: BorderRadius.circular(stats.radiusCard),
-        boxShadow: stats.shadowHero,
+        boxShadow: hero.shadow,
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
@@ -155,7 +160,7 @@ class StatsOverviewCard extends StatelessWidget {
               isCustom: window.period == StatisticsPeriod.custom,
             ),
             const SizedBox(height: 14),
-            const Text('本期支出', style: StatsTokens.heroLabel),
+            Text('本期支出', style: stats.heroLabel),
             const SizedBox(height: 6),
             // 大数字：加载中给骨架条，避免先渲染 ¥0.00 再跳到真实值
             //（那一下跳变看着像数据出错）。
@@ -172,7 +177,7 @@ class StatsOverviewCard extends StatelessWidget {
                       child: Text(
                         _heroMoney(summary.expenseCents, grouped: grouped),
                         maxLines: 1,
-                        style: StatsTokens.heroAmount,
+                        style: stats.heroAmount,
                       ),
                     ),
                   ),
@@ -188,7 +193,7 @@ class StatsOverviewCard extends StatelessWidget {
                 ],
               ),
             const SizedBox(height: 16),
-            Container(height: 1, color: StatsTokens.onHeroDivider),
+            Container(height: 1, color: stats.onHeroDivider),
             const SizedBox(height: 14),
             Row(
               children: [
@@ -235,10 +240,10 @@ class StatsOverviewCard extends StatelessWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(
+                Icon(
                   FLucideIcons.receipt,
                   size: 13,
-                  color: StatsTokens.onHeroTertiary,
+                  color: stats.onHeroTertiary,
                 ),
                 const SizedBox(width: 5),
                 // 这行是三段拼起来的，笔数和天数都没有位数上限
@@ -250,9 +255,9 @@ class StatsOverviewCard extends StatelessWidget {
                         : _footnote(summary, elapsed, window.isPartial),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: StatsTokens.heroLabel.copyWith(
+                    style: stats.heroLabel.copyWith(
                       fontSize: 11,
-                      color: StatsTokens.onHeroTertiary,
+                      color: stats.onHeroTertiary,
                     ),
                   ),
                 ),
@@ -305,6 +310,7 @@ class _RangeSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     return Row(
       children: [
         _RangeArrow(icon: FLucideIcons.chevronLeft, onTap: () => onShift(-1)),
@@ -321,10 +327,10 @@ class _RangeSwitcher extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: StatsTokens.onHeroPrimary,
+                      color: stats.onHeroPrimary,
                       letterSpacing: 0.2,
                     ),
                   ),
@@ -333,10 +339,10 @@ class _RangeSwitcher extends StatelessWidget {
                 // 所以只在该模式给出「可点」的视觉暗示。
                 if (isCustom) ...[
                   const SizedBox(width: 4),
-                  const Icon(
+                  Icon(
                     FLucideIcons.calendar,
                     size: 13,
-                    color: StatsTokens.onHeroSecondary,
+                    color: stats.onHeroSecondary,
                   ),
                 ],
               ],
@@ -361,9 +367,10 @@ class _RangeArrow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     final enabled = onTap != null;
     return Material(
-      color: enabled ? const Color(0x1FFFFFFF) : Colors.transparent,
+      color: enabled ? stats.onHeroFill : Colors.transparent,
       shape: const CircleBorder(),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -375,8 +382,8 @@ class _RangeArrow extends StatelessWidget {
             icon,
             size: 17,
             color: enabled
-                ? StatsTokens.onHeroPrimary
-                : StatsTokens.onHeroTertiary.withValues(alpha: 0.35),
+                ? stats.onHeroPrimary
+                : stats.onHeroTertiary.withValues(alpha: 0.35),
           ),
         ),
       ),
@@ -407,6 +414,7 @@ class _DeltaBadge extends StatelessWidget {
     final base = previousCents;
     if (base == null) return const SizedBox.shrink();
 
+    final stats = StatsTokens.of(context);
     final diff = currentCents - base;
     // 没有基数时算不出百分比：区分「上期也是0」和「上期为 0 但本期有支出」。
     if (base == 0) {
@@ -417,15 +425,15 @@ class _DeltaBadge extends StatelessWidget {
         icon: currentCents == 0 ? FLucideIcons.minus : FLucideIcons.arrowUp,
         text: text,
         color: currentCents == 0
-            ? StatsTokens.onHeroSecondary
-            : const Color(0xFFFFD5CE),
+            ? stats.onHeroSecondary
+            : stats.onHeroDeltaUp,
       );
     }
     if (diff == 0) {
       return _BadgeShell(
         icon: FLucideIcons.minus,
         text: '$previousLabel 持平',
-        color: StatsTokens.onHeroSecondary,
+        color: stats.onHeroSecondary,
       );
     }
 
@@ -434,7 +442,7 @@ class _DeltaBadge extends StatelessWidget {
     return _BadgeShell(
       icon: up ? FLucideIcons.arrowUp : FLucideIcons.arrowDown,
       text: '${percent.toStringAsFixed(percent >= 100 ? 0 : 1)}%',
-      color: up ? const Color(0xFFFFD5CE) : const Color(0xFFC8F0D4),
+      color: up ? stats.onHeroDeltaUp : stats.onHeroDeltaDown,
     );
   }
 }
@@ -455,7 +463,7 @@ class _BadgeShell extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0x24FFFFFF),
+        color: StatsTokens.of(context).onHeroFill,
         borderRadius: BorderRadius.circular(StatsTokens.radiusPill),
       ),
       child: Row(
@@ -488,10 +496,11 @@ class _HeroMiniStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: StatsTokens.heroLabel.copyWith(fontSize: 11)),
+        Text(label, style: stats.heroLabel.copyWith(fontSize: 11)),
         const SizedBox(height: 5),
         if (value == null)
           const _HeroBar(width: 56, height: 16)
@@ -499,7 +508,7 @@ class _HeroMiniStat extends StatelessWidget {
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
-            child: Text(value!, maxLines: 1, style: StatsTokens.heroMini),
+            child: Text(value!, maxLines: 1, style: stats.heroMini),
           ),
       ],
     );
@@ -515,12 +524,13 @@ class _HeroMiniDivider extends StatelessWidget {
       width: 1,
       height: 26,
       margin: const EdgeInsets.symmetric(horizontal: 10),
-      color: StatsTokens.onHeroDivider,
+      color: StatsTokens.of(context).onHeroDivider,
     );
   }
 }
 
-/// Hero 卡内的加载条：半透明白，和蓝底同色系，不像灰骨架那样突兀。
+/// Hero 卡内的加载条：彩色档用半透明白（和卡面同色系，不像灰骨架那样突兀），
+/// 描边档换成中性填充。
 class _HeroBar extends StatelessWidget {
   const _HeroBar({required this.width, required this.height});
 
@@ -533,7 +543,7 @@ class _HeroBar extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: const Color(0x33FFFFFF),
+        color: StatsTokens.of(context).onHeroBar,
         borderRadius: BorderRadius.circular(6),
       ),
     );

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
-import '../../../core/preferences/money_grouped.dart';
+import '../../../core/appearance/appearance.dart';
 import '../../../core/preferences/quick_tally_mode.dart';
 import '../../../core/storage/storage_usage.dart';
 import '../../../core/theme/app_theme.dart';
@@ -84,7 +84,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (password == null || !mounted) return;
     setState(() => _busy = true);
     try {
-      await ref.read(backupServiceProvider).exportAndShare(password: password);
+      await ref.read(backupServiceProvider).exportAndShare(
+        password: password,
+        // 外观一起打包：用户调了半小时的配色，换机恢复后账单全在、
+        // 外观全丢，这件事比少几个开关更伤。
+        appearance: ref.read(appearanceProvider),
+      );
     } catch (error) {
       if (mounted) _showMessage('备份失败：$error', level: AppToastLevel.error);
     } finally {
@@ -113,8 +118,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         confirmLabel: '恢复',
       );
       if (confirmed) {
-        await service.restore(file, password: password);
+        final appearance = await service.restore(file, password: password);
         ref.invalidate(storageUsageProvider);
+        // 恢复换掉了整个 media 目录，壁纸是同名新文件，图片缓存必须失效一次，
+        // 否则屏幕上还是原来那张（见 BackupService.restore 的文档）。
+        await ref.read(imageStorageProvider).evictWallpaperCache();
+        // 老版本的包（v4 及以前）不带外观，此时保持当前外观不动——
+        // 那正是「这个包里没有外观信息」的正确处理。
+        if (appearance != null) {
+          ref.read(appearanceProvider.notifier).restoreFromConfig(appearance);
+        }
         if (mounted) _showMessage('数据恢复完成', level: AppToastLevel.success);
       }
     } catch (error) {
@@ -199,22 +212,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           .setEnabled(value),
                     ),
                   ),
-                  SettingsItem(
-                    icon: FLucideIcons.hash,
-                    title: '金额千分位',
-                    trailing: TrailingSwitch(
-                      value: ref.watch(moneyGroupedProvider),
-                      onChange: (value) => ref
-                          .read(moneyGroupedProvider.notifier)
-                          .setGrouped(value),
-                    ),
-                  ),
-                  // 外观是唯一收进二级页的一组：这几项互相影响，
-                  // 摊在这里只能六个浮层各看各的，收进去才能共用一张样张。
+                  // 外观是唯一收进二级页的一组：那十几项互相影响，
+                  // 摊在这里只能各看各的，收进去才能共用一张样张。
+                  //
+                  // 「金额千分位」原本摊在这一行下面，现在也收进去了：它和
+                  // 「数字等宽」是同一件事的两半（金额怎么排版），隔着一层
+                  // 页面分开放，改完一个还要退出来找另一个。
                   SettingsItem(
                     icon: FLucideIcons.paintbrush,
                     title: '外观',
-                    subtitle: '深浅、主题色、圆角、版式',
+                    subtitle: '风格、配色、圆角、密度、壁纸',
                     showChevron: true,
                     onTap: () => Navigator.of(context).push<void>(
                       MaterialPageRoute(

@@ -188,8 +188,9 @@ class StatsError extends StatelessWidget {
     return _StatsPlaceholder(
       height: height,
       icon: FLucideIcons.triangleAlert,
-      iconColor: stats.expense,
-      iconBackground: colors.expenseSoft,
+      // 错误态走 danger：支出色可以被用户翻成绿的，绿色的报错图标很怪。
+      iconColor: colors.danger,
+      iconBackground: colors.dangerSoft,
       title: title,
       body: body,
       action: onRetry == null

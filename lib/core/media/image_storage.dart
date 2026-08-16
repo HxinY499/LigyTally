@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/painting.dart' show FileImage;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -94,6 +95,54 @@ class ImageStorage {
       throw StateError('图标图片处理失败');
     }
     return p.relative(target.path, from: await _supportRoot());
+  }
+
+  /// 落盘全局壁纸，返回这张图的落盘时间戳。
+  ///
+  /// 固定文件名同名覆盖（见 [kWallpaperRelativePath]）：壁纸永远只有一张，
+  /// 留历史文件只会让「占用空间」里多出没人认领的图。代价是必须手动把
+  /// Flutter 的图片缓存里那条同路径的记录赶走——[FileImage] 是按路径缓存的，
+  /// 不 evict 的话换了图还是显示旧的。
+  ///
+  /// 压到 1440px 而不是入库账单图的 2048px：壁纸永远铺满屏幕且盖着一层
+  /// 蒙版，再高的分辨率一个像素都看不出来，只是让备份包变大。
+  Future<int> storeWallpaper(XFile source) async {
+    final root = await _root();
+    await root.create(recursive: true);
+    final target = File(p.join(await _supportRoot(), kWallpaperRelativePath));
+    final compressed = await FlutterImageCompress.compressAndGetFile(
+      source.path,
+      // 直接压到目标路径会踩「源和目标同路径」——用户可以把当前壁纸
+      // 再选一次。先压到旁边，成了再换过去。
+      '${target.path}.staging',
+      minWidth: kWallpaperMaxSide,
+      minHeight: kWallpaperMaxSide,
+      quality: kWallpaperQuality,
+      format: CompressFormat.jpeg,
+      keepExif: false,
+    );
+    if (compressed == null) {
+      throw StateError('壁纸图片处理失败');
+    }
+    await File(compressed.path).rename(target.path);
+    await FileImage(target).evict();
+    return DateTime.now().millisecondsSinceEpoch;
+  }
+
+  /// 删掉壁纸文件。文件本来就不在也算成功——调用方只关心「之后没有壁纸」。
+  Future<void> deleteWallpaper() async {
+    await deleteFile(kWallpaperRelativePath);
+    await evictWallpaperCache();
+  }
+
+  /// 把图片缓存里那条壁纸记录赶走。
+  ///
+  /// 壁纸是固定文件名（见 [kWallpaperRelativePath]），而 [FileImage] 按路径
+  /// 缓存，所以任何「同路径换了内容」的操作（换图、恢复备份）都必须调一次，
+  /// 否则屏幕上还是旧那张。
+  Future<void> evictWallpaperCache() async {
+    final file = await resolve(kWallpaperRelativePath);
+    await FileImage(file).evict();
   }
 
   /// 直接用给定字节写入一张分类图标（导入 / 恢复时用，字节已是压好的）。
@@ -266,6 +315,16 @@ class ImageStorage {
 /// 仍然能看清小票上的金额，体积却常常只剩三分之一。
 const kRecompressMaxSide = 1280;
 const kRecompressQuality = 80;
+
+/// 全局壁纸的落盘长边与质量。见 [ImageStorage.storeWallpaper]。
+const kWallpaperMaxSide = 1440;
+const kWallpaperQuality = 82;
+
+/// 壁纸的相对存储路径（相对 support 目录）。
+///
+/// 放在 `media/` 下面，这样它自动跟着备份的「整体换 media 目录」走，
+/// 不需要在恢复流程里单独搬一次。
+const kWallpaperRelativePath = '$kMediaDirName/wallpaper.jpg';
 
 /// 账单图片与分类图标的根目录名（相对 support 目录）。
 const kMediaDirName = 'media';

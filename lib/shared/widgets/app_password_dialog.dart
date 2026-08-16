@@ -88,7 +88,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
                 hintText: '密码',
                 hintStyle: TextStyle(fontSize: 15, color: colors.inactive),
                 filled: true,
-                fillColor: colors.canvas,
+                fillColor: colors.canvasBase,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 14,

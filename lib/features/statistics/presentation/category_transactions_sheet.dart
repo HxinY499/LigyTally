@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
-import '../../../core/preferences/money_grouped.dart';
+import '../../../core/appearance/appearance.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';

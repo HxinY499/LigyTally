@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/color_shift.dart';
+import '../../../core/theme/hero_skin.dart';
 
 /// 统计页设计令牌：配色、圆角、阴影、字阶、动效时长。
 ///
@@ -76,28 +77,61 @@ class StatsTokens {
   /// 记账页日卡与统计页图表卡必须浮起在同一高度，所以不在这里另开一份。
   List<BoxShadow> get shadowCard => _colors.shadowCard;
 
-  /// 概览 Hero 卡阴影：带主色调的彩色阴影，比中性灰更有「发光感」。
-  List<BoxShadow> get shadowHero => _colors.shadowHeroPrimary;
+  /// 概览 Hero 卡阴影。彩色档是带主色调的彩色阴影（比中性灰更有「发光感」），
+  /// 描边档换回中性灰——这个选择在 [HeroSkin] 里已经做完了。
+  List<BoxShadow> get shadowHero => hero.shadow;
 
   // ---------------------------------------------------------------- 颜色
 
-  /// 概览 Hero 卡渐变。转发到 [AppColors.heroGradient]——记账页月度摘要卡
-  /// 用的是同一条卡面，色停不在这里另存一份。
+  /// 概览 Hero 卡的整套卡面 + 前景色。转发到 [AppColors.hero]——记账页月度
+  /// 摘要卡用的是同一套卡面，不在这里另存一份。
+  ///
+  /// 用户能把这套卡面换成纯色或描边（见 [HeroCardStyle]），所以卡上的每一个
+  /// 颜色都必须从这里取，不能再写死白色。
+  HeroSkin get hero => _colors.hero;
+
+  /// 概览 Hero 卡渐变。
+  ///
+  /// 只在「确实需要一条渐变」的地方用（外观页样张）；卡片本身请走 [hero]，
+  /// 它会在纯色 / 描边档给出正确的实底和描边。
   LinearGradient get heroGradient => _colors.heroGradient;
 
-  /// Hero 卡上的次级文字（标签、说明）：白色降透明度，
-  /// 比直接给一个灰色更干净——灰色压在彩色卡面上会发浊。
+  /// Hero 卡上的三级前景色 + 分割线。
   ///
-  /// Hero 卡在任何主题色下都是同一支色相的深浅渐变，
-  /// 所以这四个值既不随亮度也不随主题色变化。
-  static const onHeroPrimary = Colors.white;
-  static const onHeroSecondary = Color(0xCCFFFFFF);
-  static const onHeroTertiary = Color(0x99FFFFFF);
-  static const onHeroDivider = Color(0x33FFFFFF);
+  /// 彩色档下是白色降透明度（灰色压在彩色卡面上会发浊），描边档下换成
+  /// 全局的墨色三级灰阶。
+  Color get onHeroPrimary => hero.foreground;
+  Color get onHeroSecondary => hero.foregroundSoft;
+  Color get onHeroTertiary => hero.foregroundFaint;
+  Color get onHeroDivider => hero.divider;
 
-  /// 卡片面色/ 页面底色。
+  /// Hero 卡内那些「半透明白小块」的底色：环比徽章底、左右箭头底、骨架条。
+  ///
+  /// 描边档下卡面变白，半透明白等于消失，所以这里也要跟着换成中性填充。
+  Color get onHeroFill =>
+      hero.isTinted ? const Color(0x24FFFFFF) : _colors.fill;
+
+  Color get onHeroBar => hero.isTinted ? const Color(0x33FFFFFF) : _colors.fill;
+
+  /// 环比徽章的涨 / 跌色。
+  ///
+  /// 彩色卡面上不能用纯饱和红绿（在蓝底上刺眼且降低可读性），所以彩色档用
+  /// 两个偏亮的低饱和色；描边档卡面是白的，反过来必须用饱和色才看得见。
+  ///
+  /// 涨跌固定红涨绿跌，**不跟随收支配色设置**：这里表达的是「支出变多了，
+  /// 这是个坏消息」，和「支出这个数字该是什么颜色」是两回事。
+  Color get onHeroDeltaUp =>
+      hero.isTinted ? const Color(0xFFFFD5CE) : _colors.danger;
+
+  Color get onHeroDeltaDown =>
+      hero.isTinted ? const Color(0xFFC8F0D4) : _colors.success;
+
+  /// 卡片面色 / 页面底色。
+  ///
+  /// [canvas] 取 `canvasBase`（实色那支）：统计页拿它的场合都是「给某个小块
+  /// 一个和页底同色的实底」，不是在画页底本身。
   Color get surface => _colors.surface;
-  Color get canvas => _colors.canvas;
+  Color get canvas => _colors.canvasBase;
 
   /// 文字三级灰阶。统计页只用这三档，不再引入第四种灰。
   Color get textStrong => _colors.ink;
@@ -216,7 +250,7 @@ class StatsTokens {
   );
 
   /// Hero 卡主数字。
-  static const heroAmount = TextStyle(
+  TextStyle get heroAmount => TextStyle(
     fontSize: 38,
     height: 1.08,
     fontWeight: FontWeight.w800,
@@ -225,7 +259,7 @@ class StatsTokens {
   );
 
   /// Hero 卡次级数字（收入 / 净收支 / 日均）。
-  static const heroMini = TextStyle(
+  TextStyle get heroMini => TextStyle(
     fontSize: 16,
     height: 1.2,
     fontWeight: FontWeight.w700,
@@ -234,7 +268,7 @@ class StatsTokens {
   );
 
   /// Hero 卡标签。
-  static const heroLabel = TextStyle(
+  TextStyle get heroLabel => TextStyle(
     fontSize: 12,
     height: 1.3,
     fontWeight: FontWeight.w500,

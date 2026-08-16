@@ -65,10 +65,14 @@ IconData _icon(AppToastLevel level) => switch (level) {
   AppToastLevel.error => FLucideIcons.circleAlert,
 };
 
+/// toast 的语义色走 `success` / `danger`，**不是** `income` / `expense`。
+///
+/// 后两者可以被用户在外观设置里翻向（红支绿收 ↔ 绿支红收）。跟着翻的话，
+/// 「导出失败」会弹一条绿色的错误提示。
 Color _accent(AppToastLevel level, AppColors colors) => switch (level) {
   AppToastLevel.info => colors.primary,
-  AppToastLevel.success => colors.income,
-  AppToastLevel.error => colors.expense,
+  AppToastLevel.success => colors.success,
+  AppToastLevel.error => colors.danger,
 };
 
 /// 成功提示看一眼就够，错误要留足阅读时间。

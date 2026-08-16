@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
-import 'package:ligy_tally/core/preferences/corner_style.dart';
-import 'package:ligy_tally/core/theme/app_accent.dart';
+import 'package:ligy_tally/core/appearance/appearance.dart';
 import 'package:ligy_tally/core/theme/app_radius.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,26 +16,49 @@ void main() {
 
       expect(container.read(appCornerStyleProvider), AppCornerStyle.standard);
       await container
-          .read(appCornerStyleProvider.notifier)
-          .setStyle(AppCornerStyle.sharp);
+          .read(appearanceProvider.notifier)
+          .setCorner(AppCornerStyle.sharp);
       expect(container.read(appCornerStyleProvider), AppCornerStyle.sharp);
 
       // 换一个容器模拟冷启动：偏好要从盘里回来，而不是回落到默认值。
       final restarted = ProviderContainer();
       addTearDown(restarted.dispose);
-      restarted.read(appCornerStyleProvider);
-      await Future<void>.delayed(Duration.zero);
+      await restarted.read(appearanceProvider.notifier).ready;
       expect(restarted.read(appCornerStyleProvider), AppCornerStyle.sharp);
     });
 
     test('存了个不认识的档位名时回落到标准档，而不是抛异常', () async {
-      SharedPreferences.setMockInitialValues({'app_corner_style': 'bubbly'});
+      SharedPreferences.setMockInitialValues({
+        appearancePrefsKey: 'LT1~system~blue~bubbly',
+      });
       final container = ProviderContainer();
       addTearDown(container.dispose);
 
-      container.read(appCornerStyleProvider);
-      await Future<void>.delayed(Duration.zero);
+      await container.read(appearanceProvider.notifier).ready;
       expect(container.read(appCornerStyleProvider), AppCornerStyle.standard);
+    });
+
+    test('合并之前的旧 key 会被迁移进整套配置，老用户的档位不丢', () async {
+      // 十几项外观合并成一个 key 之前，每项各占一个 key。
+      SharedPreferences.setMockInitialValues({
+        'app_corner_style': 'extraRound',
+        'app_theme_mode': 'dark',
+        'money_grouped': false,
+      });
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      await container.read(appearanceProvider.notifier).ready;
+      final config = container.read(appearanceProvider);
+      expect(config.corner, AppCornerStyle.extraRound);
+      expect(config.themeMode, AppThemeMode.dark);
+      expect(config.moneyGrouped, isFalse);
+
+      // 迁移完旧 key 必须清掉：同一个偏好在盘上留两份，下一个改这块的人
+      // 必然要问「到底哪份是准的」。
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('app_corner_style'), isNull);
+      expect(prefs.getString(appearancePrefsKey), isNotNull);
     });
   });
 
@@ -68,8 +90,7 @@ void main() {
       for (final style in AppCornerStyle.values) {
         final theme = buildMaterialTheme(
           Brightness.light,
-          AccentChoice.initial,
-          style,
+          AppearanceConfig(corner: style),
         );
         expect(theme.extension<AppRadius>()?.scale, style.scale);
       }
@@ -81,13 +102,11 @@ void main() {
     test('forui 组件样式跟着档位一起变，不只是 style 字段变了', () {
       final sharp = foruiThemeFor(
         Brightness.light,
-        AccentChoice.initial,
-        AppCornerStyle.sharp,
+        const AppearanceConfig(corner: AppCornerStyle.sharp),
       );
       final round = foruiThemeFor(
         Brightness.light,
-        AccentChoice.initial,
-        AppCornerStyle.extraRound,
+        const AppearanceConfig(corner: AppCornerStyle.extraRound),
       );
 
       expect(sharp.style.borderRadius.md, BorderRadius.zero);
@@ -103,8 +122,7 @@ void main() {
     test('胶囊不受档位影响：直角档下 forui 开关仍是圆头', () {
       final sharp = foruiThemeFor(
         Brightness.light,
-        AccentChoice.initial,
-        AppCornerStyle.sharp,
+        const AppearanceConfig(corner: AppCornerStyle.sharp),
       );
       expect(sharp.style.borderRadius.pill.topLeft.x, greaterThan(50));
     });

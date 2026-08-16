@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
-import '../../../core/preferences/money_grouped.dart';
+import '../../../core/appearance/appearance.dart';
 import '../../../features/ledger/application/providers.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import 'stats_card.dart';

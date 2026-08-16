@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
+import '../appearance/appearance_config.dart';
 import 'app_accent.dart';
+import 'app_density.dart';
+import 'app_motion.dart';
 import 'app_radius.dart';
 import 'color_shift.dart';
+import 'hero_skin.dart';
+import 'sign_palette.dart';
 
 /// 全应用语义色板。
 ///
@@ -24,7 +29,7 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.muted,
     required this.inactive,
     required this.faint,
-    required this.canvas,
+    required this.canvasBase,
     required this.surface,
     required this.line,
     required this.lineSoft,
@@ -35,12 +40,17 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.expenseSoft,
     required this.income,
     required this.incomeSoft,
+    required this.danger,
+    required this.dangerSoft,
+    required this.success,
     required this.accent,
     required this.pressed,
     required this.ripple,
     required this.barrier,
     required this.shadowCard,
     required this.shadowHeroPrimary,
+    this.heroStyle = HeroCardStyle.fallback,
+    this.hasWallpaper = false,
   });
 
   /// 从最近的 [Theme] 取色板。
@@ -50,14 +60,34 @@ class AppColors extends ThemeExtension<AppColors> {
   static AppColors of(BuildContext context) =>
       Theme.of(context).extension<AppColors>() ?? light;
 
-  /// 按亮度和强调色取色板。
+  /// 按亮度和整套外观配置取色板。
   ///
-  /// 默认蓝直接返回 [light] / [dark] 常量实例——测试和缓存都按引用比较，
-  /// 其它色（含自选色）才从对应皮肤 [withAccent] 派生。
-  static AppColors resolve(Brightness brightness, AccentChoice accent) {
-    final base = brightness == Brightness.dark ? dark : light;
-    if (accent.preset == AppAccent.blue) return base;
-    return base.withAccent(accent.primaryOf(brightness));
+  /// 顺序是**先皮肤、再强调色、最后语义换向**，不能调换：
+  /// - 纯黑档是在深色皮肤之上压暗中性轴，必须先选中皮肤；
+  /// - [withAccent] 会从 `canvas` 现算 `primarySoft`，所以纯黑要在它之前生效，
+  ///   否则纯黑档下的图标底座仍然是普通深色那支；
+  /// - 收支换向只是把两组已经定好的颜色对调，放最后最省事，也保证
+  ///   [danger] / [success] 不被任何一步碰到。
+  ///
+  /// 默认蓝 + 全默认档时直接返回 [light] / [dark] 常量实例——测试和缓存
+  /// 都按引用比较。
+  static AppColors resolve(
+    Brightness brightness, [
+    AppearanceConfig config = AppearanceConfig.initial,
+  ]) {
+    var base = brightness == Brightness.dark ? dark : light;
+    if (brightness == Brightness.dark && config.trueBlack) {
+      base = base.withTrueBlack();
+    }
+    if (config.hasWallpaper) base = base.copyWith(hasWallpaper: true);
+    if (config.heroStyle != HeroCardStyle.fallback) {
+      base = base.copyWith(heroStyle: config.heroStyle);
+    }
+    if (config.accent.preset != AppAccent.blue) {
+      base = base.withAccent(config.accent.primaryOf(brightness));
+    }
+    if (config.signPalette.isReversed) base = base.withReversedSigns();
+    return base;
   }
 
   /// 浅色：奶白页底 + 纯白卡片，文字用带绿的深墨色。
@@ -67,7 +97,7 @@ class AppColors extends ThemeExtension<AppColors> {
     muted: Color(0xFF65716D),
     inactive: Color(0xFF9AA3A0),
     faint: Color(0xFFC2CBC6),
-    canvas: Color(0xFFF5F5F5),
+    canvasBase: Color(0xFFF5F5F5),
     surface: Color(0xFFFFFFFF),
     line: Color(0xFFDCDCDC),
     lineSoft: Color(0xFFEDEDED),
@@ -78,6 +108,9 @@ class AppColors extends ThemeExtension<AppColors> {
     expenseSoft: Color(0xFFF8E8E4),
     income: Color(0xFF2E7D32),
     incomeSoft: Color(0xFFE8F5E9),
+    danger: Color(0xFFD55A46),
+    dangerSoft: Color(0xFFF8E8E4),
+    success: Color(0xFF2E7D32),
     accent: Color(0xFFE5A62E),
     pressed: Color(0x0F5190F2),
     ripple: Color(0x0A5190F2),
@@ -100,7 +133,7 @@ class AppColors extends ThemeExtension<AppColors> {
     muted: Color(0xFFA0ABA6),
     inactive: Color(0xFF79837E),
     faint: Color(0xFF5C6661),
-    canvas: Color(0xFF101413),
+    canvasBase: Color(0xFF101413),
     surface: Color(0xFF1A201E),
     line: Color(0xFF2E3633),
     lineSoft: Color(0xFF242B29),
@@ -111,6 +144,9 @@ class AppColors extends ThemeExtension<AppColors> {
     expenseSoft: Color(0xFF37231F),
     income: Color(0xFF6BBE70),
     incomeSoft: Color(0xFF1B2C1D),
+    danger: Color(0xFFEC7C64),
+    dangerSoft: Color(0xFF37231F),
+    success: Color(0xFF6BBE70),
     accent: Color(0xFFE9B44C),
     pressed: Color(0x1F6FA5F5),
     ripple: Color(0x146FA5F5),
@@ -134,8 +170,14 @@ class AppColors extends ThemeExtension<AppColors> {
   /// 最弱的图标色：行尾 chevron 这类「在那里但不该抢眼」的元素。
   final Color faint;
 
-  /// 页面底色。
-  final Color canvas;
+  /// 页面底色的**实色**值。
+  ///
+  /// 与 [canvas] 的区别只在壁纸模式下才显出来，但这个区别是必须的：
+  /// `canvas` 有一半的调用点并不是在画页底，而是拿它当一个**前景色**用
+  /// （深色皮肤下 FAB 上的加号、强调按钮上的文字、输入框的凹底）。
+  /// 那些地方一旦拿到透明，字就直接消失了。所以画页底的写 [canvas]，
+  /// 要一个「和页底同色的实色」的写这个。
+  final Color canvasBase;
 
   /// 卡片面色。
   final Color surface;
@@ -155,10 +197,24 @@ class AppColors extends ThemeExtension<AppColors> {
   /// 品牌色的低饱和底：图标底座、徽章。
   final Color primarySoft;
 
+  /// 支出色 / 收入色。**方向可以被用户翻转**，见 [SignPalette]。
+  /// 只有「这笔钱是正还是负」该用它们。
   final Color expense;
   final Color expenseSoft;
   final Color income;
   final Color incomeSoft;
+
+  /// 危险色：删除按钮、错误提示、表单校验失败。
+  ///
+  /// 独立于 [expense] 存在，因为它绝不能跟着收支配色翻转——用户为了看
+  /// 股票把支出调成绿色，不该顺手把「删除分类」的确认按钮也变成绿的。
+  /// 默认皮肤下两者同色，所以这次拆分对默认外观是零变化。
+  final Color danger;
+  final Color dangerSoft;
+
+  /// 成功色：操作完成的 toast。理由同 [danger]。
+  final Color success;
+
   final Color accent;
 
   /// 列表项按下时的浅底反馈。
@@ -194,7 +250,76 @@ class AppColors extends ThemeExtension<AppColors> {
   /// 彩色卡片配中性灰阴影会显得「脏」——阴影里必须掺入卡片自身的色相。
   final List<BoxShadow> shadowHeroPrimary;
 
+  /// Hero 卡的卡面档位。见 [HeroCardStyle]。
+  final HeroCardStyle heroStyle;
+
+  /// 当前是否铺了全局壁纸。只影响 [canvas]（页底让位给壁纸）。
+  final bool hasWallpaper;
+
   bool get isDark => brightness == Brightness.dark;
+
+  /// 页面底色。
+  ///
+  /// 壁纸模式下是**全透明**：壁纸层（连带压在它上面的那层页面色蒙版）铺在
+  /// 整个应用之下，页底只要让开就行。这也顺带让页头的吸顶毛玻璃自动透出
+  /// 壁纸——`AppChromeGlass` 本来就支持透明底（记一笔页的图片背板走的
+  /// 同一条路）。
+  ///
+  /// 代价是壁纸模式下页头没有自己的底色，标题靠壁纸层那层蒙版（最少留
+  /// 50% 页面色，见 [kWallpaperOpacityMax]）保可读性，而不是靠页头自己。
+  Color get canvas => hasWallpaper ? Colors.transparent : canvasBase;
+
+  /// 当前档位下 Hero 卡的整套卡面 + 前景色。
+  ///
+  /// 三档都在这里现算而不是各存一份：[gradient] 档的色停本身已经是从
+  /// 主题色推出来的（见 [heroGradient]），[solid] 只是取它中间那一停，
+  /// [outline] 则整套换成白面 + 墨字。存三份的话换主题色时得记着改三处。
+  HeroSkin get hero {
+    switch (heroStyle) {
+      case HeroCardStyle.gradient:
+        return HeroSkin(
+          style: heroStyle,
+          gradient: heroGradient,
+          shadow: shadowHeroPrimary,
+          foreground: kOnHeroStrong,
+          foregroundSoft: kOnHeroSoft,
+          foregroundFaint: kOnHeroFaint,
+          divider: kOnHeroDivider,
+          highlight: kOnHeroHighlight,
+          splash: kOnHeroSplash,
+        );
+      case HeroCardStyle.solid:
+        // 取中间色停而不是 primary：色停是「边压暗边降饱和」挑出来的，
+        // primary 要压得住白字，直接铺满一张大卡会亮得刺眼。
+        final stops = heroGradient.colors;
+        return HeroSkin(
+          style: heroStyle,
+          color: stops[stops.length ~/ 2],
+          shadow: shadowHeroPrimary,
+          foreground: kOnHeroStrong,
+          foregroundSoft: kOnHeroSoft,
+          foregroundFaint: kOnHeroFaint,
+          divider: kOnHeroDivider,
+          highlight: kOnHeroHighlight,
+          splash: kOnHeroSplash,
+        );
+      case HeroCardStyle.outline:
+        return HeroSkin(
+          style: heroStyle,
+          color: surface,
+          border: Border.all(color: primary, width: 1.5),
+          // 中性阴影而不是带主色的那套：卡面已经是白的，彩色光晕会在
+          // 白卡下面露出一圈脏边。
+          shadow: shadowCard,
+          foreground: ink,
+          foregroundSoft: muted,
+          foregroundFaint: inactive,
+          divider: line,
+          highlight: pressed,
+          splash: ripple,
+        );
+    }
+  }
 
   /// Hero 卡渐变：统计页概览卡与记账页月度摘要卡共用的那条卡面。
   ///
@@ -260,7 +385,7 @@ class AppColors extends ThemeExtension<AppColors> {
   /// 它们各自从 [primary] 现算，见 `StatsTokens.heroGradient` 与 `SummaryBand`。
   AppColors withAccent(Color primary) {
     final soft = isDark
-        ? Color.lerp(primary, canvas, 0.78)!
+        ? Color.lerp(primary, canvasBase, 0.78)!
         : Color.lerp(primary, const Color(0xFFFFFFFF), 0.82)!;
     return copyWith(
       primary: primary,
@@ -299,16 +424,47 @@ class AppColors extends ThemeExtension<AppColors> {
     );
   }
 
+  /// 把深色皮肤的中性轴压到纯黑（OLED 档）。
+  ///
+  /// 只动中性轴那五个值，主色 / 收支色 / 阴影一律不碰：纯黑档要的是「页底更黑」，
+  /// 不是「整套配色重做」。
+  ///
+  /// 卡片没有跟着压到纯黑（`#0B0F0E` 而不是 `#000000`）：深色下卡片是靠自己
+  /// 比页底更亮才浮起来的（阴影在深底上几乎不可见），页底和卡片同为纯黑会让
+  /// 整页糊成一片，反而看不出有卡片。分割线同理要跟着抬一档，
+  /// 否则纯黑底上 `#2E3633` 的线会变成三条抢眼的亮痕。
+  AppColors withTrueBlack() => copyWith(
+    canvasBase: const Color(0xFF000000),
+    surface: const Color(0xFF0B0F0E),
+    line: const Color(0xFF232A28),
+    lineSoft: const Color(0xFF181E1C),
+    fill: const Color(0xFF161C1A),
+  );
+
+  /// 对调支出色与收入色。见 [SignPalette]。
+  ///
+  /// [danger] / [dangerSoft] / [success] 刻意不在对调范围里——那才是这次
+  /// 把它们从 `expense` / `income` 里拆出来的全部理由。
+  AppColors withReversedSigns() => copyWith(
+    expense: income,
+    expenseSoft: incomeSoft,
+    income: expense,
+    incomeSoft: expenseSoft,
+  );
+
   /// 状态栏 / 导航栏图标的明暗。深底要浅图标，反之亦然。
+  ///
+  /// 系统栏底色取 [canvasBase] 而不是 [canvas]：壁纸模式下后者是透明的，
+  /// 交给系统会得到一条黑边（Android 不接受透明的导航栏色）。
   SystemUiOverlayStyle get systemOverlayStyle => isDark
       ? SystemUiOverlayStyle.light.copyWith(
           statusBarColor: Colors.transparent,
-          systemNavigationBarColor: canvas,
+          systemNavigationBarColor: canvasBase,
           systemNavigationBarIconBrightness: Brightness.light,
         )
       : SystemUiOverlayStyle.dark.copyWith(
           statusBarColor: Colors.transparent,
-          systemNavigationBarColor: canvas,
+          systemNavigationBarColor: canvasBase,
           systemNavigationBarIconBrightness: Brightness.dark,
         );
 
@@ -319,7 +475,7 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? muted,
     Color? inactive,
     Color? faint,
-    Color? canvas,
+    Color? canvasBase,
     Color? surface,
     Color? line,
     Color? lineSoft,
@@ -330,19 +486,24 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? expenseSoft,
     Color? income,
     Color? incomeSoft,
+    Color? danger,
+    Color? dangerSoft,
+    Color? success,
     Color? accent,
     Color? pressed,
     Color? ripple,
     Color? barrier,
     List<BoxShadow>? shadowCard,
     List<BoxShadow>? shadowHeroPrimary,
+    HeroCardStyle? heroStyle,
+    bool? hasWallpaper,
   }) => AppColors(
     brightness: brightness ?? this.brightness,
     ink: ink ?? this.ink,
     muted: muted ?? this.muted,
     inactive: inactive ?? this.inactive,
     faint: faint ?? this.faint,
-    canvas: canvas ?? this.canvas,
+    canvasBase: canvasBase ?? this.canvasBase,
     surface: surface ?? this.surface,
     line: line ?? this.line,
     lineSoft: lineSoft ?? this.lineSoft,
@@ -353,12 +514,17 @@ class AppColors extends ThemeExtension<AppColors> {
     expenseSoft: expenseSoft ?? this.expenseSoft,
     income: income ?? this.income,
     incomeSoft: incomeSoft ?? this.incomeSoft,
+    danger: danger ?? this.danger,
+    dangerSoft: dangerSoft ?? this.dangerSoft,
+    success: success ?? this.success,
     accent: accent ?? this.accent,
     pressed: pressed ?? this.pressed,
     ripple: ripple ?? this.ripple,
     barrier: barrier ?? this.barrier,
     shadowCard: shadowCard ?? this.shadowCard,
     shadowHeroPrimary: shadowHeroPrimary ?? this.shadowHeroPrimary,
+    heroStyle: heroStyle ?? this.heroStyle,
+    hasWallpaper: hasWallpaper ?? this.hasWallpaper,
   );
 
   /// 主题切换时的过渡插值。
@@ -366,16 +532,21 @@ class AppColors extends ThemeExtension<AppColors> {
   /// [brightness] 不插值（没有「半深」这种东西），在中点直接翻转，
   /// 与 [ThemeData.lerp] 对 brightness 的处理保持一致，
   /// 否则 forui 组件和本色板会在过渡途中错开一帧明暗。
+  ///
+  /// [heroStyle] 与 [hasWallpaper] 同理在中点翻转：前者是枚举（没有「半渐变」），
+  /// 后者决定 [canvas] 要不要透明，插值出来的半透明页底会让壁纸在过渡途中
+  /// 忽隐忽现。
   @override
   AppColors lerp(AppColors? other, double t) {
     if (other == null) return this;
+    final late = t >= 0.5;
     return AppColors(
-      brightness: t < 0.5 ? brightness : other.brightness,
+      brightness: late ? other.brightness : brightness,
       ink: Color.lerp(ink, other.ink, t)!,
       muted: Color.lerp(muted, other.muted, t)!,
       inactive: Color.lerp(inactive, other.inactive, t)!,
       faint: Color.lerp(faint, other.faint, t)!,
-      canvas: Color.lerp(canvas, other.canvas, t)!,
+      canvasBase: Color.lerp(canvasBase, other.canvasBase, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
       line: Color.lerp(line, other.line, t)!,
       lineSoft: Color.lerp(lineSoft, other.lineSoft, t)!,
@@ -386,6 +557,9 @@ class AppColors extends ThemeExtension<AppColors> {
       expenseSoft: Color.lerp(expenseSoft, other.expenseSoft, t)!,
       income: Color.lerp(income, other.income, t)!,
       incomeSoft: Color.lerp(incomeSoft, other.incomeSoft, t)!,
+      danger: Color.lerp(danger, other.danger, t)!,
+      dangerSoft: Color.lerp(dangerSoft, other.dangerSoft, t)!,
+      success: Color.lerp(success, other.success, t)!,
       accent: Color.lerp(accent, other.accent, t)!,
       pressed: Color.lerp(pressed, other.pressed, t)!,
       ripple: Color.lerp(ripple, other.ripple, t)!,
@@ -396,6 +570,8 @@ class AppColors extends ThemeExtension<AppColors> {
         other.shadowHeroPrimary,
         t,
       )!,
+      heroStyle: late ? other.heroStyle : heroStyle,
+      hasWallpaper: late ? other.hasWallpaper : hasWallpaper,
     );
   }
 }
@@ -453,6 +629,45 @@ extension AppThemeContext on BuildContext {
 TextStyle _flat(TextStyle? style, AppColors colors) =>
     (style ?? const TextStyle()).copyWith(letterSpacing: 0, color: colors.ink);
 
+/// 等宽数字（`tnum`）字体特性。
+///
+/// ## 为什么挂在 textTheme 上而不是逐个金额 Text 加
+///
+/// `Text` 的 style 会与最近的 `DefaultTextStyle` 做 `merge`，而 `merge` 对
+/// `fontFeatures` 的处理是「自己没给就沿用祖先的」。Material widget 会用
+/// `theme.textTheme.bodyMedium` 铺一层 DefaultTextStyle，所以把特性挂到
+/// textTheme 上就能一路继承到几十处金额文本——它们写的是
+/// `TextStyle(fontSize: 14, fontWeight: ...)`，从不碰 fontFeatures。
+///
+/// 逐处加的方案在这个项目里等于要改二十多个文件，而且下一个新增的金额
+/// 一定会忘。代价是所有文本（含中文里夹的数字）都变等宽数字，这在记账
+/// 场景里恰好是想要的：日期、笔数、占比全部逐行对齐。
+List<FontFeature>? _figureFeatures(bool tabular) =>
+    tabular ? const [FontFeature.tabularFigures()] : null;
+
+TextTheme _withFigures(TextTheme text, bool tabular) {
+  final features = _figureFeatures(tabular);
+  if (features == null) return text;
+  TextStyle? apply(TextStyle? style) => style?.copyWith(fontFeatures: features);
+  return text.copyWith(
+    displayLarge: apply(text.displayLarge),
+    displayMedium: apply(text.displayMedium),
+    displaySmall: apply(text.displaySmall),
+    headlineLarge: apply(text.headlineLarge),
+    headlineMedium: apply(text.headlineMedium),
+    headlineSmall: apply(text.headlineSmall),
+    titleLarge: apply(text.titleLarge),
+    titleMedium: apply(text.titleMedium),
+    titleSmall: apply(text.titleSmall),
+    bodyLarge: apply(text.bodyLarge),
+    bodyMedium: apply(text.bodyMedium),
+    bodySmall: apply(text.bodySmall),
+    labelLarge: apply(text.labelLarge),
+    labelMedium: apply(text.labelMedium),
+    labelSmall: apply(text.labelSmall),
+  );
+}
+
 /// Material 兜底主题（`showDialog`、`InputDecoration` 这类没迁到 forui 的组件）。
 ///
 /// [brightness] 决定取哪套色板，并把色板挂进 [ThemeData.extensions]——
@@ -460,6 +675,8 @@ TextStyle _flat(TextStyle? style, AppColors colors) =>
 ThemeData buildAppTheme({
   Brightness brightness = Brightness.light,
   AppRadius radius = const AppRadius(),
+  AppDensity density = const AppDensity(),
+  AppMotion motion = const AppMotion(),
 }) {
   final colors = brightness == Brightness.dark
       ? AppColors.dark
@@ -479,7 +696,7 @@ ThemeData buildAppTheme({
   );
   final text = base.textTheme;
   return base.copyWith(
-    extensions: [colors, radius],
+    extensions: [colors, radius, density, motion],
     textTheme: text.copyWith(
       displayLarge: _flat(text.displayLarge, colors),
       displayMedium: _flat(text.displayMedium, colors),
@@ -573,9 +790,13 @@ ThemeData buildAppTheme({
 /// forui 品牌主题：以 neutral(light/dark touch) 为底，套上 LigyTally 的语义化配色。
 ///
 /// - primary       → 强调色，用于选中态、强调按钮
-/// - destructive   → 支出红（记账语境里的"扣钱/删除"）
+/// - destructive   → 危险红（删除、错误）。**不是** [AppColors.expense]：
+///   用户可以把支出翻成绿色，而删除按钮必须一直是红的。
 /// - background    → 页面底色
 /// - card / border → 卡片面色 + 淡描边
+///
+/// 所有「压在彩色底上的前景色」取 [AppColors.canvasBase] 而不是 `canvas`：
+/// 壁纸模式下后者是透明的，那会让深色皮肤的 FAB 上的加号直接消失。
 ///
 /// 通过 [FThemeData] 重建（而不是 `copyWith`）只改颜色与圆角，其余间距/字体
 /// 沿用 forui 触屏预设，保证组件观感一致。
@@ -600,13 +821,13 @@ FThemeData buildForuiTheme({
       foreground: resolved.ink,
       primary: resolved.primary,
       // 深色下强调色被提亮了，压白字对比度不够，改用深墨色前景。
-      primaryForeground: dark ? resolved.canvas : Colors.white,
+      primaryForeground: dark ? resolved.canvasBase : Colors.white,
       secondary: resolved.primarySoft,
       secondaryForeground: resolved.primary,
       muted: resolved.fill,
       mutedForeground: resolved.muted,
-      destructive: resolved.expense,
-      destructiveForeground: dark ? resolved.canvas : Colors.white,
+      destructive: resolved.danger,
+      destructiveForeground: dark ? resolved.canvasBase : Colors.white,
       card: resolved.surface,
       border: resolved.line,
       barrier: resolved.barrier,
@@ -615,8 +836,35 @@ FThemeData buildForuiTheme({
   return theme.copyWith(toasterStyle: _toasterStyle(resolved, radius));
 }
 
-final _foruiPresetCache =
-    <(Brightness, AppAccent, AppCornerStyle), FThemeData>{};
+/// forui 主题缓存的钥匙：只放**离散且真的会改到 forui 组件**的那些档位。
+///
+/// 密度、动效、Hero 卡样式、千分位都不进来：它们一个都不影响 forui 组件的
+/// 颜色或圆角（密度走 `MediaQuery.textScaler`，动效和 Hero 卡走各自的
+/// ThemeExtension）。放进来只会把缓存打成碎片，让每次改这些档位都白重建
+/// 一份 forui 主题。
+typedef _ForuiKey = (
+  Brightness,
+  AppAccent,
+  AppCornerStyle,
+  bool trueBlack,
+  bool hasWallpaper,
+  SignPalette,
+);
+
+_ForuiKey _foruiKey(
+  Brightness brightness,
+  AppAccent accent,
+  AppearanceConfig config,
+) => (
+  brightness,
+  accent,
+  config.corner,
+  config.trueBlack,
+  config.hasWallpaper,
+  config.signPalette,
+);
+
+final _foruiPresetCache = <_ForuiKey, FThemeData>{};
 
 /// 自选色只留最新的一份（每套亮度各一格）。
 ///
@@ -624,9 +872,10 @@ final _foruiPresetCache =
 /// 就往 map 里灌进几百份主题，等于内存泄漏。同一时刻只有一种自选色在生效，
 /// 一格备忘录就够。
 ///
-/// 圆角档位可以安全地进缓存键：它是枚举，取值有限，不像色相那样连续。
+/// 其余档位（圆角、纯黑、壁纸、收支向）可以安全地进缓存键：它们都是枚举
+/// 或布尔，取值有限，不像色相那样连续。
 final _foruiCustomCache =
-    <Brightness, (AccentChoice, AppCornerStyle, FThemeData)>{};
+    <Brightness, (AccentChoice, _ForuiKey, FThemeData)>{};
 
 /// 缓存好的 forui 主题。
 ///
@@ -634,41 +883,55 @@ final _foruiCustomCache =
 /// 200ms 里外层会重建十几次，每次重建一份纯粹是浪费。
 FThemeData foruiThemeFor(
   Brightness brightness, [
-  AccentChoice accent = AccentChoice.initial,
-  AppCornerStyle corner = AppCornerStyle.fallback,
+  AppearanceConfig config = AppearanceConfig.initial,
 ]) {
   FThemeData build() => buildForuiTheme(
     brightness: brightness,
-    colors: AppColors.resolve(brightness, accent),
-    radius: AppRadius(scale: corner.scale),
+    colors: AppColors.resolve(brightness, config),
+    radius: AppRadius(scale: config.corner.scale),
   );
-  final preset = accent.preset;
+  final preset = config.accent.preset;
   if (preset != null) {
-    return _foruiPresetCache.putIfAbsent((brightness, preset, corner), build);
+    return _foruiPresetCache.putIfAbsent(
+      _foruiKey(brightness, preset, config),
+      build,
+    );
   }
+  // 自选色没有预设枚举可以进钥匙，拿 blue 占位：这一格是按 accent 全等
+  // 另外比对的，占位值只参与「其余档位有没有变」这半边。
+  final key = _foruiKey(brightness, AppAccent.blue, config);
   final cached = _foruiCustomCache[brightness];
-  if (cached != null && cached.$1 == accent && cached.$2 == corner) {
+  if (cached != null && cached.$1 == config.accent && cached.$2 == key) {
     return cached.$3;
   }
   final theme = build();
-  _foruiCustomCache[brightness] = (accent, corner, theme);
+  _foruiCustomCache[brightness] = (config.accent, key, theme);
   return theme;
 }
 
-/// 生产环境用的 Material 兜底主题：forui 主题的近似映射 + 挂上色板扩展。
+/// 生产环境用的 Material 兜底主题：forui 主题的近似映射 + 挂上各套令牌扩展。
 ///
 /// 保持「以 forui 主题为唯一真源」的原有结构（[buildAppTheme] 是另一套
-/// 独立的 Material3 主题，只有测试在用），这里只补两件事：
-/// 亮度跟随、以及把 [AppColors] 挂进 extensions。
+/// 独立的 Material3 主题，只有测试在用），这里补三件事：亮度跟随、
+/// 把四套令牌挂进 extensions、以及那两项**只能**在 Material 主题这一层
+/// 落地的外观设置（等宽数字走 textTheme、页面转场走 pageTransitionsTheme）。
 ThemeData buildMaterialTheme(
   Brightness brightness, [
-  AccentChoice accent = AccentChoice.initial,
-  AppCornerStyle corner = AppCornerStyle.fallback,
+  AppearanceConfig config = AppearanceConfig.initial,
 ]) {
-  final colors = AppColors.resolve(brightness, accent);
-  return foruiThemeFor(brightness, accent, corner)
-      .toApproximateMaterialTheme()
-      .copyWith(extensions: [colors, AppRadius(scale: corner.scale)]);
+  final colors = AppColors.resolve(brightness, config);
+  final base = foruiThemeFor(brightness, config).toApproximateMaterialTheme();
+  final transitions = config.motion.pageTransitions;
+  return base.copyWith(
+    extensions: [
+      colors,
+      AppRadius(scale: config.corner.scale),
+      config.density.tokens,
+      config.motion.tokens,
+    ],
+    textTheme: _withFigures(base.textTheme, config.tabularFigures),
+    pageTransitionsTheme: transitions,
+  );
 }
 
 /// toast 的浮起阴影：两层叠加（近距离描边阴影 + 远距离柔光），
@@ -752,19 +1015,17 @@ FToasterStyleDelta _toasterStyle(AppColors colors, AppRadius radius) {
             <FToastVariantConstraint>{FToastVariant.destructive},
             FToastStyleDelta.delta(
               decoration: DecorationDelta.shapeDelta(
-                color: colors.expenseSoft,
+                color: colors.dangerSoft,
                 shape: RoundedSuperellipseBorder(
-                  side: BorderSide(
-                    color: colors.expense.withValues(alpha: 0.28),
-                  ),
+                  side: BorderSide(color: colors.danger.withValues(alpha: 0.28)),
                   borderRadius: borderRadius,
                 ),
                 shadows: shadow,
               ),
-              iconStyle: IconThemeDataDelta.delta(color: colors.expense),
-              titleTextStyle: TextStyleDelta.delta(color: colors.expense),
+              iconStyle: IconThemeDataDelta.delta(color: colors.danger),
+              titleTextStyle: TextStyleDelta.delta(color: colors.danger),
               descriptionTextStyle: TextStyleDelta.delta(
-                color: colors.expense.withValues(alpha: 0.8),
+                color: colors.danger.withValues(alpha: 0.8),
               ),
             ),
           ),

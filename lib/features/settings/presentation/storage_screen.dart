@@ -253,7 +253,8 @@ class _UsageOverview extends StatelessWidget {
         color: colors.primary.withValues(alpha: 0.42),
       ),
       (label: '缓存', bytes: usage.cacheBytes, color: colors.inactive),
-      (label: '无主', bytes: usage.orphanBytes, color: colors.expense),
+      // 「无主」是需要清理的异常占用，走 danger 而不是支出色。
+      (label: '无主', bytes: usage.orphanBytes, color: colors.danger),
     ];
     final visible = [
       for (final segment in segments)

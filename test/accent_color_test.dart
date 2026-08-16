@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ligy_tally/core/preferences/accent_color.dart';
+import 'package:ligy_tally/core/appearance/appearance.dart';
 import 'package:ligy_tally/core/theme/app_accent.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,6 +17,10 @@ double _luminance(Color color) {
       0.0722 * channel(color.b);
 }
 
+/// 只关心强调色的那些断言，其余外观档位一律默认。
+AppearanceConfig _withAccent(AccentChoice accent) =>
+    AppearanceConfig(accent: accent);
+
 void main() {
   group('强调色偏好', () {
     test('默认蓝色，选定后写盘并能读回', () async {
@@ -26,7 +30,7 @@ void main() {
 
       expect(container.read(appAccentProvider), AccentChoice.initial);
       await container
-          .read(appAccentProvider.notifier)
+          .read(appearanceProvider.notifier)
           .setAccent(const AccentChoice.preset(AppAccent.purple));
       expect(
         container.read(appAccentProvider),
@@ -35,8 +39,7 @@ void main() {
 
       final restarted = ProviderContainer();
       addTearDown(restarted.dispose);
-      restarted.read(appAccentProvider);
-      await Future<void>.delayed(Duration.zero);
+      await restarted.read(appearanceProvider.notifier).ready;
       expect(
         restarted.read(appAccentProvider),
         const AccentChoice.preset(AppAccent.purple),
@@ -49,12 +52,11 @@ void main() {
       addTearDown(container.dispose);
       const picked = AccentChoice.custom(hue: 96.4, saturation: 0.512);
 
-      await container.read(appAccentProvider.notifier).setAccent(picked);
+      await container.read(appearanceProvider.notifier).setAccent(picked);
 
       final restarted = ProviderContainer();
       addTearDown(restarted.dispose);
-      restarted.read(appAccentProvider);
-      await Future<void>.delayed(Duration.zero);
+      await restarted.read(appearanceProvider.notifier).ready;
       expect(restarted.read(appAccentProvider), picked);
     });
 
@@ -62,7 +64,8 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       final container = ProviderContainer();
       addTearDown(container.dispose);
-      final notifier = container.read(appAccentProvider.notifier);
+      final notifier = container.read(appearanceProvider.notifier);
+      await notifier.ready;
 
       // 一次拖动会产生上百个中间值，全落盘等于拿磁盘当画布。
       notifier.previewAccent(
@@ -73,7 +76,11 @@ void main() {
         const AccentChoice.custom(hue: 10, saturation: 0.4),
       );
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString('app_accent'), isNull);
+      expect(
+        AppearanceConfig.decode(prefs.getString(appearancePrefsKey)).accent,
+        AccentChoice.initial,
+        reason: '拖动过程写进了盘',
+      );
 
       // 松手落的是最终值。这里 state 已经等于目标值了，setAccent 不能因此
       // 提前返回——那正是「拖完没保存」的经典写法。
@@ -81,7 +88,10 @@ void main() {
         const AccentChoice.custom(hue: 10, saturation: 0.4),
       );
       final saved = await SharedPreferences.getInstance();
-      expect(saved.getString('app_accent'), isNotNull);
+      expect(
+        AppearanceConfig.decode(saved.getString(appearancePrefsKey)).accent,
+        const AccentChoice.custom(hue: 10, saturation: 0.4),
+      );
     });
 
     test('未知名字回落到蓝', () {
@@ -163,11 +173,16 @@ void main() {
     test('Hero 卡渐变跟着饱和度走，浓淡滑杆不能对最大那块彩色面没用', () {
       final vivid = AppColors.resolve(
         Brightness.light,
-        const AccentChoice.custom(hue: 217, saturation: 1),
+        _withAccent(const AccentChoice.custom(hue: 217, saturation: 1)),
       ).heroGradient;
       final muted = AppColors.resolve(
         Brightness.light,
-        const AccentChoice.custom(hue: 217, saturation: kAccentMinSaturation),
+        _withAccent(
+          const AccentChoice.custom(
+            hue: 217,
+            saturation: kAccentMinSaturation,
+          ),
+        ),
       ).heroGradient;
       for (var i = 0; i < vivid.colors.length; i++) {
         expect(
@@ -190,14 +205,14 @@ void main() {
     test('默认蓝就是现有的 light / dark 常量，引用不变', () {
       expect(
         identical(
-          AppColors.resolve(Brightness.light, AccentChoice.initial),
+          AppColors.resolve(Brightness.light, AppearanceConfig.initial),
           AppColors.light,
         ),
         isTrue,
       );
       expect(
         identical(
-          AppColors.resolve(Brightness.dark, AccentChoice.initial),
+          AppColors.resolve(Brightness.dark, AppearanceConfig.initial),
           AppColors.dark,
         ),
         isTrue,
@@ -209,7 +224,7 @@ void main() {
     test('换强调色只动主色家族，支出收入暖黄不动', () {
       final tinted = AppColors.resolve(
         Brightness.light,
-        const AccentChoice.preset(AppAccent.purple),
+        _withAccent(const AccentChoice.preset(AppAccent.purple)),
       );
       expect(tinted.primary, AppAccent.purple.light);
       expect(tinted.primary, isNot(AppColors.light.primary));
@@ -235,7 +250,7 @@ void main() {
         MaterialApp(
           theme: buildMaterialTheme(
             Brightness.light,
-            const AccentChoice.preset(AppAccent.teal),
+            _withAccent(const AccentChoice.preset(AppAccent.teal)),
           ),
           home: Builder(
             builder: (context) {
@@ -249,18 +264,22 @@ void main() {
     });
 
     test('forui 主题按强调色缓存，同一把钥匙返回同一实例', () {
-      const pink = AccentChoice.preset(AppAccent.pink);
+      final pink = _withAccent(const AccentChoice.preset(AppAccent.pink));
       final a = foruiThemeFor(Brightness.light, pink);
       final b = foruiThemeFor(Brightness.light, pink);
-      final c = foruiThemeFor(Brightness.light, AccentChoice.initial);
+      final c = foruiThemeFor(Brightness.light, AppearanceConfig.initial);
       expect(identical(a, b), isTrue);
       expect(identical(a, c), isFalse);
       expect(a.colors.primary, AppAccent.pink.light);
     });
 
     test('自选色的主题缓存只留最新一份，拖滑杆不会把 map 灌满', () {
-      const first = AccentChoice.custom(hue: 12, saturation: 0.5);
-      const second = AccentChoice.custom(hue: 13, saturation: 0.5);
+      final first = _withAccent(
+        const AccentChoice.custom(hue: 12, saturation: 0.5),
+      );
+      final second = _withAccent(
+        const AccentChoice.custom(hue: 13, saturation: 0.5),
+      );
       final a = foruiThemeFor(Brightness.light, first);
       expect(identical(foruiThemeFor(Brightness.light, first), a), isTrue);
 

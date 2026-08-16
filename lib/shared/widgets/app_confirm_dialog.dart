@@ -17,17 +17,19 @@ Future<bool> showAppConfirmDialog(
   String confirmLabel = '确定',
   String cancelLabel = '取消',
 
-  /// 「确定」的语义色。删除类操作传支出红（默认），其余可传品牌蓝。
+  /// 「确定」的语义色。删除类操作传危险红（默认），其余可传品牌蓝。
   ///
   /// 缺省值只能写 null 再在 builder 里解析：色板改成 [ThemeExtension] 之后
-  /// 支出红不再是编译期常量，没法直接当默认参数值。
+  /// 危险红不再是编译期常量，没法直接当默认参数值。
   Color? accent,
 }) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) {
       final colors = context.colors;
-      final accentColor = accent ?? colors.expense;
+      // danger 而不是 expense：确认框默认是给「删除」用的，
+      // 而用户可以把支出色翻成绿的。
+      final accentColor = accent ?? colors.danger;
       return Dialog(
         backgroundColor: colors.surface,
         shape: RoundedRectangleBorder(borderRadius: context.radii.sheetAll),

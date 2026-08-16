@@ -506,7 +506,9 @@ class _NameRow extends StatelessWidget {
                   hintText: '分类名称',
                   hintStyle: TextStyle(fontSize: 15, color: colors.inactive),
                   filled: true,
-                  fillColor: colors.canvas,
+                  // canvasBase：这是躺在白面浮层里的凹底，不是页底。
+                  // 壁纸模式下 canvas 是透明的，输入框会看起来没有底。
+                  fillColor: colors.canvasBase,
                   // 计数器占一整行高度却只说「3/12」，把面板撑高不值得；
                   // 超长由提交时的报错兜住。
                   counterText: '',
@@ -516,12 +518,12 @@ class _NameRow extends StatelessWidget {
                     vertical: 14,
                   ),
                   border: border(Colors.transparent),
+                  // 校验失败是错误状态，走 danger 而不是支出色——
+                  // 后者可以被用户翻成绿的。
                   enabledBorder: border(
-                    error == null ? Colors.transparent : colors.expense,
+                    error == null ? Colors.transparent : colors.danger,
                   ),
-                  focusedBorder: border(
-                    error == null ? accent : colors.expense,
-                  ),
+                  focusedBorder: border(error == null ? accent : colors.danger),
                 ),
               ),
             ),
@@ -540,7 +542,7 @@ class _NameRow extends StatelessWidget {
                       fontSize: 12,
                       height: 1.1,
                       fontWeight: FontWeight.w600,
-                      color: colors.expense,
+                      color: colors.danger,
                     ),
                   ),
                 ),
@@ -990,7 +992,9 @@ class _DeleteButton extends StatelessWidget {
     final colors = context.colors;
     final enabled = onTap != null;
     return Material(
-      color: colors.expenseSoft,
+      // 删除键走 danger 而不是支出色：翻向设置改的是「钱的正负」，
+      // 不是「危险」。
+      color: colors.dangerSoft,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,
@@ -1001,7 +1005,7 @@ class _DeleteButton extends StatelessWidget {
             child: Icon(
               FLucideIcons.trash2,
               size: 20,
-              color: enabled ? colors.expense : colors.inactive,
+              color: enabled ? colors.danger : colors.inactive,
             ),
           ),
         ),

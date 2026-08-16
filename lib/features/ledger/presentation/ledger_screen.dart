@@ -7,9 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
+import '../../../core/appearance/appearance.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/media/image_storage.dart';
-import '../../../core/preferences/money_grouped.dart';
+import '../../../core/theme/app_density.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -677,7 +678,13 @@ class _LedgerRow extends StatelessWidget {
       splashColor: colors.ripple,
       hoverColor: colors.ripple,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        // 垂直内边距跟着显示密度缩：一屏能看几笔账单主要就由这一处和字号
+        // 决定，这是「紧凑 / 宽松」这档设置真正要买的东西。
+        // 水平不跟着缩——左右留白是版面骨架，与设置页的行同一条规则。
+        padding: EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: context.density.space(12),
+        ),
         child: Row(
           children: [
             Container(

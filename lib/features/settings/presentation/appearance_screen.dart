@@ -2,40 +2,59 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
-import '../../../core/preferences/accent_color.dart';
+import '../../../core/appearance/appearance.dart';
 import '../../../core/preferences/app_icon.dart';
-import '../../../core/preferences/backdrop_blur.dart';
-import '../../../core/preferences/category_picker_layout.dart';
-import '../../../core/preferences/corner_style.dart';
-import '../../../core/preferences/theme_mode.dart';
-import '../../../core/preferences/transaction_image_style.dart';
+import '../../../core/theme/app_density.dart';
+import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/hero_skin.dart';
+import '../../../core/theme/sign_palette.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import 'accent_color_sheet.dart';
 import 'app_icon_picker_sheet.dart';
+import 'appearance_code_sheet.dart';
+import 'appearance_option_sheet.dart';
+import 'appearance_preset_row.dart';
+import 'appearance_wallpaper_card.dart';
 import 'backdrop_blur_sheet.dart';
 import 'settings_widgets.dart';
 
-/// 外观二级页：深浅、主题色、圆角、记账页版式、桌面图标。
+/// 外观二级页。
+///
+/// ## 两层结构：先成品，再零件
+///
+/// 顶上是共享样张，紧跟着是一排**风格预设**——按一下同时换掉深浅、主题色、
+/// 圆角、密度、动效、Hero 卡和底栏。多数人只想「换一个不难看的样子」，
+/// 不想做十几次决策；而对实现方来说，保证六套预设好看是可控的，保证十几个
+/// 开关的全部组合都好看是不可能的。
+///
+/// 预设之下才是逐项开关。改任何一项，上面那排预设就集体取消选中（变成
+/// 「自定义」）——这不是 bug，是唯一诚实的表示法。
 ///
 /// ## 为什么值得单开一屏
 ///
-/// 不是为了让设置首页短一点——这几项**互相影响**，而之前它们是六个各自
-/// 独立的浮层：主题色浮层里画一份 Hero 卡预览，圆角浮层里再画一份，
-/// 想知道「深色 + 橙色 + 极圆」合起来长什么样，只能来回开关浮层拿脑子拼。
+/// 不是为了让设置首页短一点——这些项**互相影响**，而它们原本是各自独立的
+/// 浮层：主题色浮层里画一份 Hero 卡预览，圆角浮层里再画一份，想知道
+/// 「深色 + 橙色 + 极圆 + 紧凑」合起来长什么样，只能来回开关浮层拿脑子拼。
 ///
 /// 这一屏把预览提到顶部**共享**：底下任何一档一改，同一张样张立刻跟着变。
-/// 深浅、圆角、记账页版式因此直接摊在页面里（不再各开浮层），改完不用退出去看。
 ///
-/// 主题色仍然是浮层：它带色相 / 浓淡两条滑杆，摊开会把这一屏撑成两屏，
-/// 而且拖滑杆时需要浮层自己那份「按当前值现算」的即时预览。
+/// ## 什么摊开、什么收进浮层
+///
+/// 摊开的是「一改样张就变形、且档位名自明」的：深浅、圆角、预设。
+/// 收进浮层的是「需要一行说明才说得清」的（密度、动效、Hero 卡、底栏、
+/// 收支配色），以及带滑杆的（主题色、背景模糊）——那些摊开会把这一屏
+/// 撑成三屏，说明文字还会和样张抢注意力。
 class AppearanceScreen extends ConsumerWidget {
   const AppearanceScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final imageStyle = ref.watch(transactionImageStyleProvider);
+    final config = ref.watch(appearanceProvider);
+    final notifier = ref.read(appearanceProvider.notifier);
+    // 「跟随系统」下纯黑档到底生不生效，取决于当前平台亮度。
+    final isDark = context.colors.isDark;
     return AppTopBar(
       title: '外观',
       slivers: [
@@ -45,6 +64,26 @@ class AppearanceScreen extends ConsumerWidget {
             children: [
               const _AppearancePreview(),
               const SizedBox(height: 18),
+
+              const SectionLabel('风格'),
+              AppearancePresetRow(
+                config: config,
+                onPick: notifier.applyPreset,
+              ),
+              const SizedBox(height: 10),
+              SettingsCard(
+                children: [
+                  SettingsItem(
+                    icon: FLucideIcons.share2,
+                    title: '主题码',
+                    subtitle: '把整套外观发给别人，或套用别人的',
+                    showChevron: true,
+                    onTap: () => _openCodeSheet(context),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 18),
               const SectionLabel('主题'),
               SettingsCard(
                 children: [
@@ -52,12 +91,23 @@ class AppearanceScreen extends ConsumerWidget {
                     icon: FLucideIcons.sunMoon,
                     title: '深浅模式',
                     trailing: _ThemeModeToggle(
-                      value: ref.watch(appThemeModeProvider),
-                      onChanged: (value) => ref
-                          .read(appThemeModeProvider.notifier)
-                          .setMode(value),
+                      value: config.themeMode,
+                      onChanged: notifier.setThemeMode,
                     ),
                   ),
+                  // 只在深色真正生效时出现。浅色下它一个像素都改不了，
+                  // 置灰摆在那里让人猜它归谁管，不如跟着深色一起收起来
+                  //（与「背景模糊只在背板模式下出现」同一条规则）。
+                  if (isDark)
+                    SettingsItem(
+                      icon: FLucideIcons.contrast,
+                      title: '纯黑深色',
+                      subtitle: 'OLED 屏更省电，页底压到纯黑',
+                      trailing: TrailingSwitch(
+                        value: config.trueBlack,
+                        onChange: notifier.setTrueBlack,
+                      ),
+                    ),
                   SettingsItem(
                     icon: FLucideIcons.palette,
                     title: '主题色',
@@ -65,15 +115,87 @@ class AppearanceScreen extends ConsumerWidget {
                     showChevron: true,
                     onTap: () => showAccentColorSheet(context),
                   ),
+                  SettingsItem(
+                    icon: FLucideIcons.arrowDownUp,
+                    title: '收支配色',
+                    value: config.signPalette.label,
+                    showChevron: true,
+                    onTap: () => _pickSignPalette(context, notifier, config),
+                  ),
                 ],
               ),
+
               const SizedBox(height: 18),
               const SectionLabel('圆角'),
-              _CornerCard(
-                value: ref.watch(appCornerStyleProvider),
-                onChanged: (value) =>
-                    ref.read(appCornerStyleProvider.notifier).setStyle(value),
+              _CornerCard(value: config.corner, onChanged: notifier.setCorner),
+
+              const SizedBox(height: 18),
+              const SectionLabel('排版'),
+              SettingsCard(
+                children: [
+                  SettingsItem(
+                    icon: FLucideIcons.textCursorInput,
+                    title: '显示密度',
+                    subtitle: '字号与行高，决定一屏能看几笔',
+                    value: config.density.label,
+                    showChevron: true,
+                    onTap: () => _pickDensity(context, notifier, config),
+                  ),
+                  SettingsItem(
+                    icon: FLucideIcons.hash,
+                    title: '金额千分位',
+                    subtitle: '19,042.60',
+                    trailing: TrailingSwitch(
+                      value: config.moneyGrouped,
+                      onChange: notifier.setMoneyGrouped,
+                    ),
+                  ),
+                  SettingsItem(
+                    icon: FLucideIcons.alignJustify,
+                    title: '数字等宽',
+                    subtitle: '金额列的小数点逐行对齐',
+                    trailing: TrailingSwitch(
+                      value: config.tabularFigures,
+                      onChange: notifier.setTabularFigures,
+                    ),
+                  ),
+                ],
               ),
+
+              const SizedBox(height: 18),
+              const SectionLabel('版式'),
+              SettingsCard(
+                children: [
+                  SettingsItem(
+                    icon: FLucideIcons.creditCard,
+                    title: '摘要卡样式',
+                    subtitle: '明细页与统计页顶部那张大卡',
+                    value: config.heroStyle.label,
+                    showChevron: true,
+                    onTap: () => _pickHeroStyle(context, notifier, config),
+                  ),
+                  SettingsItem(
+                    icon: FLucideIcons.panelBottom,
+                    title: '底栏样式',
+                    value: config.navBarStyle.label,
+                    showChevron: true,
+                    onTap: () => _pickNavBarStyle(context, notifier, config),
+                  ),
+                  SettingsItem(
+                    icon: FLucideIcons.zap,
+                    title: '动效强度',
+                    subtitle: '也影响页面切换的过渡',
+                    value: config.motion.label,
+                    showChevron: true,
+                    onTap: () => _pickMotion(context, notifier, config),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 18),
+              const SectionLabel('背景'),
+              const AppearanceWallpaperCard(),
+
               const SizedBox(height: 18),
               const SectionLabel('记账页'),
               SettingsCard(
@@ -81,23 +203,24 @@ class AppearanceScreen extends ConsumerWidget {
                   SettingsItem(
                     icon: FLucideIcons.image,
                     title: '账单图片',
-                    subtitle: imageStyle == TransactionImageStyle.backdrop
+                    subtitle:
+                        config.transactionImageStyle ==
+                            TransactionImageStyle.backdrop
                         ? '整页背板'
                         : '拍立得贴纸',
                     trailing: _ImageStyleToggle(
-                      value: imageStyle,
-                      onChanged: (value) => ref
-                          .read(transactionImageStyleProvider.notifier)
-                          .setStyle(value),
+                      value: config.transactionImageStyle,
+                      onChanged: notifier.setTransactionImageStyle,
                     ),
                   ),
                   // 模糊是背板独有的参数，贴纸模式下怎么调都不会有变化。
                   // 与其置灰摆在那里让人猜它归谁管，不如跟着背板一起收起来。
-                  if (imageStyle == TransactionImageStyle.backdrop)
+                  if (config.transactionImageStyle ==
+                      TransactionImageStyle.backdrop)
                     SettingsItem(
                       icon: FLucideIcons.aperture,
                       title: '背景模糊',
-                      value: ref.watch(backdropBlurProvider).round().toString(),
+                      value: config.backdropBlur.round().toString(),
                       showChevron: true,
                       onTap: () => showBackdropBlurSheet(context),
                     ),
@@ -105,18 +228,17 @@ class AppearanceScreen extends ConsumerWidget {
                     icon: FLucideIcons.layoutGrid,
                     title: '分类选择样式',
                     trailing: _LayoutToggle(
-                      value: ref.watch(categoryPickerLayoutProvider),
-                      onChanged: (value) => ref
-                          .read(categoryPickerLayoutProvider.notifier)
-                          .setLayout(value),
+                      value: config.categoryPickerLayout,
+                      onChanged: notifier.setCategoryPickerLayout,
                     ),
                   ),
                 ],
               ),
+
               const SizedBox(height: 18),
               // 单独一组：它改的是桌面 launcher 图标，app 内一个像素都不变，
               // 混在上面那些「app 内长什么样」的设置里语义是错的，
-              // 顶部那张样张也永远反映不了它。
+              // 顶部那张样张也永远反映不了它。也因此它不进主题码。
               const SectionLabel('桌面'),
               SettingsCard(
                 children: [
@@ -135,6 +257,170 @@ class AppearanceScreen extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _openCodeSheet(BuildContext context) async {
+    final applied = await showAppearanceCodeSheet(context);
+    if (applied == true && context.mounted) {
+      showAppToast(context, message: '外观已套用', level: AppToastLevel.success);
+    }
+  }
+
+  Future<void> _pickSignPalette(
+    BuildContext context,
+    AppearanceController notifier,
+    AppearanceConfig config,
+  ) async {
+    final picked = await showAppearanceOptionSheet<SignPalette>(
+      context,
+      title: '收支配色',
+      caption: '只换支出和收入两个数字的颜色。删除、报错这些地方一直是红的，不跟着翻。',
+      current: config.signPalette,
+      options: const [
+        AppearanceOption(
+          value: SignPalette.warmExpense,
+          label: '红支绿收',
+          caption: '记账习惯：花掉的钱是红的',
+          icon: FLucideIcons.trendingDown,
+        ),
+        AppearanceOption(
+          value: SignPalette.coolExpense,
+          label: '绿支红收',
+          caption: '行情习惯：红涨绿跌',
+          icon: FLucideIcons.trendingUp,
+        ),
+      ],
+    );
+    if (picked != null) notifier.setSignPalette(picked);
+  }
+
+  Future<void> _pickDensity(
+    BuildContext context,
+    AppearanceController notifier,
+    AppearanceConfig config,
+  ) async {
+    final picked = await showAppearanceOptionSheet<AppDensityLevel>(
+      context,
+      title: '显示密度',
+      caption: '同时缩放字号和行高。系统里调过的字号仍然生效，这一档是在它之上再乘一次。',
+      current: config.density,
+      options: const [
+        AppearanceOption(
+          value: AppDensityLevel.compact,
+          label: '紧凑',
+          caption: '一屏多看一两笔',
+          icon: FLucideIcons.alignJustify,
+        ),
+        AppearanceOption(
+          value: AppDensityLevel.standard,
+          label: '适中',
+          caption: '默认',
+          icon: FLucideIcons.alignLeft,
+        ),
+        AppearanceOption(
+          value: AppDensityLevel.relaxed,
+          label: '宽松',
+          caption: '字更大、行更松',
+          icon: FLucideIcons.stretchVertical,
+        ),
+      ],
+    );
+    if (picked != null) notifier.setDensity(picked);
+  }
+
+  Future<void> _pickHeroStyle(
+    BuildContext context,
+    AppearanceController notifier,
+    AppearanceConfig config,
+  ) async {
+    final picked = await showAppearanceOptionSheet<HeroCardStyle>(
+      context,
+      title: '摘要卡样式',
+      caption: '明细页和统计页顶部是同一张卡，一起变。',
+      current: config.heroStyle,
+      options: const [
+        AppearanceOption(
+          value: HeroCardStyle.gradient,
+          label: '渐变',
+          caption: '默认，主题色斜向渐变',
+          icon: FLucideIcons.blend,
+        ),
+        AppearanceOption(
+          value: HeroCardStyle.solid,
+          label: '纯色',
+          caption: '安静一档，深色下不刺眼',
+          icon: FLucideIcons.square,
+        ),
+        AppearanceOption(
+          value: HeroCardStyle.outline,
+          label: '描边',
+          caption: '白面 + 主色描边，整页只剩白卡',
+          icon: FLucideIcons.squareDashed,
+        ),
+      ],
+    );
+    if (picked != null) notifier.setHeroStyle(picked);
+  }
+
+  Future<void> _pickNavBarStyle(
+    BuildContext context,
+    AppearanceController notifier,
+    AppearanceConfig config,
+  ) async {
+    final picked = await showAppearanceOptionSheet<NavBarStyle>(
+      context,
+      title: '底栏样式',
+      current: config.navBarStyle,
+      options: const [
+        AppearanceOption(
+          value: NavBarStyle.docked,
+          label: '贴底',
+          caption: '默认，铺满屏幕底部',
+          icon: FLucideIcons.panelBottom,
+        ),
+        AppearanceOption(
+          value: NavBarStyle.floating,
+          label: '悬浮',
+          caption: '四周留白的胶囊',
+          icon: FLucideIcons.rectangleHorizontal,
+        ),
+      ],
+    );
+    if (picked != null) notifier.setNavBarStyle(picked);
+  }
+
+  Future<void> _pickMotion(
+    BuildContext context,
+    AppearanceController notifier,
+    AppearanceConfig config,
+  ) async {
+    final picked = await showAppearanceOptionSheet<MotionLevel>(
+      context,
+      title: '动效强度',
+      caption: '缩放全应用的动画时长，也换掉页面之间的转场。',
+      current: config.motion,
+      options: const [
+        AppearanceOption(
+          value: MotionLevel.full,
+          label: '完整',
+          caption: '默认',
+          icon: FLucideIcons.zap,
+        ),
+        AppearanceOption(
+          value: MotionLevel.reduced,
+          label: '减弱',
+          caption: '快一倍，转场只淡入',
+          icon: FLucideIcons.gauge,
+        ),
+        AppearanceOption(
+          value: MotionLevel.off,
+          label: '关闭',
+          caption: '点了就到，什么都不动',
+          icon: FLucideIcons.zapOff,
+        ),
+      ],
+    );
+    if (picked != null) notifier.setMotion(picked);
   }
 
   Future<void> _pickAppIcon(BuildContext context, WidgetRef ref) async {
@@ -164,6 +450,9 @@ class AppearanceScreen extends ConsumerWidget {
 /// 同时也是主题色出场面积最大的三处。只放一张卡的话，用户看不出
 /// 「弹窗按钮会跟着变多圆」。
 ///
+/// 样张里的每一个颜色都从 [HeroSkin] 取，不写死白色：摘要卡样式选到
+/// 「描边」时卡面会变白，写死的白字在样张里会先消失一次。
+///
 /// 通栏上写「按钮」而不是「确定」：这是示意块，不是操作，写成确定会让人去点。
 class _AppearancePreview extends StatelessWidget {
   const _AppearancePreview();
@@ -175,13 +464,17 @@ class _AppearancePreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final radii = context.radii;
+    final hero = colors.hero;
+    // 样张自己也守动效档位：选了「关闭」却看到样张在那里柔和变形，
+    // 用户会以为这个开关没生效。
+    final morph = context.motion(_morph);
     return AnimatedContainer(
-      duration: _morph,
+      duration: morph,
       curve: _curve,
       padding: const EdgeInsets.all(14),
       // 外框代表「浮层」这一档，是全应用最大的圆角。
       decoration: BoxDecoration(
-        color: colors.canvas,
+        color: colors.canvasBase,
         borderRadius: radii.sheetAll,
         border: Border.all(color: colors.line),
       ),
@@ -189,34 +482,36 @@ class _AppearancePreview extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AnimatedContainer(
-            duration: _morph,
+            duration: morph,
             curve: _curve,
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
             decoration: BoxDecoration(
-              gradient: colors.heroGradient,
+              gradient: hero.gradient,
+              color: hero.color,
+              border: hero.border,
               borderRadius: radii.cardAll,
-              boxShadow: colors.shadowHeroPrimary,
+              boxShadow: hero.shadow,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   '本月支出',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xCCFFFFFF),
+                    color: hero.foregroundSoft,
                     letterSpacing: 0.2,
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   '1,280.00',
                   style: TextStyle(
                     fontSize: 26,
                     height: 1.1,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    color: hero.foreground,
                     letterSpacing: 0.4,
                   ),
                 ),
@@ -225,7 +520,7 @@ class _AppearancePreview extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           AnimatedContainer(
-            duration: _morph,
+            duration: morph,
             curve: _curve,
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
@@ -236,7 +531,7 @@ class _AppearancePreview extends StatelessWidget {
             child: Row(
               children: [
                 AnimatedContainer(
-                  duration: _morph,
+                  duration: morph,
                   curve: _curve,
                   width: 32,
                   height: 32,
@@ -266,7 +561,7 @@ class _AppearancePreview extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       AnimatedContainer(
-                        duration: _morph,
+                        duration: morph,
                         curve: _curve,
                         height: 8,
                         width: 96,
@@ -291,7 +586,7 @@ class _AppearancePreview extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           AnimatedContainer(
-            duration: _morph,
+            duration: morph,
             curve: _curve,
             height: 36,
             alignment: Alignment.center,
@@ -386,7 +681,7 @@ class _CornerOption extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
+            duration: context.motion(const Duration(milliseconds: 180)),
             curve: Curves.easeOutCubic,
             height: 34,
             decoration: BoxDecoration(

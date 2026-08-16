@@ -5,7 +5,7 @@ import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/media/image_storage.dart';
-import '../../../core/preferences/money_grouped.dart';
+import '../../../core/appearance/appearance.dart';
 import '../../../core/storage/storage_usage.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
@@ -742,7 +742,7 @@ class _SelectBar extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     color: onDelete == null || busy
                         ? colors.inactive
-                        : colors.expense,
+                        : colors.danger,
                   ),
                 ),
               ),

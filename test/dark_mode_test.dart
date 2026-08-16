@@ -3,9 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ligy_tally/core/appearance/appearance.dart';
 import 'package:ligy_tally/core/database/app_database.dart';
-import 'package:ligy_tally/core/preferences/theme_mode.dart';
 import 'package:ligy_tally/core/theme/app_accent.dart';
+import 'package:ligy_tally/core/theme/app_density.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/shared/widgets/summary_band.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,16 +38,37 @@ void main() {
 
       expect(container.read(appThemeModeProvider), AppThemeMode.system);
       await container
-          .read(appThemeModeProvider.notifier)
-          .setMode(AppThemeMode.dark);
+          .read(appearanceProvider.notifier)
+          .setThemeMode(AppThemeMode.dark);
       expect(container.read(appThemeModeProvider), AppThemeMode.dark);
 
       // 换一个容器模拟冷启动：偏好要从盘里回来，而不是回落到默认值。
       final restarted = ProviderContainer();
       addTearDown(restarted.dispose);
-      restarted.read(appThemeModeProvider);
-      await Future<void>.delayed(Duration.zero);
+      await restarted.read(appearanceProvider.notifier).ready;
       expect(restarted.read(appThemeModeProvider), AppThemeMode.dark);
+    });
+
+    test('注入种子时不再异步读盘，第一帧就是终态', () async {
+      // 合并成一个对象换来的正是这条：`main.dart` 先 await 一次读盘，
+      // 锁定深色 + 紧凑的用户不会看到版式分几帧重排。
+      SharedPreferences.setMockInitialValues({});
+      const seed = AppearanceConfig(
+        themeMode: AppThemeMode.dark,
+        density: AppDensityLevel.compact,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appearanceProvider.overrideWith(
+            () => AppearanceController.seeded(seed),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // 一个微任务都不等，直接读。
+      expect(container.read(appThemeModeProvider), AppThemeMode.dark);
+      expect(container.read(appDensityProvider), AppDensityLevel.compact);
     });
 
     test('三档分别映射到 Material 的 ThemeMode', () {
@@ -62,17 +84,41 @@ void main() {
       // 卡片只能靠自身更亮来分层——这两条关系搞反的话，深色页面会糊成一片。
       expect(
         _luminance(AppColors.light.surface),
-        greaterThan(_luminance(AppColors.light.canvas)),
+        greaterThan(_luminance(AppColors.light.canvasBase)),
       );
       expect(
         _luminance(AppColors.dark.surface),
-        greaterThan(_luminance(AppColors.dark.canvas)),
+        greaterThan(_luminance(AppColors.dark.canvasBase)),
       );
       // 深色整体必须真的暗下去，而不是「灰一点的浅色」。
       expect(
-        _luminance(AppColors.dark.canvas),
-        lessThan(_luminance(AppColors.light.canvas) / 4),
+        _luminance(AppColors.dark.canvasBase),
+        lessThan(_luminance(AppColors.light.canvasBase) / 4),
       );
+    });
+
+    test('纯黑档把页底压到纯黑，但卡片仍比页底亮', () {
+      final black = AppColors.dark.withTrueBlack();
+      expect(black.canvasBase, const Color(0xFF000000));
+      // 卡片跟着压到纯黑的话整页会糊成一片，反而看不出有卡片——
+      // 深色下卡片是靠自己更亮才浮起来的（阴影几乎不可见）。
+      expect(
+        _luminance(black.surface),
+        greaterThan(_luminance(black.canvasBase)),
+      );
+      // 只动中性轴：主色和收支色一个都不该被碰。
+      expect(black.primary, AppColors.dark.primary);
+      expect(black.expense, AppColors.dark.expense);
+    });
+
+    test('收支换向只对调两组钱色，危险 / 成功色钉死', () {
+      final reversed = AppColors.light.withReversedSigns();
+      expect(reversed.expense, AppColors.light.income);
+      expect(reversed.income, AppColors.light.expense);
+      // 这一条就是把 danger / success 从 expense / income 里拆出来的
+      // 全部理由：翻向之后「删除」的确认按钮不能变成绿的。
+      expect(reversed.danger, AppColors.light.danger);
+      expect(reversed.success, AppColors.light.success);
     });
 
     test('正文压在卡片上达到 WCAG AA', () {
@@ -83,7 +129,7 @@ void main() {
           reason: '${colors.brightness} 的正文对比度不足',
         );
         expect(
-          _contrast(colors.ink, colors.canvas),
+          _contrast(colors.ink, colors.canvasBase),
           greaterThan(4.5),
           reason: '${colors.brightness} 的正文压页底对比度不足',
         );
@@ -136,11 +182,11 @@ void main() {
     testWidgets('forui 主题跟着亮度走，不会拿浅色主题去铺深色页面', (tester) async {
       expect(
         foruiThemeFor(Brightness.dark).colors.background,
-        AppColors.dark.canvas,
+        AppColors.dark.canvasBase,
       );
       expect(
         foruiThemeFor(Brightness.light).colors.background,
-        AppColors.light.canvas,
+        AppColors.light.canvasBase,
       );
       // 缓存返回同一个实例，不是每次重新构造。
       expect(
@@ -169,11 +215,12 @@ void main() {
       const AccentChoice.custom(hue: 96, saturation: 0.55),
     ];
     for (final accent in choices) {
+      final config = AppearanceConfig(accent: accent);
       for (final brightness in Brightness.values) {
         await tester.pumpWidget(
           ProviderScope(
             child: MaterialApp(
-              theme: buildMaterialTheme(brightness, accent),
+              theme: buildMaterialTheme(brightness, config),
               home: const Scaffold(
                 body: SummaryBand(
                   summary: LedgerSummary(
@@ -202,7 +249,7 @@ void main() {
             .firstWhere((decoration) => decoration.gradient != null);
         expect(
           face.gradient,
-          AppColors.resolve(brightness, accent).heroGradient,
+          AppColors.resolve(brightness, config).heroGradient,
           reason: '$accent / $brightness 下摘要卡没走共用的 Hero 渐变',
         );
       }

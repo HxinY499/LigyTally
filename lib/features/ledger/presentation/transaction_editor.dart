@@ -7,13 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../core/appearance/appearance.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/media/image_storage.dart';
-import '../../../core/preferences/backdrop_blur.dart';
-import '../../../core/preferences/category_picker_layout.dart';
 import '../../../core/preferences/last_category.dart';
-import '../../../core/preferences/money_grouped.dart';
-import '../../../core/preferences/transaction_image_style.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -2102,7 +2099,8 @@ class _SheetAddTile extends StatelessWidget {
         width: 88,
         height: 88,
         decoration: BoxDecoration(
-          color: colors.canvas,
+          // canvasBase：这是卡内一个凹槽，不是页底。
+          color: colors.canvasBase,
           borderRadius: context.radii.blockAll,
         ),
         child: Center(
@@ -2337,7 +2335,9 @@ class _NumericKeypad extends StatelessWidget {
     final colors = context.colors;
     return Container(
       decoration: BoxDecoration(
-        color: colors.canvas,
+        // canvasBase：常驻输入面板必须是实底。它压在账单图片背板之上，
+        // 半透明会让数字键盘上浮着一张照片。
+        color: colors.canvasBase,
         border: Border(top: BorderSide(color: colors.line)),
       ),
       child: Column(

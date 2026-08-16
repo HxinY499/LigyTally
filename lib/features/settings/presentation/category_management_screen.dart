@@ -510,7 +510,7 @@ class _CategoryCard extends StatelessWidget {
                               // 认出「这个现在不生效」，不用去读文字徽章。
                               color: active
                                   ? _accentSoft(colors)
-                                  : colors.canvas,
+                                  : colors.canvasBase,
                               shape: BoxShape.circle,
                             ),
                             child: CategoryIconView(
@@ -816,7 +816,7 @@ class _MutedBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: colors.canvas,
+        color: colors.canvasBase,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(

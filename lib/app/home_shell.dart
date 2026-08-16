@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
+import '../core/appearance/appearance.dart';
 import '../core/preferences/quick_tally_mode.dart';
+import '../core/theme/app_motion.dart';
 import '../core/theme/app_theme.dart';
 import '../features/ledger/presentation/ledger_screen.dart';
 import '../features/ledger/presentation/transaction_editor.dart';
@@ -83,7 +85,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // 正好压住中间的「统计」tab。
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 200),
+        duration: context.motion(const Duration(milliseconds: 200)),
         transitionBuilder: (child, animation) =>
             ScaleTransition(scale: animation, child: child),
         child: _index == 0
@@ -92,8 +94,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 onPressed: _addTransaction,
                 backgroundColor: context.colors.primary,
                 // 深色下品牌蓝被提亮，白字对比不够；与 forui primaryForeground 同一条规则。
+                // canvasBase 而不是 canvas：这是压在主色圆按钮上的**前景色**，
+                // 壁纸模式下拿到透明的话加号会直接消失。
                 foregroundColor: context.colors.isDark
-                    ? context.colors.canvas
+                    ? context.colors.canvasBase
                     : Colors.white,
                 elevation: 3,
                 shape: const CircleBorder(),
@@ -101,20 +105,36 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               )
             : const SizedBox.shrink(key: ValueKey('none')),
       ),
-      bottomNavigationBar: _BottomNavBar(index: _index, onChange: _jumpTo),
+      bottomNavigationBar: _BottomNavBar(
+        index: _index,
+        onChange: _jumpTo,
+        style: ref.watch(navBarStyleProvider),
+      ),
     );
   }
 }
 
-/// 贴底固定导航栏：白底 + 一道极淡顶线，三个 tab 均分宽度。
+/// 底部导航栏：三个 tab 均分宽度。
 ///
 /// 选中态不做底色块——只靠图标/文字变品牌蓝 + 图标弹入来表达，
 /// 是三个 tab 场景下最干净的处理。
+///
+/// 两种形态（见 [NavBarStyle]）共用同一个 [Row]，区别只在外壳：
+/// - 贴底：铺满 + 一道极淡顶线，安全区留白吃在栏内；
+/// - 悬浮：四周留白的胶囊 + 阴影，安全区留白吃在栏外。
+///
+/// 悬浮档**没有**让内容滚到栏下面。那需要三个一级页各自重算滚动内边距，
+/// 而用户感知到的「悬浮」全部来自这圈留白和圆角，穿透与否看不出来。
 class _BottomNavBar extends StatelessWidget {
-  const _BottomNavBar({required this.index, required this.onChange});
+  const _BottomNavBar({
+    required this.index,
+    required this.onChange,
+    required this.style,
+  });
 
   final int index;
   final ValueChanged<int> onChange;
+  final NavBarStyle style;
 
   static const _items = [
     (icon: FLucideIcons.receiptText, label: '明细'),
@@ -125,10 +145,53 @@ class _BottomNavBar extends StatelessWidget {
   /// 内容区高度（不含系统安全区）。
   static const _barHeight = 58.0;
 
+  /// 悬浮档的胶囊四周留白。左右取 16 与一级页内容的 gutter 同源；
+  /// 底部 10 是「离屏幕边缘足够远才像浮着」与「别把内容挤太多」之间的折中。
+  static const _floatInset = EdgeInsets.fromLTRB(16, 0, 16, 10);
+
+  /// 悬浮档的胶囊高度。比贴底档矮一档：它已经靠阴影和留白分层了，
+  /// 不需要再靠高度撑存在感，矮一点还能把留白的成本抵掉一半。
+  static const _floatHeight = 54.0;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final bottomInset = MediaQuery.of(context).padding.bottom;
+    final row = Row(
+      children: [
+        for (var i = 0; i < _items.length; i++)
+          Expanded(
+            child: _NavItem(
+              icon: _items[i].icon,
+              label: _items[i].label,
+              selected: index == i,
+              onTap: () => onChange(i),
+            ),
+          ),
+      ],
+    );
+
+    if (style == NavBarStyle.floating) {
+      return Padding(
+        padding: _floatInset.add(EdgeInsets.only(bottom: bottomInset)),
+        child: Container(
+          height: _floatHeight,
+          decoration: BoxDecoration(
+            color: colors.surface,
+            // 胶囊：半径 = 高度一半，不跟全局圆角档位走。选「直角」时把
+            // 悬浮栏压成方块，那不是圆角设置该管的事（见 AppRadius 文档）。
+            borderRadius: BorderRadius.circular(_floatHeight / 2),
+            border: Border.all(color: colors.lineSoft),
+            // 沿用卡片阴影而不是另调一份：悬浮栏和内容卡是同一个「浮起来的
+            // 白面」，浮在不同高度会让人以为它们不是一套东西。
+            boxShadow: colors.shadowCard,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: row,
+        ),
+      );
+    }
+
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.surface,
@@ -138,19 +201,7 @@ class _BottomNavBar extends StatelessWidget {
         height: _barHeight + bottomInset,
         child: Padding(
           padding: EdgeInsets.only(bottom: bottomInset),
-          child: Row(
-            children: [
-              for (var i = 0; i < _items.length; i++)
-                Expanded(
-                  child: _NavItem(
-                    icon: _items[i].icon,
-                    label: _items[i].label,
-                    selected: index == i,
-                    onTap: () => onChange(i),
-                  ),
-                ),
-            ],
-          ),
+          child: row,
         ),
       ),
     );
@@ -184,8 +235,10 @@ class _NavItemState extends State<_NavItem>
   /// 下压到的最小倍率：再小图标就像「闪没了」，不像被按下去。
   static const _dip = 0.72;
 
+  static const _pulseDuration = Duration(milliseconds: 380);
+
   late final AnimationController _pulse = AnimationController(
-    duration: const Duration(milliseconds: 380),
+    duration: _pulseDuration,
     vsync: this,
   );
 
@@ -213,7 +266,13 @@ class _NavItemState extends State<_NavItem>
     super.didUpdateWidget(oldWidget);
     // 只在「未选中 → 选中」的瞬间播；取消选中不播，
     // 否则切页时旧 tab 也会跟着抖一下。
-    if (widget.selected && !oldWidget.selected) _pulse.forward(from: 0);
+    if (widget.selected && !oldWidget.selected) {
+      // 时长在这里而不是在 build 里定：`forward()` 会把当时的 duration 抄进
+      // 一条 simulation，之后再改字段影响不到已经跑起来的这一次。
+      // 动效关闭档下这里是 Duration.zero，控制器直接落到终点，不需要分支。
+      _pulse.duration = context.motion(_pulseDuration);
+      _pulse.forward(from: 0);
+    }
   }
 
   @override
@@ -229,7 +288,7 @@ class _NavItemState extends State<_NavItem>
       behavior: HitTestBehavior.opaque,
       onTap: widget.onTap,
       child: TweenAnimationBuilder<Color?>(
-        duration: const Duration(milliseconds: 220),
+        duration: context.motion(const Duration(milliseconds: 220)),
         curve: Curves.easeOutCubic,
         tween: ColorTween(
           end: widget.selected ? colors.primary : colors.inactive,

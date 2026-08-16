@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
-import '../../../core/preferences/backdrop_blur.dart';
+import '../../../core/appearance/appearance.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/image_backdrop.dart';
 
@@ -87,8 +87,8 @@ class _BackdropBlurSheet extends ConsumerWidget {
                         divisions: 20,
                         label: sigma.round().toString(),
                         onChanged: (value) => ref
-                            .read(backdropBlurProvider.notifier)
-                            .setSigma(value),
+                            .read(appearanceProvider.notifier)
+                            .setBackdropBlur(value),
                       ),
                     ),
                   ),
@@ -118,7 +118,10 @@ class _BlurPreview extends StatelessWidget {
     return Container(
       height: 168,
       decoration: BoxDecoration(
-        color: colors.canvas,
+        // canvasBase 而不是 canvas：这块是浮层里的一个样张，不是页底。
+        // 壁纸模式下 canvas 是透明的，样张会漏出后面的浮层白面，
+        // 背板的渐隐就没有底色可以化开了。
+        color: colors.canvasBase,
         borderRadius: context.radii.cardAll,
         border: Border.all(color: colors.line),
       ),

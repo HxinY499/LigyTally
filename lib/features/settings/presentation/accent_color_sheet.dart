@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
-import '../../../core/preferences/accent_color.dart';
+import '../../../core/appearance/appearance.dart';
 import '../../../core/theme/app_accent.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -74,7 +74,7 @@ class _AccentColorSheet extends ConsumerWidget {
                       onTap: () {
                         HapticFeedback.selectionClick();
                         ref
-                            .read(appAccentProvider.notifier)
+                            .read(appearanceProvider.notifier)
                             .setAccent(AccentChoice.preset(accent));
                       },
                     ),
@@ -118,7 +118,7 @@ class _CustomStrips extends ConsumerWidget {
     );
 
     void emit(AccentChoice choice, {required bool done}) {
-      final notifier = ref.read(appAccentProvider.notifier);
+      final notifier = ref.read(appearanceProvider.notifier);
       if (done) {
         HapticFeedback.selectionClick();
         notifier.setAccent(choice);
@@ -333,7 +333,9 @@ class _AccentSwatch extends StatelessWidget {
                 ? Icon(
                     FLucideIcons.check,
                     size: 18,
-                    color: colors.isDark ? colors.canvas : Colors.white,
+                    // 这是压在色点上的对勾，是前景色而不是页底，
+                    // 壁纸模式下不能拿到透明的 canvas。
+                    color: colors.isDark ? colors.canvasBase : Colors.white,
                   )
                 : null,
           ),

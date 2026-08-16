@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
-import 'package:ligy_tally/core/preferences/accent_color.dart';
+import 'package:ligy_tally/core/appearance/appearance.dart';
 import 'package:ligy_tally/core/theme/app_accent.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/features/settings/presentation/accent_color_sheet.dart';
@@ -17,11 +17,11 @@ void main() {
   Widget host() => ProviderScope(
     child: Consumer(
       builder: (context, ref, _) {
-        final accent = ref.watch(appAccentProvider);
+        final config = ref.watch(appearanceProvider);
         return MaterialApp(
-          theme: buildMaterialTheme(Brightness.light, accent),
+          theme: buildMaterialTheme(Brightness.light, config),
           builder: (context, child) => FTheme(
-            data: foruiThemeFor(Brightness.light, accent),
+            data: foruiThemeFor(Brightness.light, config),
             child: FToaster(child: child!),
           ),
           home: Builder(
@@ -41,7 +41,7 @@ void main() {
 
   AccentChoice choiceOf(WidgetTester tester) => ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp)),
-  ).read(appAccentProvider);
+  ).read(appearanceProvider).accent;
 
   testWidgets('浮层里是六个色点和两条滑杆，没有预览带', (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -102,12 +102,21 @@ void main() {
     // 拖动中：内存里已经是自选色，但偏好还没写。
     expect(choiceOf(tester).isCustom, isTrue);
     final dragging = await SharedPreferences.getInstance();
-    expect(dragging.getString('app_accent'), isNull);
+    expect(
+      AppearanceConfig.decode(dragging.getString(appearancePrefsKey)).accent
+          .isCustom,
+      isFalse,
+      reason: '拖动过程写进了盘',
+    );
 
     await gesture.up();
     await tester.pumpAndSettle();
     final released = await SharedPreferences.getInstance();
-    expect(released.getString('app_accent'), startsWith('custom:'));
+    expect(
+      AppearanceConfig.decode(released.getString(appearancePrefsKey)).accent
+          .isCustom,
+      isTrue,
+    );
   });
 
   testWidgets('色相条从左到右色相递增，浓淡条从左到右越来越浓', (tester) async {
