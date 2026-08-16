@@ -260,13 +260,12 @@ class AppColors extends ThemeExtension<AppColors> {
 
   /// 页面底色。
   ///
-  /// 壁纸模式下是**全透明**：壁纸层（连带压在它上面的那层页面色蒙版）铺在
-  /// 整个应用之下，页底只要让开就行。这也顺带让页头的吸顶毛玻璃自动透出
-  /// 壁纸——`AppChromeGlass` 本来就支持透明底（记一笔页的图片背板走的
-  /// 同一条路）。
+  /// 壁纸模式下是**全透明**：壁纸层（照片 + 压在它上面的那层页面色蒙版）铺在
+  /// 整个应用之下，页底只要让开就行。
   ///
-  /// 代价是壁纸模式下页头没有自己的底色，标题靠壁纸层那层蒙版（最少留
-  /// 50% 页面色，见 [kWallpaperOpacityMax]）保可读性，而不是靠页头自己。
+  /// 页头和吸顶条不靠这里保可读性——浓度可以一路拖到全透明（见
+  /// [kWallpaperOpacityMax]），那时这条蒙版等于没有。它们自己会铺一层局部
+  /// 实色，见 `AppChromeGlass`。卡片则一直用 [surface]，是实底。
   Color get canvas => hasWallpaper ? Colors.transparent : canvasBase;
 
   /// 当前档位下 Hero 卡的整套卡面 + 前景色。

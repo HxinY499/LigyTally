@@ -638,6 +638,16 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     }
 
     return Scaffold(
+      // 这一页有自己的背板时，底色必须是**实色**，把全局壁纸挡在外面。
+      //
+      // 不这么做就会出现两张照片叠在一起：壁纸模式下 `colors.canvas` 是透明的
+      // （让壁纸从页底透上来），而本页又在自己的 Stack 里铺了一张账单图——
+      // 账单图的渐隐段本该化进页面底色，结果化进了另一张照片。
+      //
+      // 进了记一笔页就该以**这笔账自己的图**为准：壁纸是全局氛围，账单图是
+      // 这一页的内容。没有背板可铺时（贴纸模式、或这笔账没配图）传 null，
+      // 底色回落到 `canvas`，壁纸照常透上来，与其余页面一致。
+      backgroundColor: backdrop == null ? null : colors.canvasBase,
       body: Stack(
         fit: StackFit.expand,
         children: [

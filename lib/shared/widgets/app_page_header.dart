@@ -102,6 +102,16 @@ const double _kGlassBlurSigma = 20;
 /// 图片，底色一薄标题就发灰。留 18% 的通透已经足够看出内容在下面流动。
 const double _kGlassOpacity = 0.82;
 
+/// 壁纸模式下铬层自带的一层实色蒙版。
+///
+/// 铺了壁纸之后页面底色（`AppColors.canvas`）整块让位给壁纸变成透明，铬层
+/// 没有底色可借，而它上面压着 20px 的标题。这一层是标题的可读性下限，
+/// 也正是「浓度」滑杆能一路拖到全透明的前提——保护范围收窄到铬层这一条，
+/// 用户就能把页面其余部分的照片看全。
+///
+/// 0.55 是让 `ink` 压在最坏那张照片上仍能过 WCAG AA 的下限。
+const double _kChromeScrimOpacity = 0.55;
+
 /// 页头标题统一样式（折叠态基准）。
 ///
 /// - w700：比 w800 更透气，大字重在中文黑体上容易糊成一坨
@@ -193,8 +203,12 @@ class AppChromeGlass extends StatelessWidget {
 
   final double translucency;
 
-  /// 底色。透明时页面自身的背景（如记一笔页的图片背板）会透上来。
-  /// null 表示取页面底色。
+  /// 底色。
+  ///
+  /// null = 「借页面底色」，也把「壁纸模式下该自带蒙版」的判断交给本组件。
+  /// 显式传一个颜色 = 调用方自己负责背后是什么，本组件一个像素都不加——
+  /// 记一笔页传 [Colors.transparent] 就是要让自己铺的账单图背板透上来，
+  /// 那里不能被蒙版糊住。
   final Color? background;
 
   final Widget child;
@@ -202,10 +216,24 @@ class AppChromeGlass extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final base = background ?? colors.canvas;
-    // 全透明底（记一笔页把图片背板铺在页头之下）不参与插值：
-    // 对 alpha 为 0 的颜色再乘一个系数，只会得到另一个全透明色。
-    final fill = base.a == 0
+    final explicit = background;
+    // 壁纸模式下页面底色是透明的（让位给壁纸），铬层没有底色可借，
+    // 得自己铺一层最薄的实色，见 [_kChromeScrimOpacity]。
+    final scrim = explicit == null && colors.hasWallpaper;
+    final base =
+        explicit ??
+        (scrim
+            ? colors.canvasBase.withValues(alpha: _kChromeScrimOpacity)
+            : colors.canvas);
+    // 蒙版不跟着折叠变薄。
+    //
+    // 那套变薄的算法是为「背后有内容流过」准备的通透感，而蒙版存在的理由
+    // 恰好相反：内容开始从铬层背后穿过去的那一刻，正是标题最需要底的时候，
+    // 再薄一档就白铺了。
+    //
+    // 全透明底（记一笔页的图片背板）同样不参与插值：对 alpha 为 0 的颜色
+    // 再乘一个系数，只会得到另一个全透明色。
+    final fill = scrim || base.a == 0
         ? base
         : base.withValues(
             alpha: base.a * (1 - (1 - _kGlassOpacity) * translucency),
@@ -576,7 +604,6 @@ class AppTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final background = backgroundColor ?? context.colors.canvas;
     final scroll = CustomScrollView(
       controller: controller,
       slivers: [
@@ -585,13 +612,18 @@ class AppTopBar extends StatelessWidget {
           actions: actions,
           showBack: Navigator.of(context).canPop(),
           collapsible: false,
-          background: background,
+          // 刻意把**没解析过**的值传下去：页头要能分清「调用方没指定」和
+          // 「调用方指定了透明」——前者在壁纸模式下需要自带一层蒙版，
+          // 后者（记一笔页）绝不能被糊住。解析成 canvas 再传，这两种就
+          // 变成同一个透明色，分不出来了。
+          background: backgroundColor,
         ),
         ...slivers,
       ],
     );
     return Material(
-      color: background,
+      // 页底仍然要解析：壁纸模式下它是透明的，壁纸从这里透上来。
+      color: backgroundColor ?? context.colors.canvas,
       child: bottom == null
           ? scroll
           : Column(

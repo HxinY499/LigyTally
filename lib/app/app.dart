@@ -120,8 +120,9 @@ class _ThemedShell extends StatelessWidget {
 /// 不必带上一个连续的透明度，forui 主题缓存的钥匙也就不会被拖动浓度滑杆
 /// 打成碎片。
 ///
-/// 蒙版最少留 [kWallpaperOpacityMax] 的补数（即 50%）页面色，这是页头标题和
-/// 卡片外分组小标题的可读性下限——卡片本身是实底，列表里的文字不受影响。
+/// 这层蒙版**不承担可读性**：浓度拖到头它就完全消失。文字的底由各自那一层
+/// 自己给——卡片是实底（`AppColors.surface`），页头和吸顶条自带一层局部实色
+///（`AppChromeGlass`）。
 class _WallpaperLayer extends StatelessWidget {
   const _WallpaperLayer({
     required this.path,

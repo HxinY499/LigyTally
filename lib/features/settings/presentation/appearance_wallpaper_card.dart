@@ -88,8 +88,8 @@ class _AppearanceWallpaperCardState
               value: wallpaper.opacity,
               min: kWallpaperOpacityMin,
               max: kWallpaperOpacityMax,
-              // 10 档：这条滑杆的全程只有 0.05~0.5，再细分用户分辨不出。
-              divisions: 9,
+              // 每档 5%：再细分用户分辨不出，还会让滑块难以停在整数档上。
+              divisions: 19,
               onChanged: notifier.setWallpaperOpacity,
             ),
           ),
@@ -124,10 +124,21 @@ class _AppearanceWallpaperCardState
 }
 
 /// 壁纸预览：真实的壁纸层（照片 + 模糊 + 蒙版）+ 压在上面的页头和一张卡。
+///
+/// 页头那一条**必须带上它自己的蒙版**，和真实页面一样。少了它，浓度拖到头时
+/// 预览里的标题会糊成一团，而真机上它是清楚的——预览就成了在骗人，
+/// 用户会以为这一档不能用。
 class _WallpaperPreview extends StatelessWidget {
   const _WallpaperPreview({required this.wallpaper});
 
   final WallpaperConfig wallpaper;
+
+  /// 与 `AppChromeGlass` 里的 `_kChromeScrimOpacity` 同一个值。
+  ///
+  /// 这里抄了一份而不是把那个常量导出：它是页头内部的实现细节，为了一块
+  /// 预览把它变成公开 API，换来的是「以后谁都能拿它去糊别的东西」。
+  /// 抄的代价由紧挨着的这行注释兜住。
+  static const _chromeScrim = 0.55;
 
   @override
   Widget build(BuildContext context) {
@@ -161,18 +172,29 @@ class _WallpaperPreview extends StatelessWidget {
           ColoredBox(
             color: colors.canvasBase.withValues(alpha: 1 - wallpaper.opacity),
           ),
+          // 页头那一条自带的实色蒙版，和真实页面一样。
+          Align(
+            alignment: Alignment.topCenter,
+            child: Container(
+              height: 32,
+              color: colors.canvasBase.withValues(alpha: _chromeScrim),
+            ),
+          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  '明细',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: colors.ink,
-                    letterSpacing: -0.2,
+                SizedBox(
+                  height: 24,
+                  child: Text(
+                    '明细',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: colors.ink,
+                      letterSpacing: -0.2,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
+import 'package:ligy_tally/core/appearance/appearance.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/shared/widgets/app_widgets.dart';
 
@@ -210,6 +211,84 @@ void main() {
       before,
       reason: '搜索框模式恒为折叠态，滚动不该让它移动',
     );
+  });
+
+  group('壁纸模式下页头自带蒙版', () {
+    /// 铬层底板的填充色。它是 [AppChromeGlass] 里那层 DecoratedBox。
+    Color? chromeFill(WidgetTester tester) {
+      final box = tester.widget<DecoratedBox>(
+        find
+            .descendant(
+              of: find.byType(AppChromeGlass),
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
+      );
+      return (box.decoration as BoxDecoration).color;
+    }
+
+    Widget wallpaperHost(Widget child) {
+      const config = AppearanceConfig(
+        wallpaper: WallpaperConfig(enabled: true, opacity: 1),
+      );
+      final forui = foruiThemeFor(Brightness.light, config);
+      return MaterialApp(
+        theme: buildMaterialTheme(Brightness.light, config),
+        builder: (context, c) => FTheme(
+          data: forui,
+          child: FToaster(child: c!),
+        ),
+        home: child,
+      );
+    }
+
+    testWidgets('没指定底色的页头，在壁纸下自己铺一层实色', (tester) async {
+      // 浓度拖到 1.0 时壁纸层那层蒙版已经完全消失，页头如果也跟着透明，
+      // 20px 的标题就直接压在照片上。这一层是它的可读性下限。
+      await tester.pumpWidget(
+        wallpaperHost(
+          Scaffold(body: AppPageHeader(title: '设置', slivers: longSlivers())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final fill = chromeFill(tester)!;
+      expect(fill.a, greaterThan(0.5), reason: '页头在壁纸下没有自己的底');
+      expect(fill.a, lessThan(1), reason: '页头糊成实色了，壁纸完全看不见');
+    });
+
+    testWidgets('蒙版不跟着折叠变薄——内容穿过来时正是最需要底的时候', (tester) async {
+      await tester.pumpWidget(
+        wallpaperHost(
+          Scaffold(body: AppPageHeader(title: '设置', slivers: longSlivers())),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final resting = chromeFill(tester)!.a;
+
+      await collapse(tester);
+      expect(chromeFill(tester)!.a, resting);
+    });
+
+    testWidgets('显式传了透明的页面（记一笔）不被蒙版糊住', (tester) async {
+      // 这条是整个改动的分界线：页头必须分清「调用方没指定」和「调用方
+      // 指定了透明」。记一笔页要让自己铺的账单图背板透过页头，
+      // 给它加一层蒙版就等于把那张图的上半截盖掉。
+      await tester.pumpWidget(
+        wallpaperHost(
+          Scaffold(
+            body: AppTopBar(
+              backgroundColor: Colors.transparent,
+              title: '记一笔',
+              slivers: longSlivers(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(chromeFill(tester), Colors.transparent);
+    });
   });
 
   testWidgets('底部常驻面板：不进滚动体，内容不会滚到它背后', (tester) async {

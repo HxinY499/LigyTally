@@ -197,6 +197,33 @@ void main() {
     });
   });
 
+  group('本页底色与全局壁纸的关系', () {
+    testWidgets('没有账单图可铺时不自己抢底色，壁纸照常透上来', (tester) async {
+      // 这条防的是「修两张照片叠在一起」时的过度纠正：直接把底色写死成
+      // canvasBase，壁纸就在整个记一笔页失效了。本页只在**真的有自己的背板**
+      // 时才接管底色，其余时候和别的页面一视同仁。
+      usePhoneViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await pump(tester, database);
+
+      // 新建态、库里没有图，所以没有背板可铺。
+      final scaffold = tester.widget<Scaffold>(
+        find.descendant(
+          of: find.byType(TransactionEditor),
+          matching: find.byType(Scaffold),
+        ),
+      );
+      expect(
+        scaffold.backgroundColor,
+        isNull,
+        reason: '没有背板时本页不该自己钉死底色',
+      );
+
+      await teardown(tester);
+    });
+  });
+
   group('日期/时间浮层关闭后不抢备注焦点', () {
     Future<void> pumpLocalized(
       WidgetTester tester,

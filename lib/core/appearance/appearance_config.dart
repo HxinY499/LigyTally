@@ -108,13 +108,25 @@ const double kBackdropBlurMin = 0;
 const double kBackdropBlurMax = 40;
 const double kBackdropBlurDefault = 24;
 
-/// 壁纸浓度（页面底色的透明度补数）的上下限。
+/// 壁纸浓度（照片透出的比例）的上下限。
 ///
-/// 上限钉在 0.5：再高，页面底色就压不住照片，压在上面的 12px 副标题
-/// 会直接糊进背景。卡片本身仍是实底，所以列表文字永远是安全的——
-/// 这条上限保的是页头标题和卡片外的分组小标题。
+/// ## 为什么上限是 1.0
+///
+/// 曾经钉在 0.5，理由是「页面底色要压得住照片，否则卡片外的小字会糊进背景」。
+/// 那条上限保护的是两类文字：铬层里的标题（页头、吸顶月份条）和卡片外的分组
+/// 小标题。但它是**全局**收紧的——为了护住那几行字，整张照片永远发白，
+/// 而浓度滑杆拖到头也看不出「满」是什么样。
+///
+/// 现在保护范围收窄到真正需要的地方：铬层自己铺一层实色蒙版
+///（见 `_kChromeScrimOpacity`），卡片本身一直是实底。于是这条上限可以一路
+/// 开到全透明，用户想要「照片就是照片」时真的拿得到。
+///
+/// 代价说清楚：**卡片外的分组小标题**（设置页那些「偏好」「主题」）在高浓度
+/// 下会不好读。它们散落在页面中段，没法像铬层那样给一块局部底，而为它们加
+/// 描边或阴影会把整个应用的文字观感拖下去。这是用户自己拧到头才会遇到的
+/// 取舍，不该让所有人替它买单。
 const double kWallpaperOpacityMin = 0.05;
-const double kWallpaperOpacityMax = 0.5;
+const double kWallpaperOpacityMax = 1;
 const double kWallpaperOpacityDefault = 0.2;
 
 const double kWallpaperBlurMin = 0;
