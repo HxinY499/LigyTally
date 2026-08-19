@@ -142,16 +142,18 @@ class GeolocatorLocationPlatform implements LocationPlatform {
           .placemarkFromCoordinates(point.latitude, point.longitude)
           .timeout(const Duration(seconds: 5));
       if (marks.isEmpty) return null;
-      final mark = marks.first;
-      return formatAddress(
-        subLocality: mark.subLocality,
-        thoroughfare: mark.thoroughfare,
-        subThoroughfare: mark.subThoroughfare,
-        street: mark.street,
-        locality: mark.locality,
-        name: mark.name,
-        country: mark.country,
-      );
+      return formatBestPlace([
+        for (final mark in marks)
+          AddressHint(
+            subLocality: mark.subLocality,
+            thoroughfare: mark.thoroughfare,
+            subThoroughfare: mark.subThoroughfare,
+            street: mark.street,
+            locality: mark.locality,
+            name: mark.name,
+            country: mark.country,
+          ),
+      ]);
     } catch (_) {
       return null;
     }

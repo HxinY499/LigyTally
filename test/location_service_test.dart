@@ -8,7 +8,35 @@ import 'package:ligy_tally/core/location/place_fix.dart';
 
 void main() {
   group('formatAddress', () {
-    test('优先拼区、路、号，不要国家', () {
+    test('有小区名时不用门牌路号', () {
+      expect(
+        formatAddress(
+          subLocality: '玄武区',
+          thoroughfare: '中山路',
+          subThoroughfare: '128号',
+          name: '阳光花园',
+          locality: '南京市',
+          country: '中国',
+        ),
+        '阳光花园',
+      );
+    });
+
+    test('name 只是门牌号时仍拼路号', () {
+      expect(
+        formatAddress(
+          subLocality: '玄武区',
+          thoroughfare: '中山路',
+          subThoroughfare: '128号',
+          name: '128号',
+          locality: '南京市',
+          country: '中国',
+        ),
+        '玄武区中山路128号',
+      );
+    });
+
+    test('没有地名时拼区、路、号，不要国家', () {
       expect(
         formatAddress(
           subLocality: '玄武区',
@@ -31,6 +59,28 @@ void main() {
 
     test('全空返回 null', () {
       expect(formatAddress(), isNull);
+    });
+  });
+
+  group('formatBestPlace', () {
+    test('多条结果里优先小区，不取第一条门牌', () {
+      expect(
+        formatBestPlace(const [
+          AddressHint(
+            subLocality: '玄武区',
+            thoroughfare: '中山路',
+            subThoroughfare: '128号',
+            name: '128号',
+            country: '中国',
+          ),
+          AddressHint(
+            thoroughfare: '中山路',
+            name: '阳光花园小区',
+            country: '中国',
+          ),
+        ]),
+        '阳光花园小区',
+      );
     });
   });
 
