@@ -14,8 +14,7 @@ import '../../../core/theme/app_theme.dart';
 /// 浅色主题下也能看到「墨夜」是深的。这靠 [AppColors.resolve] 是个纯函数：
 /// 给它一个亮度和一套配置就能算出色板，不需要真的把主题换过去。
 ///
-/// 小样张同时表现三件事：页底色、主题色、圆角档位。密度和动效表现不出来，
-/// 交给卡片下面那行小字。
+/// 小样张同时表现三件事：页底色、主题色、圆角档位。密度和动效画不出来。
 class AppearancePresetRow extends StatelessWidget {
   const AppearancePresetRow({
     super.key,
@@ -37,7 +36,7 @@ class AppearancePresetRow extends StatelessWidget {
     // 「素白」会画成一张深色卡。
     final platform = context.colors.brightness;
     return SizedBox(
-      height: 118,
+      height: 104,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         // 卡片本身没有左右外边距，靠这里统一给：ListView 的第一 / 最后一张
@@ -128,18 +127,6 @@ class _PresetCard extends StatelessWidget {
                 height: 1.2,
               ),
             ),
-            const SizedBox(height: 1),
-            Text(
-              preset.caption,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 10.5,
-                color: colors.inactive,
-                height: 1.2,
-              ),
-            ),
           ],
         ),
       ),
@@ -168,7 +155,7 @@ class _Swatch extends StatelessWidget {
     final floating = preset.navBarStyle == NavBarStyle.floating;
     // 除了首尾两块，中间的占位行全部用 Expanded 分摊剩余高度。
     //
-    // 这不是偷懒：卡片的可用高度会随「显示密度」变（下面那两行标签的字号
+    // 这不是偷懒：卡片的可用高度会随「显示密度」变（下面那行标签的字号
     // 跟着 textScaler 走，字一大卡片就矮一截）。任何写死的行高都会在某一档
     // 上溢出 3px，而这块小样张不值得为它算一套自适应高度。
     return Column(

@@ -39,6 +39,7 @@ class UpdateState {
     this.info,
     this.progress,
     this.message,
+    this.autoPrompt = false,
   });
 
   final UpdatePhase phase;
@@ -48,6 +49,11 @@ class UpdateState {
   /// 失败原因或提示文案
   final String? message;
 
+  /// 是否由启动自动检查带出来的「有更新」。
+  /// 为 true 时才弹全局提示；设置页里用户自己点「检查更新」已经能在
+  /// 关于卡片上看到结果，再弹一层是重复打扰。
+  final bool autoPrompt;
+
   bool get isBusy =>
       phase == UpdatePhase.downloading || phase == UpdatePhase.verifying;
 
@@ -56,6 +62,7 @@ class UpdateState {
     UpdateInfo? info,
     DownloadProgress? progress,
     String? message,
+    bool? autoPrompt,
     bool clearMessage = false,
     bool clearProgress = false,
   }) {
@@ -64,6 +71,7 @@ class UpdateState {
       info: info ?? this.info,
       progress: clearProgress ? null : (progress ?? this.progress),
       message: clearMessage ? null : (message ?? this.message),
+      autoPrompt: autoPrompt ?? this.autoPrompt,
     );
   }
 }
@@ -85,14 +93,23 @@ class UpdateController extends StateNotifier<UpdateState> {
 
     final info = await _service.checkForUpdate();
     if (info == null || !mounted) return;
+    // 手动检查已经把结果摊在设置页上了，启动检查回来时别再弹一层。
+    if (state.phase != UpdatePhase.idle) return;
 
-    state = UpdateState(phase: UpdatePhase.available, info: info);
+    state = UpdateState(
+      phase: UpdatePhase.available,
+      info: info,
+      autoPrompt: true,
+    );
   }
 
   /// 用户手动触发检查（设置页入口用）。
   /// 与启动检查不同：要反馈「已是最新」，且不理会「忽略此版本」——
   /// 忽略只关掉启动弹窗，手动检查仍应能看到这个版本。
   Future<String> checkManually() async {
+    // 手动查过就不必再跑启动检查；两边同时在飞时，启动检查结束会看到
+    // phase 已经不是 idle，也不会再弹全局提示。
+    _checked = true;
     final current = await _service.currentVersion();
     final info = await _service.checkForUpdate(respectIgnore: false);
     if (!mounted) return '';

@@ -195,13 +195,11 @@ class WallpaperConfig {
 ///    可以在 `runApp` 之前 `await` 掉（见 `main.dart`），第一帧就是终态。
 /// 2. **备份带不走**。九个 key 要在备份里逐个列举，加一项就要改一次备份格式。
 ///    一个对象只需要往备份里多塞一个字符串。
-/// 3. **分享不了**。「把我调好的外观发给你」需要能把整套状态序列化成一段
-///    文本，散在九个 provider 里没有「整套」这个东西。
 ///
 /// ## 什么不在这里
 ///
 /// - **应用图标**：它改的是 Android launcher 的 activity-alias，属于系统状态
-///   而不是 app 内的渲染参数。塞进来会让「导入主题码」变成一个需要重启
+///   而不是 app 内的渲染参数。塞进来会让「恢复备份」变成一个需要重启
 ///   launcher 的操作。
 /// - **快速记账模式**：那是行为，不是外观。
 /// - **上次选中的分类**：那是使用痕迹。
@@ -300,8 +298,7 @@ class AppearanceConfig {
   /// 字段分隔符。
   ///
   /// 用 `~` 而不是 `,` / `:` / `|`：[AccentChoice.encode] 内部已经用了 `:`，
-  /// 而 `~` 不出现在任何枚举名、数字或路径里，也不需要 URL 转义——
-  /// 主题码要能贴在聊天窗口里发出去。
+  /// 而 `~` 不出现在任何枚举名、数字或路径里。
   static const _sep = '~';
 
   /// 格式版本前缀。
@@ -311,15 +308,8 @@ class AppearanceConfig {
   /// 不需要为每次加字段升一次版本号。只有改动既有字段的含义或顺序才该升版。
   static const _tag = 'LT1';
 
-  /// 序列化成一行紧凑文本。既是落盘格式，也是分享用的主题码。
-  ///
-  /// 两者共用一套编解码而不是各写一套（一份 JSON 一份短码）：格式一分家，
-  /// 加字段就要在两个地方各改一次，迟早漂开，而这个字段表已经有十五项了。
-  ///
-  /// [includeWallpaper] 为 false 时清空壁纸三项，用于导出主题码——壁纸是
-  /// 本机的一个图片文件，发给别人只会指向一个不存在的路径。
-  String encode({bool includeWallpaper = true}) {
-    final paper = includeWallpaper ? wallpaper : WallpaperConfig.none;
+  /// 序列化成一行紧凑文本。落盘和备份共用这一套，加字段只改一处。
+  String encode() {
     return [
       _tag,
       themeMode.name,
@@ -336,17 +326,17 @@ class AppearanceConfig {
       transactionImageStyle.name,
       backdropBlur.toStringAsFixed(1),
       categoryPickerLayout.name,
-      _bool(paper.enabled),
-      paper.opacity.toStringAsFixed(3),
-      paper.blur.toStringAsFixed(1),
-      paper.stamp.toString(),
+      _bool(wallpaper.enabled),
+      wallpaper.opacity.toStringAsFixed(3),
+      wallpaper.blur.toStringAsFixed(1),
+      wallpaper.stamp.toString(),
     ].join(_sep);
   }
 
   /// [encode] 的逆。
   ///
   /// **任何**读不出来的字段都单独回落到自己的默认值，而不是整串作废：
-  /// 偏好文件和粘贴板都是外部输入，一个字段被截断不该让用户丢掉其余十四项，
+  /// 偏好文件和备份包都是外部输入，一个字段被截断不该让用户丢掉其余十四项，
   /// 更不该让 app 起不来。整串作废只在前缀都认不出时发生。
   static AppearanceConfig decode(String? raw) {
     if (raw == null) return initial;
@@ -398,7 +388,7 @@ class AppearanceConfig {
     );
   }
 
-  /// 一串文本看起来是不是主题码。只看前缀，具体字段交给 [decode] 逐个兜底。
+  /// 一串文本看起来是不是外观配置。只看前缀，具体字段交给 [decode] 逐个兜底。
   static bool looksLikeCode(String raw) =>
       raw.trim().startsWith('$_tag$_sep');
 

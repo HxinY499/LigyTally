@@ -417,7 +417,7 @@ class _BrandRow extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Ligy Tally',
+                    'Ligy 记账',
                     style: TextStyle(
                       fontSize: 15.5,
                       fontWeight: FontWeight.w700,

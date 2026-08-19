@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ligy_tally/core/appearance/appearance.dart';
 import 'package:ligy_tally/core/backup/backup_service.dart';
@@ -15,7 +14,6 @@ import 'package:ligy_tally/core/theme/app_radius.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/core/theme/hero_skin.dart';
 import 'package:ligy_tally/core/theme/sign_palette.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 /// 一套「每一项都不是默认值」的配置，用来验往返不丢字段。
 ///
@@ -68,7 +66,7 @@ void main() {
     });
 
     test('串被截断时，读不到的字段各自回落，已读到的保留', () {
-      // 偏好文件和粘贴板都是外部输入。一个字段被截断不该让用户丢掉其余十几项。
+      // 偏好文件和备份包都是外部输入。一个字段被截断不该让用户丢掉其余十几项。
       final config = AppearanceConfig.decode('LT1~dark~purple');
       expect(config.themeMode, AppThemeMode.dark);
       expect(config.accent, const AccentChoice.preset(AppAccent.purple));
@@ -107,53 +105,6 @@ void main() {
       expect(raw.wallpaper.blur, kWallpaperBlurMax);
     });
 
-    test('主题码不含壁纸：那是本机的一个文件，发给别人指向空路径', () {
-      final code = _loaded.encode(includeWallpaper: false);
-      expect(AppearanceConfig.decode(code).wallpaper, WallpaperConfig.none);
-      // 但其余每一项都要带上，否则「发一套外观给别人」就名不副实。
-      expect(
-        AppearanceConfig.decode(code),
-        _loaded.copyWith(wallpaper: WallpaperConfig.none),
-      );
-    });
-  });
-
-  group('主题码导入', () {
-    test('套用别人的码时保留本机壁纸', () async {
-      SharedPreferences.setMockInitialValues({});
-      final container = ProviderContainer(
-        overrides: [
-          appearanceProvider.overrideWith(
-            () => AppearanceController.seeded(
-              const AppearanceConfig(
-                wallpaper: WallpaperConfig(enabled: true, stamp: 7),
-              ),
-            ),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-      final notifier = container.read(appearanceProvider.notifier);
-
-      expect(notifier.importCode(_loaded.encode(includeWallpaper: false)), isTrue);
-      final config = container.read(appearanceProvider);
-      expect(config.heroStyle, HeroCardStyle.outline);
-      expect(config.density, AppDensityLevel.compact);
-      // 壁纸没被别人的码关掉——码里本来就没有它。
-      expect(config.wallpaper.enabled, isTrue);
-      expect(config.wallpaper.stamp, 7);
-    });
-
-    test('不是主题码时原样不动，并且报 false 让调用方就地提示', () {
-      SharedPreferences.setMockInitialValues({});
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
-      final notifier = container.read(appearanceProvider.notifier);
-      final before = container.read(appearanceProvider);
-
-      expect(notifier.importCode('随便一段话'), isFalse);
-      expect(container.read(appearanceProvider), before);
-    });
   });
 
   group('外观令牌接进主题', () {

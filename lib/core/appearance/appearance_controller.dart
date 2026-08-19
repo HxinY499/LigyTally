@@ -192,26 +192,7 @@ class AppearanceController extends Notifier<AppearanceConfig> {
   Future<void> applyPreset(AppearancePreset preset) =>
       _apply(preset.applyTo(state));
 
-  /// 当前配置的分享码（不含壁纸，见 [AppearanceConfig.encode]）。
-  String exportCode() => state.encode(includeWallpaper: false);
-
-  /// 导入一段主题码。返回是否认得出这串东西。
-  ///
-  /// 认出来之后**保留本机壁纸**：主题码里没有壁纸（那是本机的一个图片文件），
-  /// 若按解码结果原样套用，导入别人的配色会顺手把用户自己的壁纸关掉。
-  bool importCode(String raw) {
-    final text = raw.trim();
-    if (!AppearanceConfig.looksLikeCode(text)) return false;
-    final decoded = AppearanceConfig.decode(text);
-    // 落盘不等：调用方要的是「认不认得出这串东西」这个同步答案，
-    // 好决定是关闭浮层还是就地报错。
-    _apply(decoded.copyWith(wallpaper: state.wallpaper));
-    return true;
-  }
-
-  /// 恢复备份时把包里带的外观整套装回来。
-  ///
-  /// 与 [importCode] 相反，这里**要**接受壁纸：备份包里连壁纸图片一起打包了，
+  /// 恢复备份时把包里带的外观整套装回来。备份包里连壁纸图片一起打包了，
   /// 恢复的承诺是「回到导出那天的样子」。
   Future<void> restoreFromConfig(AppearanceConfig config) => _apply(config);
 

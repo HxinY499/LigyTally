@@ -25,7 +25,6 @@ import 'appearance_config.dart';
 class AppearancePreset {
   const AppearancePreset({
     required this.label,
-    required this.caption,
     required this.themeMode,
     required this.accent,
     required this.corner,
@@ -37,10 +36,6 @@ class AppearancePreset {
   });
 
   final String label;
-
-  /// 卡片下方那行小字：说这套风格「是什么感觉」，不重复上面已经看得见的颜色。
-  final String caption;
-
   final AppThemeMode themeMode;
   final AccentChoice accent;
   final AppCornerStyle corner;
@@ -91,38 +86,34 @@ class AppearancePreset {
 const kAppearancePresets = <AppearancePreset>[
   AppearancePreset(
     label: '素白',
-    caption: '出厂默认',
     themeMode: AppThemeMode.light,
     accent: AccentChoice.preset(AppAccent.blue),
     corner: AppCornerStyle.standard,
-    density: AppDensityLevel.standard,
+    density: AppDensityLevel.relaxed,
     heroStyle: HeroCardStyle.gradient,
     navBarStyle: NavBarStyle.docked,
   ),
   AppearancePreset(
     label: '墨夜',
-    caption: '深色 · 靛蓝',
     themeMode: AppThemeMode.dark,
     accent: AccentChoice.preset(AppAccent.indigo),
     corner: AppCornerStyle.round,
-    density: AppDensityLevel.standard,
+    density: AppDensityLevel.relaxed,
     heroStyle: HeroCardStyle.gradient,
     navBarStyle: NavBarStyle.docked,
   ),
   AppearancePreset(
     label: '纯黑',
-    caption: 'OLED · 紧凑',
     themeMode: AppThemeMode.dark,
     accent: AccentChoice.preset(AppAccent.teal),
     corner: AppCornerStyle.subtle,
-    density: AppDensityLevel.compact,
+    density: AppDensityLevel.standard,
     heroStyle: HeroCardStyle.solid,
     navBarStyle: NavBarStyle.floating,
     trueBlack: true,
   ),
   AppearancePreset(
     label: '奶油',
-    caption: '圆润 · 宽松',
     themeMode: AppThemeMode.light,
     accent: AccentChoice.preset(AppAccent.orange),
     corner: AppCornerStyle.extraRound,
@@ -132,22 +123,20 @@ const kAppearancePresets = <AppearancePreset>[
   ),
   AppearancePreset(
     label: '纸感',
-    caption: '直角 · 无彩块',
     themeMode: AppThemeMode.light,
     accent: AccentChoice.preset(AppAccent.teal),
     corner: AppCornerStyle.sharp,
-    density: AppDensityLevel.compact,
+    density: AppDensityLevel.standard,
     heroStyle: HeroCardStyle.outline,
     navBarStyle: NavBarStyle.docked,
     motion: MotionLevel.reduced,
   ),
   AppearancePreset(
     label: '霓夜',
-    caption: '深色 · 玫红',
     themeMode: AppThemeMode.dark,
     accent: AccentChoice.preset(AppAccent.pink),
     corner: AppCornerStyle.extraRound,
-    density: AppDensityLevel.standard,
+    density: AppDensityLevel.relaxed,
     heroStyle: HeroCardStyle.gradient,
     navBarStyle: NavBarStyle.floating,
   ),

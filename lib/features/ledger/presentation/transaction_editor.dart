@@ -1200,7 +1200,12 @@ class _ParentCategoryTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
         child: Row(
           children: [
-            CategoryIconView(iconKey: category.iconKey, color: color, size: 24),
+            CategoryIconView(
+              iconKey: category.iconKey,
+              color: color,
+              size: 24,
+              selected: selected,
+            ),
 
             const SizedBox(width: 12),
             Expanded(
@@ -1273,6 +1278,7 @@ class _ParentGridCell extends StatelessWidget {
                     iconKey: category.iconKey,
                     color: color,
                     size: 26,
+                    selected: selected,
                   ),
 
                   if (hasChildren)
@@ -1984,7 +1990,8 @@ class _DateTimeChip extends StatelessWidget {
 }
 
 /// 二级分类选项：与一级网格一致的「大图标 + 下方小文字」竖向小格子。
-/// 二级分类单元格：扁平图标 + 文字，选中用语义色，不用卡片/描边。
+/// 二级分类单元格：扁平图标 + 文字。
+/// 内置图标选中变色；自定义图片选中画描边（见 [CategoryIconView.selected]）。
 class _CategoryCell extends StatelessWidget {
   const _CategoryCell({
     required this.iconKey,
@@ -2012,7 +2019,12 @@ class _CategoryCell extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CategoryIconView(iconKey: iconKey, size: 24, color: color),
+            CategoryIconView(
+              iconKey: iconKey,
+              size: 24,
+              color: color,
+              selected: selected,
+            ),
             const SizedBox(height: 6),
             Text(
               name,

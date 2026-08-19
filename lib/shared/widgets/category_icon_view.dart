@@ -40,6 +40,7 @@ class CategoryIconView extends StatelessWidget {
     required this.size,
     required this.color,
     this.imageSize,
+    this.selected = false,
   });
 
   final String iconKey;
@@ -54,7 +55,12 @@ class CategoryIconView extends StatelessWidget {
 
   /// 内置图标的着色。图片不染色——用户上传的是彩色照片，
   /// 染色会把它压成一块纯色，等于把图片弄没了。
+  ///
+  /// 选中图片时改画一圈这个颜色的描边（与分类编辑器图标格子同一套语言）。
   final Color color;
+
+  /// 选中态。内置图标靠 [color] 变色；自定义图片靠描边。
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -62,11 +68,25 @@ class CategoryIconView extends StatelessWidget {
     if (id == null || !isValidCustomIconId(id)) {
       return Icon(categoryIcon(iconKey), size: size, color: color);
     }
-    return _CustomIcon(
+    final image = _CustomIcon(
       iconId: id,
       size: imageSize ?? size,
       fallbackSize: size,
       fallbackColor: color,
+    );
+    if (!selected) return image;
+    // 描边叠在图上、不 inset：网格格子高度刚好够图标，
+    // 外扩或收缩会挤到展开角标，或让选中时图片突然变小一截。
+    return SizedBox.square(
+      dimension: imageSize ?? size,
+      child: DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: color, width: 2),
+        ),
+        child: image,
+      ),
     );
   }
 }

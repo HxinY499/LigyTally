@@ -13,7 +13,6 @@ import '../../../core/theme/sign_palette.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import 'accent_color_sheet.dart';
 import 'app_icon_picker_sheet.dart';
-import 'appearance_code_sheet.dart';
 import 'appearance_option_sheet.dart';
 import 'appearance_preset_row.dart';
 import 'appearance_wallpaper_card.dart';
@@ -69,19 +68,6 @@ class AppearanceScreen extends ConsumerWidget {
               AppearancePresetRow(
                 config: config,
                 onPick: notifier.applyPreset,
-              ),
-              const SizedBox(height: 10),
-              SettingsCard(
-                children: [
-                  // 不带副标题：「主题码」是什么、壁纸算不算在内，浮层里
-                  // 已经用两行说清了，列表里再说一遍只是把这一屏堆得更长。
-                  SettingsItem(
-                    icon: FLucideIcons.share2,
-                    title: '主题码',
-                    showChevron: true,
-                    onTap: () => _openCodeSheet(context),
-                  ),
-                ],
               ),
 
               const SizedBox(height: 18),
@@ -236,7 +222,7 @@ class AppearanceScreen extends ConsumerWidget {
               const SizedBox(height: 18),
               // 单独一组：它改的是桌面 launcher 图标，app 内一个像素都不变，
               // 混在上面那些「app 内长什么样」的设置里语义是错的，
-              // 顶部那张样张也永远反映不了它。也因此它不进主题码。
+              // 顶部那张样张也永远反映不了它。
               const SectionLabel('桌面'),
               SettingsCard(
                 children: [
@@ -254,13 +240,6 @@ class AppearanceScreen extends ConsumerWidget {
         ),
       ],
     );
-  }
-
-  Future<void> _openCodeSheet(BuildContext context) async {
-    final applied = await showAppearanceCodeSheet(context);
-    if (applied == true && context.mounted) {
-      showAppToast(context, message: '外观已套用', level: AppToastLevel.success);
-    }
   }
 
   Future<void> _pickSignPalette(

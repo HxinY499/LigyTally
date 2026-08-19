@@ -217,7 +217,8 @@ void main() {
     expect(matchedPreset(configOf(tester)), isNotNull);
 
     // 但改一项风格字段之后，就该诚实地变成「自定义」。
-    await notifier.setDensity(AppDensityLevel.relaxed);
+    // 墨夜本身是宽松档，这里改到适中才能跟预设错开。
+    await notifier.setDensity(AppDensityLevel.standard);
     await tester.pumpAndSettle();
     expect(matchedPreset(configOf(tester)), isNull);
   });

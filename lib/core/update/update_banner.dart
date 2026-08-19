@@ -90,7 +90,9 @@ class _UpdateNotificationLayerState
     // 状态变化时触发提示。用 listen 而不是在 build 里直接调，
     // 避免 build 期间操作 overlay。
     ref.listen<UpdateState>(updateControllerProvider, (previous, next) {
-      if (next.phase == UpdatePhase.available && next.info != null) {
+      if (next.phase == UpdatePhase.available &&
+          next.autoPrompt &&
+          next.info != null) {
         _showAvailableToast(next.info!);
       } else if (next.phase == UpdatePhase.failed && next.message != null) {
         _showMessageToast(next.message!);
