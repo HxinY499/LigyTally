@@ -1,19 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/app_widgets.dart';
+import 'update_available_sheet.dart';
 import 'update_controller.dart';
 import 'update_service.dart';
 
 /// 应用内更新的提示层。
 ///
 /// 包在页面外层，负责两件事：
-/// 1. 发现新版本时弹一条 forui toast（不是大弹窗，不打断记账）
-/// 2. 下载期间在底部显示一条常驻细进度条
+/// 1. 启动自动检查发现新版本时，从下方弹出浮层（版本 + 更新说明）
+/// 2. 下载期间在顶部显示一条常驻细进度条
 ///
-/// 刻意不用 AlertDialog：更新不是必须马上处理的事，
-/// 拦住用户记账才是真的烦。
+/// 用可下滑关掉的底部浮层，而不是 AlertDialog：更新不是必须马上处理
+/// 的事，拦住用户记账才是真的烦。下滑或点遮罩只收起，不写入「忽略」。
 class UpdateNotificationLayer extends ConsumerStatefulWidget {
   const UpdateNotificationLayer({super.key, required this.child});
 
@@ -26,7 +29,7 @@ class UpdateNotificationLayer extends ConsumerStatefulWidget {
 
 class _UpdateNotificationLayerState
     extends ConsumerState<UpdateNotificationLayer> {
-  /// 记录已经为哪个版本弹过 toast，避免重复打扰
+  /// 记录已经为哪个版本弹过浮层，避免同一次会话里重复打开。
   String? _promptedVersion;
 
   @override
@@ -39,44 +42,25 @@ class _UpdateNotificationLayerState
     });
   }
 
-  void _showAvailableToast(UpdateInfo info) {
+  void _showAvailableSheet(UpdateInfo info) {
     final version = info.version.toString();
     if (_promptedVersion == version) return;
     _promptedVersion = version;
+    unawaited(_presentAvailableSheet(info));
+  }
 
+  Future<void> _presentAvailableSheet(UpdateInfo info) async {
+    final action = await showUpdateAvailableSheet(context, info);
+    if (!mounted) return;
     final controller = ref.read(updateControllerProvider.notifier);
-    final sizeLabel = info.apkSize > 0
-        ? ' · ${(info.apkSize / 1024 / 1024).toStringAsFixed(0)}MB'
-        : '';
-
-    showAppToast(
-      context,
-      message: '发现新版本',
-      description: 'v$version$sizeLabel',
-      suffixBuilder: (context, entry) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppButton(
-            variant: AppButtonVariant.ghost,
-            onPress: () {
-              entry.dismiss();
-              controller.ignoreVersionAndDismiss();
-            },
-            child: const Text('忽略'),
-          ),
-          const SizedBox(width: 4),
-          AppButton(
-            variant: AppButtonVariant.primary,
-            onPress: () {
-              entry.dismiss();
-              controller.downloadAndInstall();
-            },
-            child: const Text('更新'),
-          ),
-        ],
-      ),
-      persist: true,
-    );
+    switch (action) {
+      case UpdateSheetAction.update:
+        unawaited(controller.downloadAndInstall());
+      case UpdateSheetAction.ignore:
+        controller.ignoreVersionAndDismiss();
+      case null:
+        break;
+    }
   }
 
   void _showMessageToast(String message) {
@@ -93,7 +77,7 @@ class _UpdateNotificationLayerState
       if (next.phase == UpdatePhase.available &&
           next.autoPrompt &&
           next.info != null) {
-        _showAvailableToast(next.info!);
+        _showAvailableSheet(next.info!);
       } else if (next.phase == UpdatePhase.failed && next.message != null) {
         _showMessageToast(next.message!);
       }
@@ -102,8 +86,8 @@ class _UpdateNotificationLayerState
     // 进度条占据真实空间把内容往下推，而不是浮在上面盖住页面标题。
     // 外层套 Scaffold 以提供 Material 背景与 MediaQuery 边距，
     // 否则裸 Column 会让内部页面失去背景色。
-    // 底部不放浮层：那里有导航栏和记账悬浮按钮，压住就违背
-    // 「更新不打断记账」的初衷。
+    // 下载进度仍放顶部：底部有导航栏和记账悬浮按钮，细条压在那里
+    // 会挡操作；发现新版本的说明则走可关掉的底部浮层。
     return Scaffold(
       body: Column(
         children: [
