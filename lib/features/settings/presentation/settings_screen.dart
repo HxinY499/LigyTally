@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/appearance/appearance.dart';
+import '../../../core/location/location_platform.dart';
+import '../../../core/location/location_service.dart';
+import '../../../core/preferences/auto_location.dart';
 import '../../../core/preferences/quick_tally_mode.dart';
 import '../../../core/storage/storage_usage.dart';
 import '../../../core/theme/app_theme.dart';
@@ -31,6 +36,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _busy = false;
+  bool _locationBusy = false;
 
   @override
   void didUpdateWidget(SettingsScreen oldWidget) {
@@ -84,12 +90,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (password == null || !mounted) return;
     setState(() => _busy = true);
     try {
-      await ref.read(backupServiceProvider).exportAndShare(
-        password: password,
-        // 外观一起打包：用户调了半小时的配色，换机恢复后账单全在、
-        // 外观全丢，这件事比少几个开关更伤。
-        appearance: ref.read(appearanceProvider),
-      );
+      await ref
+          .read(backupServiceProvider)
+          .exportAndShare(
+            password: password,
+            // 外观一起打包：用户调了半小时的配色，换机恢复后账单全在、
+            // 外观全丢，这件事比少几个开关更伤。
+            appearance: ref.read(appearanceProvider),
+          );
     } catch (error) {
       if (mounted) _showMessage('备份失败：$error', level: AppToastLevel.error);
     } finally {
@@ -139,6 +147,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _setAutoLocation(bool enabled) async {
+    if (!enabled) {
+      await ref.read(autoLocationProvider.notifier).setEnabled(false);
+      return;
+    }
+    if (_locationBusy) return;
+    setState(() => _locationBusy = true);
+    try {
+      final service = ref.read(locationServiceProvider);
+      if (!await service.isServiceEnabled()) {
+        if (!mounted) return;
+        _showMessage('请先打开系统定位', level: AppToastLevel.error);
+        await service.openLocationSettings();
+        return;
+      }
+      var permission = await service.checkPermission();
+      if (permission != DeviceLocationPermission.granted) {
+        permission = await service.requestPermission();
+      }
+      if (!mounted) return;
+      if (permission == DeviceLocationPermission.granted) {
+        await ref.read(autoLocationProvider.notifier).setEnabled(true);
+        return;
+      }
+      if (permission == DeviceLocationPermission.deniedForever) {
+        _showMessage('定位权限被关闭，请在系统设置中开启', level: AppToastLevel.error);
+        await service.openAppSettings();
+      } else {
+        _showMessage('需要定位权限才能自动记录位置', level: AppToastLevel.error);
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage('无法开启自动定位：$error', level: AppToastLevel.error);
+      }
+    } finally {
+      if (mounted) setState(() => _locationBusy = false);
+    }
+  }
+
   void _showMessage(
     String message, {
     AppToastLevel level = AppToastLevel.info,
@@ -147,9 +194,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _openStorage() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const StorageScreen()),
-    );
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => const StorageScreen()));
     if (mounted) ref.read(storageUsageProvider.notifier).refresh();
   }
 
@@ -218,6 +265,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           .read(quickTallyModeProvider.notifier)
                           .setEnabled(value),
                     ),
+                  ),
+                  SettingsItem(
+                    icon: FLucideIcons.mapPin,
+                    title: '记账时自动记录位置',
+                    subtitle: '仅新建今天的账单时获取，可随时关掉',
+                    trailing: _locationBusy
+                        ? const RowSpinner()
+                        : TrailingSwitch(
+                            value: ref.watch(autoLocationProvider),
+                            onChange: (value) {
+                              unawaited(_setAutoLocation(value));
+                            },
+                          ),
                   ),
                   // 外观是唯一收进二级页的一组：那十几项互相影响，
                   // 摊在这里只能各看各的，收进去才能共用一张样张。

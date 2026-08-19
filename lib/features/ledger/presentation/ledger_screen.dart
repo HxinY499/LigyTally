@@ -9,6 +9,7 @@ import 'package:forui/forui.dart';
 
 import '../../../core/appearance/appearance.dart';
 import '../../../core/database/app_database.dart';
+import '../../../core/location/place_fix.dart';
 import '../../../core/media/image_storage.dart';
 import '../../../core/theme/app_density.dart';
 import '../../../core/theme/app_theme.dart';
@@ -308,9 +309,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                               ? FLucideIcons.receipt
                               : FLucideIcons.searchX,
                           title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
-                          detail: keyword.isEmpty
-                              ? '点击右下角加号记下第一笔'
-                              : '换一个关键词再试',
+                          detail: keyword.isEmpty ? '点击右下角加号记下第一笔' : '换一个关键词再试',
                         ),
                       );
                     }
@@ -360,9 +359,8 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                               items: group.value,
                               imagePaths: imagePaths,
                               highlighted: _highlightedDay == group.key,
-                              onTapHeader: () => _addTransactionForDay(
-                                dateFromKey(group.key),
-                              ),
+                              onTapHeader: () =>
+                                  _addTransactionForDay(dateFromKey(group.key)),
                               onTapItem: _edit,
                               onLongPressItem: (item) {
                                 HapticFeedback.mediumImpact();
@@ -649,7 +647,7 @@ class _LedgerRow extends StatelessWidget {
     final occurredAt = DateTime.fromMillisecondsSinceEpoch(
       item.transaction.occurredAt,
     );
-    final note = item.transaction.note.trim();
+    final extra = item.transaction.locationAndNote;
     final row = InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -701,9 +699,9 @@ class _LedgerRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    note.isEmpty
+                    extra.isEmpty
                         ? formatClock(occurredAt)
-                        : '${formatClock(occurredAt)} · $note',
+                        : '${formatClock(occurredAt)} · $extra',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 12, color: colors.muted),
@@ -834,64 +832,64 @@ class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
       builder: (context, ref, _) {
         final grouped = ref.watch(moneyGroupedProvider);
         return AppChromeGlass(
-            translucency: (shrinkOffset / _height).clamp(0.0, 1.0),
-            child: Material(
-              // 水波画在毛玻璃这一层。底色交给 [AppChromeGlass]，
-              // 这里再铺一层 canvas 会把背后刚模糊出来的内容盖死。
-              type: MaterialType.transparency,
-              child: SizedBox(
-                height: _height,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      InkWell(
-                        onTap: onPick,
-                        borderRadius: context.radii.chipAll,
-                        highlightColor: colors.pressed,
-                        splashColor: colors.ripple,
-                        hoverColor: colors.ripple,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 4,
-                          ),
-                          child: Row(
-                            children: [
-                              Text(
-                                formatMonth(month),
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: colors.ink,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                FLucideIcons.chevronDown,
-                                size: 16,
+          translucency: (shrinkOffset / _height).clamp(0.0, 1.0),
+          child: Material(
+            // 水波画在毛玻璃这一层。底色交给 [AppChromeGlass]，
+            // 这里再铺一层 canvas 会把背后刚模糊出来的内容盖死。
+            type: MaterialType.transparency,
+            child: SizedBox(
+              height: _height,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    InkWell(
+                      onTap: onPick,
+                      borderRadius: context.radii.chipAll,
+                      highlightColor: colors.pressed,
+                      splashColor: colors.ripple,
+                      hoverColor: colors.ripple,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 4,
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              formatMonth(month),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
                                 color: colors.ink,
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              FLucideIcons.chevronDown,
+                              size: 16,
+                              color: colors.ink,
+                            ),
+                          ],
                         ),
                       ),
-                      const Spacer(),
-                      Text(
-                        '支 ${formatMoney(summary.expenseCents, grouped: grouped)}',
-                        style: TextStyle(fontSize: 13, color: colors.muted),
-                      ),
-                      const SizedBox(width: 14),
-                      Text(
-                        '收 ${formatMoney(summary.incomeCents, grouped: grouped)}',
-                        style: TextStyle(fontSize: 13, color: colors.muted),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '支 ${formatMoney(summary.expenseCents, grouped: grouped)}',
+                      style: TextStyle(fontSize: 13, color: colors.muted),
+                    ),
+                    const SizedBox(width: 14),
+                    Text(
+                      '收 ${formatMoney(summary.incomeCents, grouped: grouped)}',
+                      style: TextStyle(fontSize: 13, color: colors.muted),
+                    ),
+                  ],
                 ),
               ),
             ),
-          );
+          ),
+        );
       },
     );
   }

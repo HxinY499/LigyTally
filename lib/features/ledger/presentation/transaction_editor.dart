@@ -9,7 +9,10 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/appearance/appearance.dart';
 import '../../../core/database/app_database.dart';
+import '../../../core/location/location_service.dart';
+import '../../../core/location/place_fix.dart';
 import '../../../core/media/image_storage.dart';
+import '../../../core/preferences/auto_location.dart';
 import '../../../core/preferences/last_category.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
@@ -19,6 +22,7 @@ import '../../../shared/widgets/local_image.dart';
 import '../../../shared/widgets/photo_viewer.dart';
 import '../application/amount_expression.dart';
 import '../application/providers.dart';
+import 'location_name_dialog.dart';
 
 /// 单笔账单最多能挂几张图。
 ///
@@ -67,6 +71,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   late TimeOfDay _time;
   bool _saving = false;
   bool _prefilledCategory = false;
+  PlaceFix? _place;
+  bool _locationFetching = false;
+  int _captureGen = 0;
 
   bool get _isEditing => widget.existing != null;
 
@@ -91,6 +98,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         ? ''
         : (transaction.amountCents / 100).toStringAsFixed(2);
     _noteController = TextEditingController(text: transaction?.note ?? '');
+    _place = transaction == null ? null : PlaceFix.tryFrom(transaction);
     _noteFocus.addListener(() {
       if (mounted) setState(() {});
     });
@@ -106,11 +114,14 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           });
         }
       });
+    } else {
+      _scheduleAutoCapture();
     }
   }
 
   @override
   void dispose() {
+    _captureGen++;
     _backdropTimer?.cancel();
     _noteController.dispose();
     _noteFocus.dispose();
@@ -525,6 +536,75 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     });
   }
 
+  bool get _isTodayDate {
+    final now = DateTime.now();
+    return _date.year == now.year &&
+        _date.month == now.month &&
+        _date.day == now.day;
+  }
+
+  Future<void> _scheduleAutoCapture() async {
+    await ref.read(autoLocationProvider.notifier).ready;
+    if (!mounted) return;
+    _maybeAutoCapture();
+  }
+
+  void _maybeAutoCapture() {
+    if (_isEditing || _place != null || _locationFetching) return;
+    if (!ref.read(autoLocationProvider)) return;
+    if (!_isTodayDate) return;
+    _captureLocation(silent: true);
+  }
+
+  Future<void> _captureLocation({required bool silent}) async {
+    final gen = ++_captureGen;
+    setState(() => _locationFetching = true);
+    final result = await ref
+        .read(locationServiceProvider)
+        .capture(requestIfNeeded: !silent);
+    if (!mounted || gen != _captureGen) return;
+    setState(() {
+      _locationFetching = false;
+      if (result.place != null) _place = result.place;
+    });
+    if (result.place == null && !silent && result.error != null) {
+      _showLocationError(result.error!);
+    }
+  }
+
+  void _showLocationError(LocationCaptureError error) {
+    final message = switch (error) {
+      LocationCaptureError.serviceDisabled => '请先打开系统定位',
+      LocationCaptureError.permissionDenied => '需要定位权限才能记录位置',
+      LocationCaptureError.permissionDeniedForever => '定位权限被关闭，请在系统设置中开启',
+      LocationCaptureError.timeout => '定位超时，请再试一次',
+      LocationCaptureError.unavailable => '暂时无法获取位置',
+    };
+    _showError(message);
+  }
+
+  Future<void> _onLocationTap() async {
+    if (_locationFetching) return;
+    if (_place == null) {
+      await _captureLocation(silent: false);
+      return;
+    }
+    final initial = _place!.storedName ?? '';
+    final edited = await showLocationNameDialog(context, initial: initial);
+    if (!mounted) return;
+    _clearFocusAfterPicker();
+    if (edited == null || _place == null) return;
+    setState(() => _place = _place!.withName(edited));
+  }
+
+  void _clearLocation() {
+    _captureGen++;
+    setState(() {
+      _place = null;
+      _locationFetching = false;
+    });
+  }
+
   /// 保存。[continueAfter] 为 true 时保存后不关闭页面，清空金额继续记账。
   Future<void> _save({bool continueAfter = false}) async {
     final amount = _amountValue;
@@ -554,6 +634,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               _time.minute,
             ),
             note: _noteController.text,
+            place: _place,
             pendingImages: _pendingImages,
             existingImages: _existingImages,
             removedImageIds: _removedImageIds,
@@ -565,6 +646,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       if (!mounted) return;
       if (continueAfter) {
         HapticFeedback.mediumImpact();
+        final keepPlace =
+            _place != null &&
+            DateTime.now().difference(_place!.capturedAt) <= kReuseFixMaxAge;
         setState(() {
           _saving = false;
           _amountExpr = '';
@@ -572,6 +656,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           _pendingImages.clear();
           _existingImages.clear();
           _removedImageIds.clear();
+          if (!keepPlace) _place = null;
           _restartBackdropRotation();
         });
         showAppToast(
@@ -579,6 +664,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           message: '已保存，继续记下一笔',
           level: AppToastLevel.success,
         );
+        if (!keepPlace) _maybeAutoCapture();
       } else {
         Navigator.pop(context);
       }
@@ -766,6 +852,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                     time: _time,
                     onPickDate: _selectDate,
                     onPickTime: _selectTime,
+                    place: _place,
+                    locationFetching: _locationFetching,
+                    onLocationTap: _onLocationTap,
+                    onLocationClear: _clearLocation,
                     imageCount: _visibleImageCount,
                     imagePreview: imagePreview,
                     onImageTap: _showImageSheet,
@@ -1887,12 +1977,20 @@ class _DateTimeBar extends StatelessWidget {
     required this.time,
     required this.onPickDate,
     required this.onPickTime,
+    required this.place,
+    required this.locationFetching,
+    required this.onLocationTap,
+    required this.onLocationClear,
   });
 
   final DateTime date;
   final TimeOfDay time;
   final VoidCallback onPickDate;
   final VoidCallback onPickTime;
+  final PlaceFix? place;
+  final bool locationFetching;
+  final VoidCallback onLocationTap;
+  final VoidCallback onLocationClear;
 
   bool get _isToday {
     final now = DateTime.now();
@@ -1931,6 +2029,15 @@ class _DateTimeBar extends StatelessWidget {
           label: _clock(time),
           onTap: onPickTime,
         ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _LocationChip(
+            place: place,
+            fetching: locationFetching,
+            onTap: onLocationTap,
+            onClear: onLocationClear,
+          ),
+        ),
       ],
     );
   }
@@ -1939,6 +2046,81 @@ class _DateTimeBar extends StatelessWidget {
   static String _clock(TimeOfDay value) =>
       '${value.hour.toString().padLeft(2, '0')}:'
       '${value.minute.toString().padLeft(2, '0')}';
+}
+
+/// 日期/时刻条右侧的位置胶囊：空着时点一下获取，有地点后点一下改名，叉掉清除。
+class _LocationChip extends StatelessWidget {
+  const _LocationChip({
+    required this.place,
+    required this.fetching,
+    required this.onTap,
+    required this.onClear,
+  });
+
+  final PlaceFix? place;
+  final bool fetching;
+  final VoidCallback onTap;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final hasPlace = place != null;
+    return Material(
+      color: colors.surface,
+      borderRadius: context.radii.chipAll,
+      child: InkWell(
+        onTap: fetching ? null : onTap,
+        canRequestFocus: false,
+        borderRadius: context.radii.chipAll,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
+          child: Row(
+            children: [
+              if (fetching)
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.6,
+                    color: colors.primary,
+                  ),
+                )
+              else
+                Icon(FLucideIcons.mapPin, size: 14, color: colors.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  fetching
+                      ? '定位中'
+                      : hasPlace
+                      ? place!.displayName
+                      : '位置',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.1,
+                    fontWeight: FontWeight.w600,
+                    color: colors.ink,
+                  ),
+                ),
+              ),
+              if (hasPlace && !fetching)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onClear,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4, right: 2),
+                    child: Icon(FLucideIcons.x, size: 14, color: colors.muted),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 日期/时刻胶囊：白底小药丸，图标 + 一行文字，整块可点。
@@ -2288,6 +2470,10 @@ class _NumericKeypad extends StatelessWidget {
     required this.time,
     required this.onPickDate,
     required this.onPickTime,
+    required this.place,
+    required this.locationFetching,
+    required this.onLocationTap,
+    required this.onLocationClear,
     required this.imageCount,
     required this.imagePreview,
     required this.onImageTap,
@@ -2324,6 +2510,10 @@ class _NumericKeypad extends StatelessWidget {
   final TimeOfDay time;
   final VoidCallback onPickDate;
   final VoidCallback onPickTime;
+  final PlaceFix? place;
+  final bool locationFetching;
+  final VoidCallback onLocationTap;
+  final VoidCallback onLocationClear;
   final int imageCount;
 
   /// 顶栏图片入口的缩略图（无图时为 null，显示相机图标）。
@@ -2385,6 +2575,10 @@ class _NumericKeypad extends StatelessWidget {
               time: time,
               onPickDate: onPickDate,
               onPickTime: onPickTime,
+              place: place,
+              locationFetching: locationFetching,
+              onLocationTap: onLocationTap,
+              onLocationClear: onLocationClear,
             ),
           ),
           // 备注输入 + 图片入口。

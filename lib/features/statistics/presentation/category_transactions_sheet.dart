@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/appearance/appearance.dart';
+import '../../../core/location/place_fix.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -434,8 +435,10 @@ class _TransactionRow extends StatelessWidget {
     final occurredAt = DateTime.fromMillisecondsSinceEpoch(
       item.transaction.occurredAt,
     );
-    final note = item.transaction.note.trim();
-    final meta = '${formatDay(day)} ${formatClock(occurredAt)}';
+    final extra = item.transaction.locationAndNote;
+    final meta = extra.isEmpty
+        ? '${formatDay(day)} ${formatClock(occurredAt)}'
+        : '${formatDay(day)} ${formatClock(occurredAt)} · $extra';
 
     return InkWell(
       onTap: () => _openEditor(context),
@@ -472,7 +475,7 @@ class _TransactionRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    note.isEmpty ? meta : '$meta · $note',
+                    meta,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: stats.rowMeta,

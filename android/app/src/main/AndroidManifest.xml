@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 记账页可选记录当前位置。只在使用时申请，不要后台定位。 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- 检查更新与下载新版本 APK -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 应用内安装新版本 APK。本应用通过 GitHub Release 分发、不上架 Google Play，

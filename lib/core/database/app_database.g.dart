@@ -684,6 +684,40 @@ class $TransactionsTable extends Transactions
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _locationLatitudeMeta = const VerificationMeta(
+    'locationLatitude',
+  );
+  @override
+  late final GeneratedColumn<double> locationLatitude = GeneratedColumn<double>(
+    'location_latitude',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _locationLongitudeMeta = const VerificationMeta(
+    'locationLongitude',
+  );
+  @override
+  late final GeneratedColumn<double> locationLongitude =
+      GeneratedColumn<double>(
+        'location_longitude',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _locationNameMeta = const VerificationMeta(
+    'locationName',
+  );
+  @override
+  late final GeneratedColumn<String> locationName = GeneratedColumn<String>(
+    'location_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -715,6 +749,9 @@ class $TransactionsTable extends Transactions
     accountingDate,
     occurredAt,
     note,
+    locationLatitude,
+    locationLongitude,
+    locationName,
     createdAt,
     updatedAt,
   ];
@@ -787,6 +824,33 @@ class $TransactionsTable extends Transactions
         note.isAcceptableOrUnknown(data['note']!, _noteMeta),
       );
     }
+    if (data.containsKey('location_latitude')) {
+      context.handle(
+        _locationLatitudeMeta,
+        locationLatitude.isAcceptableOrUnknown(
+          data['location_latitude']!,
+          _locationLatitudeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('location_longitude')) {
+      context.handle(
+        _locationLongitudeMeta,
+        locationLongitude.isAcceptableOrUnknown(
+          data['location_longitude']!,
+          _locationLongitudeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('location_name')) {
+      context.handle(
+        _locationNameMeta,
+        locationName.isAcceptableOrUnknown(
+          data['location_name']!,
+          _locationNameMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -840,6 +904,18 @@ class $TransactionsTable extends Transactions
         DriftSqlType.string,
         data['${effectivePrefix}note'],
       )!,
+      locationLatitude: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}location_latitude'],
+      ),
+      locationLongitude: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}location_longitude'],
+      ),
+      locationName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}location_name'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -866,6 +942,13 @@ class TransactionEntry extends DataClass
   final String accountingDate;
   final int occurredAt;
   final String note;
+
+  /// 现场记下的纬度。和 [locationLongitude] 成对出现，缺一即视为没有位置。
+  final double? locationLatitude;
+  final double? locationLongitude;
+
+  /// 给人看的地点文案（逆地理预填或用户手改）。可空：有坐标但没地名时界面显示「已记录位置」。
+  final String? locationName;
   final int createdAt;
   final int updatedAt;
   const TransactionEntry({
@@ -876,6 +959,9 @@ class TransactionEntry extends DataClass
     required this.accountingDate,
     required this.occurredAt,
     required this.note,
+    this.locationLatitude,
+    this.locationLongitude,
+    this.locationName,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -889,6 +975,15 @@ class TransactionEntry extends DataClass
     map['accounting_date'] = Variable<String>(accountingDate);
     map['occurred_at'] = Variable<int>(occurredAt);
     map['note'] = Variable<String>(note);
+    if (!nullToAbsent || locationLatitude != null) {
+      map['location_latitude'] = Variable<double>(locationLatitude);
+    }
+    if (!nullToAbsent || locationLongitude != null) {
+      map['location_longitude'] = Variable<double>(locationLongitude);
+    }
+    if (!nullToAbsent || locationName != null) {
+      map['location_name'] = Variable<String>(locationName);
+    }
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
     return map;
@@ -903,6 +998,15 @@ class TransactionEntry extends DataClass
       accountingDate: Value(accountingDate),
       occurredAt: Value(occurredAt),
       note: Value(note),
+      locationLatitude: locationLatitude == null && nullToAbsent
+          ? const Value.absent()
+          : Value(locationLatitude),
+      locationLongitude: locationLongitude == null && nullToAbsent
+          ? const Value.absent()
+          : Value(locationLongitude),
+      locationName: locationName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(locationName),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -921,6 +1025,11 @@ class TransactionEntry extends DataClass
       accountingDate: serializer.fromJson<String>(json['accountingDate']),
       occurredAt: serializer.fromJson<int>(json['occurredAt']),
       note: serializer.fromJson<String>(json['note']),
+      locationLatitude: serializer.fromJson<double?>(json['locationLatitude']),
+      locationLongitude: serializer.fromJson<double?>(
+        json['locationLongitude'],
+      ),
+      locationName: serializer.fromJson<String?>(json['locationName']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
@@ -936,6 +1045,9 @@ class TransactionEntry extends DataClass
       'accountingDate': serializer.toJson<String>(accountingDate),
       'occurredAt': serializer.toJson<int>(occurredAt),
       'note': serializer.toJson<String>(note),
+      'locationLatitude': serializer.toJson<double?>(locationLatitude),
+      'locationLongitude': serializer.toJson<double?>(locationLongitude),
+      'locationName': serializer.toJson<String?>(locationName),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
     };
@@ -949,6 +1061,9 @@ class TransactionEntry extends DataClass
     String? accountingDate,
     int? occurredAt,
     String? note,
+    Value<double?> locationLatitude = const Value.absent(),
+    Value<double?> locationLongitude = const Value.absent(),
+    Value<String?> locationName = const Value.absent(),
     int? createdAt,
     int? updatedAt,
   }) => TransactionEntry(
@@ -959,6 +1074,13 @@ class TransactionEntry extends DataClass
     accountingDate: accountingDate ?? this.accountingDate,
     occurredAt: occurredAt ?? this.occurredAt,
     note: note ?? this.note,
+    locationLatitude: locationLatitude.present
+        ? locationLatitude.value
+        : this.locationLatitude,
+    locationLongitude: locationLongitude.present
+        ? locationLongitude.value
+        : this.locationLongitude,
+    locationName: locationName.present ? locationName.value : this.locationName,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -979,6 +1101,15 @@ class TransactionEntry extends DataClass
           ? data.occurredAt.value
           : this.occurredAt,
       note: data.note.present ? data.note.value : this.note,
+      locationLatitude: data.locationLatitude.present
+          ? data.locationLatitude.value
+          : this.locationLatitude,
+      locationLongitude: data.locationLongitude.present
+          ? data.locationLongitude.value
+          : this.locationLongitude,
+      locationName: data.locationName.present
+          ? data.locationName.value
+          : this.locationName,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -994,6 +1125,9 @@ class TransactionEntry extends DataClass
           ..write('accountingDate: $accountingDate, ')
           ..write('occurredAt: $occurredAt, ')
           ..write('note: $note, ')
+          ..write('locationLatitude: $locationLatitude, ')
+          ..write('locationLongitude: $locationLongitude, ')
+          ..write('locationName: $locationName, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1009,6 +1143,9 @@ class TransactionEntry extends DataClass
     accountingDate,
     occurredAt,
     note,
+    locationLatitude,
+    locationLongitude,
+    locationName,
     createdAt,
     updatedAt,
   );
@@ -1023,6 +1160,9 @@ class TransactionEntry extends DataClass
           other.accountingDate == this.accountingDate &&
           other.occurredAt == this.occurredAt &&
           other.note == this.note &&
+          other.locationLatitude == this.locationLatitude &&
+          other.locationLongitude == this.locationLongitude &&
+          other.locationName == this.locationName &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -1035,6 +1175,9 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntry> {
   final Value<String> accountingDate;
   final Value<int> occurredAt;
   final Value<String> note;
+  final Value<double?> locationLatitude;
+  final Value<double?> locationLongitude;
+  final Value<String?> locationName;
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<int> rowid;
@@ -1046,6 +1189,9 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntry> {
     this.accountingDate = const Value.absent(),
     this.occurredAt = const Value.absent(),
     this.note = const Value.absent(),
+    this.locationLatitude = const Value.absent(),
+    this.locationLongitude = const Value.absent(),
+    this.locationName = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1058,6 +1204,9 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntry> {
     required String accountingDate,
     required int occurredAt,
     this.note = const Value.absent(),
+    this.locationLatitude = const Value.absent(),
+    this.locationLongitude = const Value.absent(),
+    this.locationName = const Value.absent(),
     required int createdAt,
     required int updatedAt,
     this.rowid = const Value.absent(),
@@ -1077,6 +1226,9 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntry> {
     Expression<String>? accountingDate,
     Expression<int>? occurredAt,
     Expression<String>? note,
+    Expression<double>? locationLatitude,
+    Expression<double>? locationLongitude,
+    Expression<String>? locationName,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<int>? rowid,
@@ -1089,6 +1241,9 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntry> {
       if (accountingDate != null) 'accounting_date': accountingDate,
       if (occurredAt != null) 'occurred_at': occurredAt,
       if (note != null) 'note': note,
+      if (locationLatitude != null) 'location_latitude': locationLatitude,
+      if (locationLongitude != null) 'location_longitude': locationLongitude,
+      if (locationName != null) 'location_name': locationName,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -1103,6 +1258,9 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntry> {
     Value<String>? accountingDate,
     Value<int>? occurredAt,
     Value<String>? note,
+    Value<double?>? locationLatitude,
+    Value<double?>? locationLongitude,
+    Value<String?>? locationName,
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<int>? rowid,
@@ -1115,6 +1273,9 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntry> {
       accountingDate: accountingDate ?? this.accountingDate,
       occurredAt: occurredAt ?? this.occurredAt,
       note: note ?? this.note,
+      locationLatitude: locationLatitude ?? this.locationLatitude,
+      locationLongitude: locationLongitude ?? this.locationLongitude,
+      locationName: locationName ?? this.locationName,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -1145,6 +1306,15 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntry> {
     if (note.present) {
       map['note'] = Variable<String>(note.value);
     }
+    if (locationLatitude.present) {
+      map['location_latitude'] = Variable<double>(locationLatitude.value);
+    }
+    if (locationLongitude.present) {
+      map['location_longitude'] = Variable<double>(locationLongitude.value);
+    }
+    if (locationName.present) {
+      map['location_name'] = Variable<String>(locationName.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -1167,6 +1337,9 @@ class TransactionsCompanion extends UpdateCompanion<TransactionEntry> {
           ..write('accountingDate: $accountingDate, ')
           ..write('occurredAt: $occurredAt, ')
           ..write('note: $note, ')
+          ..write('locationLatitude: $locationLatitude, ')
+          ..write('locationLongitude: $locationLongitude, ')
+          ..write('locationName: $locationName, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -2219,6 +2392,9 @@ typedef $$TransactionsTableCreateCompanionBuilder =
       required String accountingDate,
       required int occurredAt,
       Value<String> note,
+      Value<double?> locationLatitude,
+      Value<double?> locationLongitude,
+      Value<String?> locationName,
       required int createdAt,
       required int updatedAt,
       Value<int> rowid,
@@ -2232,6 +2408,9 @@ typedef $$TransactionsTableUpdateCompanionBuilder =
       Value<String> accountingDate,
       Value<int> occurredAt,
       Value<String> note,
+      Value<double?> locationLatitude,
+      Value<double?> locationLongitude,
+      Value<String?> locationName,
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<int> rowid,
@@ -2320,6 +2499,21 @@ class $$TransactionsTableFilterComposer
 
   ColumnFilters<String> get note => $composableBuilder(
     column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get locationLatitude => $composableBuilder(
+    column: $table.locationLatitude,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get locationLongitude => $composableBuilder(
+    column: $table.locationLongitude,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get locationName => $composableBuilder(
+    column: $table.locationName,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2421,6 +2615,21 @@ class $$TransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get locationLatitude => $composableBuilder(
+    column: $table.locationLatitude,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get locationLongitude => $composableBuilder(
+    column: $table.locationLongitude,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get locationName => $composableBuilder(
+    column: $table.locationName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -2487,6 +2696,21 @@ class $$TransactionsTableAnnotationComposer
 
   GeneratedColumn<String> get note =>
       $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<double> get locationLatitude => $composableBuilder(
+    column: $table.locationLatitude,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get locationLongitude => $composableBuilder(
+    column: $table.locationLongitude,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get locationName => $composableBuilder(
+    column: $table.locationName,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -2579,6 +2803,9 @@ class $$TransactionsTableTableManager
                 Value<String> accountingDate = const Value.absent(),
                 Value<int> occurredAt = const Value.absent(),
                 Value<String> note = const Value.absent(),
+                Value<double?> locationLatitude = const Value.absent(),
+                Value<double?> locationLongitude = const Value.absent(),
+                Value<String?> locationName = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -2590,6 +2817,9 @@ class $$TransactionsTableTableManager
                 accountingDate: accountingDate,
                 occurredAt: occurredAt,
                 note: note,
+                locationLatitude: locationLatitude,
+                locationLongitude: locationLongitude,
+                locationName: locationName,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -2603,6 +2833,9 @@ class $$TransactionsTableTableManager
                 required String accountingDate,
                 required int occurredAt,
                 Value<String> note = const Value.absent(),
+                Value<double?> locationLatitude = const Value.absent(),
+                Value<double?> locationLongitude = const Value.absent(),
+                Value<String?> locationName = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -2614,6 +2847,9 @@ class $$TransactionsTableTableManager
                 accountingDate: accountingDate,
                 occurredAt: occurredAt,
                 note: note,
+                locationLatitude: locationLatitude,
+                locationLongitude: locationLongitude,
+                locationName: locationName,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

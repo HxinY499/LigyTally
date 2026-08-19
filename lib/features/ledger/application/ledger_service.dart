@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/location/place_fix.dart';
 import '../../../core/media/image_storage.dart';
 import '../../../core/utils/ledger_date.dart';
 
@@ -21,6 +22,7 @@ class LedgerService {
     required DateTime accountingDate,
     required DateTime occurredAt,
     required String note,
+    PlaceFix? place,
     required List<XFile> pendingImages,
     required List<TransactionImageEntry> existingImages,
     required Set<String> removedImageIds,
@@ -52,6 +54,9 @@ class LedgerService {
           accountingDate: dateKey(accountingDate),
           occurredAt: occurredAt.millisecondsSinceEpoch,
           note: Value(note.trim()),
+          locationLatitude: Value(place?.latitude),
+          locationLongitude: Value(place?.longitude),
+          locationName: Value(place?.storedName),
           createdAt: existing?.transaction.createdAt ?? now,
           updatedAt: now,
         ),

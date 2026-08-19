@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
 import 'package:ligy_tally/core/database/app_database.dart';
+import 'package:ligy_tally/core/location/location_platform.dart';
+import 'package:ligy_tally/core/location/location_service.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/features/ledger/application/providers.dart';
 import 'package:ligy_tally/features/ledger/presentation/transaction_editor.dart';
@@ -35,7 +37,12 @@ void main() {
     final forui = buildForuiTheme();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [databaseProvider.overrideWithValue(database)],
+        overrides: [
+          databaseProvider.overrideWithValue(database),
+          locationServiceProvider.overrideWithValue(
+            LocationService(_SilentLocationPlatform()),
+          ),
+        ],
         child: MaterialApp(
           theme: forui.toApproximateMaterialTheme(),
           builder: (context, child) => FTheme(
@@ -214,11 +221,7 @@ void main() {
           matching: find.byType(Scaffold),
         ),
       );
-      expect(
-        scaffold.backgroundColor,
-        isNull,
-        reason: '没有背板时本页不该自己钉死底色',
-      );
+      expect(scaffold.backgroundColor, isNull, reason: '没有背板时本页不该自己钉死底色');
 
       await teardown(tester);
     });
@@ -232,7 +235,12 @@ void main() {
       final forui = buildForuiTheme();
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [databaseProvider.overrideWithValue(database)],
+          overrides: [
+            databaseProvider.overrideWithValue(database),
+            locationServiceProvider.overrideWithValue(
+              LocationService(_SilentLocationPlatform()),
+            ),
+          ],
           child: MaterialApp(
             locale: const Locale('zh', 'CN'),
             supportedLocales: const [Locale('zh', 'CN')],
@@ -317,4 +325,100 @@ void main() {
       await teardown(tester);
     });
   });
+
+  group('位置胶囊', () {
+    testWidgets('默认显示位置入口', (tester) async {
+      usePhoneViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await pump(tester, database);
+
+      expect(find.text('位置'), findsOneWidget);
+
+      await teardown(tester);
+    });
+
+    testWidgets('点位置后写入地点名', (tester) async {
+      usePhoneViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      final platform = _SilentLocationPlatform()
+        ..current = GeoPoint(
+          latitude: 32.04,
+          longitude: 118.78,
+          timestamp: DateTime.now(),
+          accuracyMeters: 20,
+        )
+        ..reverseName = '新街口';
+
+      final forui = buildForuiTheme();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            databaseProvider.overrideWithValue(database),
+            locationServiceProvider.overrideWithValue(
+              LocationService(platform),
+            ),
+          ],
+          child: MaterialApp(
+            theme: forui.toApproximateMaterialTheme(),
+            builder: (context, child) => FTheme(
+              data: forui,
+              child: FToaster(child: child!),
+            ),
+            home: const TransactionEditor(),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
+      await tester.tap(find.text('位置'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('新街口'), findsOneWidget);
+
+      await teardown(tester);
+    });
+  });
+}
+
+class _SilentLocationPlatform implements LocationPlatform {
+  GeoPoint? current;
+  String? reverseName;
+
+  @override
+  Future<bool> isServiceEnabled() async => true;
+
+  @override
+  Future<DeviceLocationPermission> checkPermission() async =>
+      DeviceLocationPermission.granted;
+
+  @override
+  Future<DeviceLocationPermission> requestPermission() async =>
+      DeviceLocationPermission.granted;
+
+  @override
+  Future<bool> openAppSettings() async => true;
+
+  @override
+  Future<bool> openLocationSettings() async => true;
+
+  @override
+  Future<GeoPoint?> lastKnown() async => null;
+
+  @override
+  Future<GeoPoint> currentPosition({required Duration timeLimit}) async {
+    final point = current;
+    if (point == null) {
+      throw const LocationUnavailableException('silent');
+    }
+    return point;
+  }
+
+  @override
+  Future<String?> reverseGeocode(GeoPoint point) async => reverseName;
 }

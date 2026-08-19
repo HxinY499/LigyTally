@@ -32,6 +32,13 @@ class Transactions extends Table {
   TextColumn get accountingDate => text()();
   IntColumn get occurredAt => integer()();
   TextColumn get note => text().withDefault(const Constant(''))();
+
+  /// 现场记下的纬度。和 [locationLongitude] 成对出现，缺一即视为没有位置。
+  RealColumn get locationLatitude => real().nullable()();
+  RealColumn get locationLongitude => real().nullable()();
+
+  /// 给人看的地点文案（逆地理预填或用户手改）。可空：有坐标但没地名时界面显示「已记录位置」。
+  TextColumn get locationName => text().nullable()();
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
 
@@ -64,7 +71,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -97,6 +104,11 @@ class AppDatabase extends _$AppDatabase {
         await (delete(
           categories,
         )..where((row) => row.id.isIn(obsoleteIds))).go();
+      }
+      if (from < 4) {
+        await migrator.addColumn(transactions, transactions.locationLatitude);
+        await migrator.addColumn(transactions, transactions.locationLongitude);
+        await migrator.addColumn(transactions, transactions.locationName);
       }
     },
     beforeOpen: (_) async {
@@ -797,7 +809,10 @@ class AppDatabase extends _$AppDatabase {
           ),
           // 连分类：图库按账单分组时要靠分类图标和名字认出「这是哪笔账」，
           // 光有日期和金额认不出来；跳去编辑这笔账也需要完整的 LedgerItem。
-          innerJoin(categories, categories.id.equalsExp(transactions.categoryId)),
+          innerJoin(
+            categories,
+            categories.id.equalsExp(transactions.categoryId),
+          ),
         ])..orderBy([
           if (sort == LedgerImageSort.largest)
             OrderingTerm.desc(transactionImages.sizeBytes),

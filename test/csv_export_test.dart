@@ -25,6 +25,9 @@ void main() {
     required String categoryId,
     required DateTime date,
     String note = '',
+    String? locationName,
+    double? locationLatitude,
+    double? locationLongitude,
     int imageCount = 0,
     int hour = 9,
     int minute = 30,
@@ -40,6 +43,9 @@ void main() {
         accountingDate: dateKey(date),
         occurredAt: occurred.millisecondsSinceEpoch,
         note: Value(note),
+        locationLatitude: Value(locationLatitude),
+        locationLongitude: Value(locationLongitude),
+        locationName: Value(locationName),
         createdAt: now,
         updatedAt: now,
       ),
@@ -116,12 +122,12 @@ void main() {
     expect(csv, isNotNull);
     expect(csv!.rowCount, 2);
     final text = decode(csv.bytes);
-    expect(text.startsWith('类型,金额,分类,日期,时间,备注,图片数量\r\n'), isTrue);
+    expect(text.startsWith('类型,金额,分类,日期,时间,地点,备注,图片数量\r\n'), isTrue);
     expect(
       text,
-      contains('支出,128.50,餐饮 / 三餐,2026-08-01,08:05,"咖啡, ""外卖""",2\r\n'),
+      contains('支出,128.50,餐饮 / 三餐,2026-08-01,08:05,,"咖啡, ""外卖""",2\r\n'),
     );
-    expect(text, contains('收入,5000.00,工资,2026-08-15,12:00,,0\r\n'));
+    expect(text, contains('收入,5000.00,工资,2026-08-15,12:00,,,0\r\n'));
     expect(text, isNot(contains('july')));
     expect(text, isNot(contains('2026-09-01')));
     expect(text, isNot(contains('¥')));
@@ -177,5 +183,36 @@ void main() {
     final year = await service.buildCsv(yearRange(DateTime(2026, 8, 1)));
     expect(year!.rowCount, 1);
     expect(decode(year.bytes), isNot(contains('2025-12-31')));
+  });
+
+  test('地点列导出可读地名，没有地点就留空', () async {
+    final food = (await database.exportCategories()).singleWhere(
+      (item) => item.name == '三餐',
+    );
+    await addTx(
+      id: 'with-place',
+      kind: 0,
+      amountCents: 8800,
+      categoryId: food.id,
+      date: DateTime(2026, 8, 19),
+      locationLatitude: 32.04,
+      locationLongitude: 118.78,
+      locationName: '新街口',
+    );
+    await addTx(
+      id: 'coords-only',
+      kind: 0,
+      amountCents: 1200,
+      categoryId: food.id,
+      date: DateTime(2026, 8, 19),
+      hour: 12,
+      locationLatitude: 32.05,
+      locationLongitude: 118.79,
+    );
+
+    final csv = await service.buildCsv(monthRange(DateTime(2026, 8)));
+    final text = decode(csv!.bytes);
+    expect(text, contains(',新街口,'));
+    expect(text, contains(',已记录位置,'));
   });
 }

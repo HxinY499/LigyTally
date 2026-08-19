@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../database/app_database.dart';
+import '../location/place_fix.dart';
 import '../utils/ledger_date.dart';
 
 /// 按时间范围把账单导出成 CSV，给 Excel / Numbers 打开，不带图片。
@@ -19,7 +20,7 @@ class CsvExportService {
 
   final AppDatabase database;
 
-  static const _headers = ['类型', '金额', '分类', '日期', '时间', '备注', '图片数量'];
+  static const _headers = ['类型', '金额', '分类', '日期', '时间', '地点', '备注', '图片数量'];
 
   /// UTF-8 BOM。Excel 靠它判断编码，缺了中文列名会花。
   static const _bom = [0xEF, 0xBB, 0xBF];
@@ -79,6 +80,7 @@ class CsvExportService {
           _categoryLabel(item.category, byId),
           tx.accountingDate,
           formatClock(occurred),
+          tx.locationLabel ?? '',
           tx.note,
           '${imageCounts[tx.id] ?? 0}',
         ]),
