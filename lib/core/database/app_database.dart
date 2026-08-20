@@ -884,7 +884,13 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> deleteTransaction(String id) async {
-    await (delete(transactions)..where((row) => row.id.equals(id))).go();
+    await deleteTransactions({id});
+  }
+
+  /// 一次删多笔。图片行靠外键 cascade 跟着走。
+  Future<void> deleteTransactions(Set<String> ids) async {
+    if (ids.isEmpty) return;
+    await (delete(transactions)..where((row) => row.id.isIn(ids))).go();
   }
 
   /// 主库文件的绝对路径。内存库没有文件，返回 null。

@@ -23,6 +23,9 @@ final ledgerServiceProvider = Provider<LedgerService>((ref) {
   );
 });
 
+/// 首页是否处于批量选择。底栏 FAB 要跟着藏，避免挡住底部删除键。
+final ledgerSelectingProvider = StateProvider<bool>((ref) => false);
+
 final backupServiceProvider = Provider<BackupService>((ref) {
   return BackupService(
     ref.watch(databaseProvider),

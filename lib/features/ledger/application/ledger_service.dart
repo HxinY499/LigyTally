@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
@@ -92,9 +94,26 @@ class LedgerService {
     }
   }
 
-  Future<void> delete(LedgerItem item) async {
-    await database.deleteTransaction(item.transaction.id);
-    await imageStorage.deleteTransactionDirectory(item.transaction.id);
+  Future<void> delete(LedgerItem item) => deleteAll([item]);
+
+  /// 先改库再删文件目录：库失败时账单还在，图也还在。
+  /// 目录删失败只留下孤儿文件，占用空间页会清，不把已经删掉的账单救回来。
+  Future<void> deleteAll(Iterable<LedgerItem> items) async {
+    final list = items.toList();
+    if (list.isEmpty) return;
+    await database.deleteTransactions({
+      for (final item in list) item.transaction.id,
+    });
+    // 目录清不完不挡「删成功」：库已经没有这些账单了。
+    unawaited(_deleteDirectories(list));
+  }
+
+  Future<void> _deleteDirectories(List<LedgerItem> items) async {
+    for (final item in items) {
+      try {
+        await imageStorage.deleteTransactionDirectory(item.transaction.id);
+      } catch (_) {}
+    }
   }
 
   /// 只删图片，不动账单。

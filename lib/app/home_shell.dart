@@ -7,6 +7,7 @@ import '../core/appearance/appearance.dart';
 import '../core/preferences/quick_tally_mode.dart';
 import '../core/theme/app_motion.dart';
 import '../core/theme/app_theme.dart';
+import '../features/ledger/application/providers.dart';
 import '../features/ledger/presentation/ledger_screen.dart';
 import '../features/ledger/presentation/transaction_editor.dart';
 import '../features/settings/presentation/settings_screen.dart';
@@ -69,12 +70,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final floating = ref.watch(navBarStyleProvider) == NavBarStyle.floating;
+    final selecting = ref.watch(ledgerSelectingProvider);
     final pages = PageView(
       controller: _controller,
       onPageChanged: (value) => setState(() => _index = value),
       physics: const ClampingScrollPhysics(),
       children: [
-        const LedgerScreen(),
+        LedgerScreen(active: _index == 0),
         const StatisticsScreen(),
         SettingsScreen(active: _index == 2),
       ],
@@ -115,7 +117,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         duration: context.motion(const Duration(milliseconds: 200)),
         transitionBuilder: (child, animation) =>
             ScaleTransition(scale: animation, child: child),
-        child: _index == 0
+        child: _index == 0 && !selecting
             ? FloatingActionButton(
                 key: const ValueKey('add'),
                 onPressed: _addTransaction,

@@ -12,6 +12,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/location/place_fix.dart';
 import '../../../core/media/image_storage.dart';
 import '../../../core/theme/app_density.dart';
+import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -22,7 +23,11 @@ import 'month_calendar_dialog.dart';
 import 'transaction_editor.dart';
 
 class LedgerScreen extends ConsumerStatefulWidget {
-  const LedgerScreen({super.key});
+  const LedgerScreen({super.key, this.active = true});
+
+  /// 当前是否停在记账 tab。底栏用 PageView，三页都挂在树上，
+  /// 返回键只在本页可见且处于多选时拦截。
+  final bool active;
 
   @override
   ConsumerState<LedgerScreen> createState() => _LedgerScreenState();
@@ -31,9 +36,17 @@ class LedgerScreen extends ConsumerStatefulWidget {
 class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   bool _searching = false;
+  bool _selecting = false;
+  bool _busy = false;
   String _query = '';
+  final Set<String> _selected = {};
   late final TextEditingController _searchController;
   late final ScrollController _scrollController;
+
+  /// 当前列表真正看得见的账单（本月 × 搜索过滤）。
+  ///
+  /// 全选、删除、勾选清理都只对这份集合生效，不跨月、不碰被关键词滤掉的行。
+  List<LedgerItem> _visibleItems = const [];
 
   /// 本次构建实际渲染出的按天分组，顺序与列表一致。
   ///
@@ -179,6 +192,92 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     });
   }
 
+  void _setSelecting(bool value) {
+    if (_selecting == value) return;
+    setState(() {
+      _selecting = value;
+      if (!value) {
+        _selected.clear();
+        _busy = false;
+      }
+    });
+    ref.read(ledgerSelectingProvider.notifier).state = value;
+  }
+
+  void _enterSelect() {
+    HapticFeedback.selectionClick();
+    _setSelecting(true);
+  }
+
+  void _exitSelect() => _setSelecting(false);
+
+  void _toggleSelected(String id) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (!_selected.add(id)) _selected.remove(id);
+    });
+  }
+
+  void _toggleAllVisible() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_selected.length == _visibleItems.length &&
+          _visibleItems.isNotEmpty) {
+        _selected.clear();
+      } else {
+        _selected
+          ..clear()
+          ..addAll(_visibleItems.map((item) => item.transaction.id));
+      }
+    });
+  }
+
+  void _pruneSelection(List<LedgerItem> items) {
+    final live = {for (final item in items) item.transaction.id};
+    final stale = _selected.where((id) => !live.contains(id)).toList();
+    if (stale.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _selected.removeAll(stale));
+    });
+  }
+
+  Future<void> _confirmDeleteSelected() async {
+    final chosen = [
+      for (final item in _visibleItems)
+        if (_selected.contains(item.transaction.id)) item,
+    ];
+    if (chosen.isEmpty) return;
+    final confirmed = await showAppConfirmDialog(
+      context,
+      message: chosen.length == 1
+          ? '确定要删除该条账单吗？删除后不可恢复'
+          : '删除这 ${chosen.length} 条账单？删除后不可恢复',
+      confirmLabel: '删除',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await ref.read(ledgerServiceProvider).deleteAll(chosen);
+      if (!mounted) return;
+      _exitSelect();
+      showAppToast(
+        context,
+        message: '已删除 ${chosen.length} 条账单',
+        level: AppToastLevel.success,
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() => _busy = false);
+        showAppToast(
+          context,
+          message: '删除失败：$error',
+          level: AppToastLevel.error,
+        );
+      }
+    }
+  }
+
   // 长按弹强确认框（共享的 showAppConfirmDialog：红描边胶囊「确定」+「取消」）。
   Future<void> _confirmDelete(LedgerItem item) async {
     final confirmed = await showAppConfirmDialog(
@@ -207,177 +306,234 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     // CustomScrollView（内容要能滚到它背后去，毛玻璃才有东西可模糊），
     // 于是它不能再把内容当 child 包进来。折叠进度由 sliver 的 shrinkOffset
     // 提供，不再是会被重建冲掉的 State，摘要每次到达都重建页头也无副作用。
-    return StreamBuilder<LedgerSummary>(
-      stream: database.watchSummary(range),
-      builder: (context, summarySnapshot) {
-        final summary =
-            summarySnapshot.data ??
-            const LedgerSummary(
-              incomeCents: 0,
-              expenseCents: 0,
-              entryCount: 0,
-              activeDayCount: 0,
-            );
-        return AppPageHeader(
-          // 非搜索态走 title，享受大标题折叠；搜索态改用 content 渲染输入框，
-          // 页头固定为紧凑高度（输入框不该被缩放）。
-          title: _searching ? null : '记账',
-          content: _searching
-              ? _SearchField(
-                  controller: _searchController,
-                  onChanged: (value) => setState(() => _query = value.trim()),
-                )
-              : null,
-          actions: [
-            AppHeaderAction(
-              icon: _searching ? FLucideIcons.x : FLucideIcons.search,
-              tooltip: _searching ? '关闭搜索' : '搜索',
-              onTap: _toggleSearch,
-            ),
-          ],
-          controller: _scrollController,
-          slivers: [
-            // 金色摘要卡（可跟随滚动上移）
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
-                child: SummaryBand(
-                  summary: summary,
-                  onOpenCalendar: _openCalendar,
-                ),
-              ),
-            ),
-            // 吸顶月份/收支条：紧贴页头，粘在顶部。
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _MonthStickyBarDelegate(
-                month: _month,
-                summary: summary,
-                onPick: _pickMonth,
-              ),
-            ),
-            // 列表。图片路径单独订阅一条流：它变得远比账单本身少，
-            // 塞进 watchTransactions 会让每次记账都多 join 一次图片表。
-            StreamBuilder<Map<String, String>>(
-              stream: database.watchFirstImagePaths(range),
-              builder: (context, imageSnapshot) {
-                final imagePaths =
-                    imageSnapshot.data ?? const <String, String>{};
-                return StreamBuilder<List<LedgerItem>>(
-                  stream: database.watchTransactions(range),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return SliverToBoxAdapter(
-                        child: _MessageState(
-                          icon: FLucideIcons.circleAlert,
-                          title: '账单加载失败',
-                          detail: '${snapshot.error}',
+    return PopScope(
+      canPop: !(_selecting && widget.active),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _exitSelect();
+      },
+      child: StreamBuilder<LedgerSummary>(
+        stream: database.watchSummary(range),
+        builder: (context, summarySnapshot) {
+          final summary =
+              summarySnapshot.data ??
+              const LedgerSummary(
+                incomeCents: 0,
+                expenseCents: 0,
+                entryCount: 0,
+                activeDayCount: 0,
+              );
+          return Stack(
+            children: [
+              AppPageHeader(
+                // 非搜索/多选态走 title，享受大标题折叠；搜索和多选都改用
+                // content，页头固定为紧凑高度（输入框和三栏操作条都不该被缩放）。
+                title: _selecting || _searching ? null : '记账',
+                content: _selecting
+                    ? _SelectModeBar(
+                        selectedCount: _selected.length,
+                        allSelected:
+                            _visibleItems.isNotEmpty &&
+                            _selected.length == _visibleItems.length,
+                        busy: _busy,
+                        onCancel: _exitSelect,
+                        onToggleAll: _toggleAllVisible,
+                      )
+                    : _searching
+                    ? _SearchField(
+                        controller: _searchController,
+                        onChanged: (value) =>
+                            setState(() => _query = value.trim()),
+                      )
+                    : null,
+                actions: _selecting
+                    ? const []
+                    : [
+                        AppHeaderAction(
+                          icon: _searching
+                              ? FLucideIcons.x
+                              : FLucideIcons.search,
+                          tooltip: _searching ? '关闭搜索' : '搜索',
+                          onTap: _toggleSearch,
                         ),
-                      );
-                    }
-                    final allItems = snapshot.data;
-                    if (allItems == null) {
-                      return SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 80),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: context.colors.primary,
-                            ),
-                          ),
+                        AppHeaderAction(
+                          icon: FLucideIcons.squareCheck,
+                          tooltip: '批量选择',
+                          onTap: _enterSelect,
                         ),
-                      );
-                    }
-                    final keyword = _query.toLowerCase();
-                    final items = keyword.isEmpty
-                        ? allItems
-                        : allItems
-                              .where(
-                                (item) =>
-                                    item.transaction.note
-                                        .toLowerCase()
-                                        .contains(keyword) ||
-                                    item.category.name.toLowerCase().contains(
-                                      keyword,
-                                    ),
-                              )
-                              .toList();
-                    if (items.isEmpty) {
-                      return SliverToBoxAdapter(
-                        child: _MessageState(
-                          icon: keyword.isEmpty
-                              ? FLucideIcons.receipt
-                              : FLucideIcons.searchX,
-                          title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
-                          detail: keyword.isEmpty ? '点击右下角加号记下第一笔' : '换一个关键词再试',
-                        ),
-                      );
-                    }
-                    final groups = <String, List<LedgerItem>>{};
-                    for (final item in items) {
-                      groups
-                          .putIfAbsent(
-                            item.transaction.accountingDate,
-                            () => [],
-                          )
-                          .add(item);
-                    }
-                    final entries = groups.entries.toList();
-                    // 记下这一版分组，供月历跳转时定位（见 [_openCalendar]）。
-                    _dayGroups = [
-                      for (final entry in entries)
-                        _DayGroup(
-                          dayKey: entry.key,
-                          rowCount: entry.value.length,
-                        ),
-                    ];
-                    return SliverPadding(
-                      // 84 是避开居中悬浮的「记一笔」FAB（56 直径 + 16 浮起
-                      // 边距 + 余量）。再加上 MediaQuery 的底部留白：贴底档下
-                      // 它是 0（那块留白由底栏自己吃掉），悬浮档下它是
-                      // 「胶囊盖住的高度 + 系统安全区」，见 `home_shell.dart`。
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        12,
-                        16,
-                        84 + MediaQuery.paddingOf(context).bottom,
+                      ],
+                controller: _scrollController,
+                slivers: [
+                  // 金色摘要卡（可跟随滚动上移）
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                      child: SummaryBand(
+                        summary: summary,
+                        onOpenCalendar: _openCalendar,
                       ),
-                      sliver: SliverList.builder(
-                        itemCount: entries.length,
-                        itemBuilder: (context, index) {
-                          final group = entries[index];
-                          return Padding(
-                            // GlobalKey 挂在最外层：滚动对位时要连卡片下方的
-                            // 间距一起算，否则目标卡会紧贴上一张的底边。
-                            key: _dayCardKeys.putIfAbsent(
-                              group.key,
-                              GlobalKey.new,
+                    ),
+                  ),
+                  // 吸顶月份/收支条：紧贴页头，粘在顶部。
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _MonthStickyBarDelegate(
+                      month: _month,
+                      summary: summary,
+                      onPick: _pickMonth,
+                    ),
+                  ),
+                  // 列表。图片路径单独订阅一条流：它变得远比账单本身少，
+                  // 塞进 watchTransactions 会让每次记账都多 join 一次图片表。
+                  StreamBuilder<Map<String, String>>(
+                    stream: database.watchFirstImagePaths(range),
+                    builder: (context, imageSnapshot) {
+                      final imagePaths =
+                          imageSnapshot.data ?? const <String, String>{};
+                      return StreamBuilder<List<LedgerItem>>(
+                        stream: database.watchTransactions(range),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return SliverToBoxAdapter(
+                              child: _MessageState(
+                                icon: FLucideIcons.circleAlert,
+                                title: '账单加载失败',
+                                detail: '${snapshot.error}',
+                              ),
+                            );
+                          }
+                          final allItems = snapshot.data;
+                          if (allItems == null) {
+                            return SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 80,
+                                ),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: context.colors.primary,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          final keyword = _query.toLowerCase();
+                          final items = keyword.isEmpty
+                              ? allItems
+                              : allItems
+                                    .where(
+                                      (item) =>
+                                          item.transaction.note
+                                              .toLowerCase()
+                                              .contains(keyword) ||
+                                          item.category.name
+                                              .toLowerCase()
+                                              .contains(keyword),
+                                    )
+                                    .toList();
+                          _visibleItems = items;
+                          _pruneSelection(items);
+                          if (items.isEmpty) {
+                            return SliverToBoxAdapter(
+                              child: _MessageState(
+                                icon: keyword.isEmpty
+                                    ? FLucideIcons.receipt
+                                    : FLucideIcons.searchX,
+                                title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
+                                detail: keyword.isEmpty
+                                    ? '点击右下角加号记下第一笔'
+                                    : '换一个关键词再试',
+                              ),
+                            );
+                          }
+                          final groups = <String, List<LedgerItem>>{};
+                          for (final item in items) {
+                            groups
+                                .putIfAbsent(
+                                  item.transaction.accountingDate,
+                                  () => [],
+                                )
+                                .add(item);
+                          }
+                          final entries = groups.entries.toList();
+                          // 记下这一版分组，供月历跳转时定位（见 [_openCalendar]）。
+                          _dayGroups = [
+                            for (final entry in entries)
+                              _DayGroup(
+                                dayKey: entry.key,
+                                rowCount: entry.value.length,
+                              ),
+                          ];
+                          return SliverPadding(
+                            // 84 是避开居中悬浮的「记一笔」FAB（56 直径 + 16 浮起
+                            // 边距 + 余量）。再加上 MediaQuery 的底部留白：贴底档下
+                            // 它是 0（那块留白由底栏自己吃掉），悬浮档下它是
+                            // 「胶囊盖住的高度 + 系统安全区」，见 `home_shell.dart`。
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              12,
+                              16,
+                              84 + MediaQuery.paddingOf(context).bottom,
                             ),
-                            padding: const EdgeInsets.only(bottom: 14),
-                            child: _DayCard(
-                              day: dateFromKey(group.key),
-                              items: group.value,
-                              imagePaths: imagePaths,
-                              highlighted: _highlightedDay == group.key,
-                              onTapHeader: () =>
-                                  _addTransactionForDay(dateFromKey(group.key)),
-                              onTapItem: _edit,
-                              onLongPressItem: (item) {
-                                HapticFeedback.mediumImpact();
-                                _confirmDelete(item);
+                            sliver: SliverList.builder(
+                              itemCount: entries.length,
+                              itemBuilder: (context, index) {
+                                final group = entries[index];
+                                return Padding(
+                                  // GlobalKey 挂在最外层：滚动对位时要连卡片下方的
+                                  // 间距一起算，否则目标卡会紧贴上一张的底边。
+                                  key: _dayCardKeys.putIfAbsent(
+                                    group.key,
+                                    GlobalKey.new,
+                                  ),
+                                  padding: const EdgeInsets.only(bottom: 14),
+                                  child: _DayCard(
+                                    day: dateFromKey(group.key),
+                                    items: group.value,
+                                    imagePaths: imagePaths,
+                                    highlighted: _highlightedDay == group.key,
+                                    selecting: _selecting,
+                                    selectedIds: _selected,
+                                    onTapHeader: _selecting
+                                        ? null
+                                        : () => _addTransactionForDay(
+                                            dateFromKey(group.key),
+                                          ),
+                                    onTapItem: _selecting
+                                        ? (item) => _toggleSelected(
+                                            item.transaction.id,
+                                          )
+                                        : _edit,
+                                    onLongPressItem: _selecting
+                                        ? null
+                                        : (item) {
+                                            HapticFeedback.mediumImpact();
+                                            _confirmDelete(item);
+                                          },
+                                  ),
+                                );
                               },
                             ),
                           );
                         },
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ],
-        );
-      },
+                      );
+                    },
+                  ),
+                ],
+              ),
+              if (_selecting)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _BatchDeleteBar(
+                    enabled: _selected.isNotEmpty && !_busy,
+                    onDelete: _confirmDeleteSelected,
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -479,6 +635,184 @@ class _SearchField extends StatelessWidget {
       );
 }
 
+/// 多选勾选槽宽。进出多选时按这个宽度把行内容往右挤。
+const double _kSelectCheckSize = 22;
+const double _kSelectCheckGap = 10;
+
+/// 多选勾选槽：宽度从 0 动画到勾选框，把账单内容往右挤。
+///
+/// 日卡头传 [showIcon] false，只占位不对齐出空勾，日期和分类图标仍在一条竖线上。
+class _SelectCheckSlot extends StatelessWidget {
+  const _SelectCheckSlot({
+    required this.selecting,
+    this.selected = false,
+    this.showIcon = true,
+  });
+
+  final bool selecting;
+  final bool selected;
+  final bool showIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return AnimatedSize(
+      duration: context.motion(const Duration(milliseconds: 220)),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.centerLeft,
+      child: selecting
+          ? Padding(
+              padding: const EdgeInsets.only(right: _kSelectCheckGap),
+              child: SizedBox.square(
+                dimension: _kSelectCheckSize,
+                child: showIcon
+                    ? Icon(
+                        selected
+                            ? FLucideIcons.squareCheck
+                            : FLucideIcons.square,
+                        size: _kSelectCheckSize,
+                        color: selected ? colors.primary : colors.inactive,
+                      )
+                    : null,
+              ),
+            )
+          : const SizedBox(width: 0, height: _kSelectCheckSize),
+    );
+  }
+}
+
+/// 多选态页头：左取消、中已选数量、右全选。
+///
+/// 数量放 Stack 正中，不跟两侧文字抢宽度——「全选」变成「取消全选」时标题不能漂。
+class _SelectModeBar extends StatelessWidget {
+  const _SelectModeBar({
+    required this.selectedCount,
+    required this.allSelected,
+    required this.busy,
+    required this.onCancel,
+    required this.onToggleAll,
+  });
+
+  final int selectedCount;
+  final bool allSelected;
+  final bool busy;
+  final VoidCallback onCancel;
+  final VoidCallback onToggleAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      height: 38,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Text(
+            '已选择 $selectedCount 项',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: colors.ink,
+            ),
+          ),
+          Row(
+            children: [
+              _HeaderTextButton(label: '取消', onTap: busy ? null : onCancel),
+              const Spacer(),
+              _HeaderTextButton(
+                label: allSelected ? '取消全选' : '全选',
+                onTap: busy ? null : onToggleAll,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderTextButton extends StatelessWidget {
+  const _HeaderTextButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        height: 38,
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w600,
+              color: onTap == null ? colors.inactive : colors.primary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 贴在首页最底下的删除键。未选中时置灰，不抢长按单删那条路径。
+class _BatchDeleteBar extends StatelessWidget {
+  const _BatchDeleteBar({required this.enabled, required this.onDelete});
+
+  final bool enabled;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Material(
+      color: colors.surface,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: colors.lineSoft)),
+        ),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            10,
+            16,
+            10 + MediaQuery.paddingOf(context).bottom,
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: enabled ? onDelete : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: colors.danger,
+                foregroundColor: colors.isDark
+                    ? colors.canvasBase
+                    : Colors.white,
+                disabledBackgroundColor: colors.fill,
+                disabledForegroundColor: colors.inactive,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: context.radii.sheetAll,
+                ),
+              ),
+              child: const Text(
+                '删除',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 一天一张白色圆角大卡：顶部日期条+ 分割线 + 条目列。
 class _DayCard extends ConsumerWidget {
   const _DayCard({
@@ -486,6 +820,8 @@ class _DayCard extends ConsumerWidget {
     required this.items,
     required this.imagePaths,
     required this.highlighted,
+    required this.selecting,
+    required this.selectedIds,
     required this.onTapHeader,
     required this.onTapItem,
     required this.onLongPressItem,
@@ -500,9 +836,12 @@ class _DayCard extends ConsumerWidget {
   /// 刚从月历跳过来的那一天：短暂描边，让用户认出滚动停在了哪张卡。
   final bool highlighted;
 
-  final VoidCallback onTapHeader;
+  final bool selecting;
+  final Set<String> selectedIds;
+
+  final VoidCallback? onTapHeader;
   final ValueChanged<LedgerItem> onTapItem;
-  final ValueChanged<LedgerItem> onLongPressItem;
+  final ValueChanged<LedgerItem>? onLongPressItem;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -570,6 +909,7 @@ class _DayCard extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
                 child: Row(
                   children: [
+                    _SelectCheckSlot(selecting: selecting, showIcon: false),
                     Text(
                       formatDay(day),
                       style: TextStyle(
@@ -610,8 +950,12 @@ class _DayCard extends ConsumerWidget {
                 item: items[index],
                 grouped: grouped,
                 imagePath: imagePaths[items[index].transaction.id],
+                selecting: selecting,
+                selected: selectedIds.contains(items[index].transaction.id),
                 onTap: () => onTapItem(items[index]),
-                onLongPress: () => onLongPressItem(items[index]),
+                onLongPress: onLongPressItem == null
+                    ? null
+                    : () => onLongPressItem!(items[index]),
               ),
             ],
           ],
@@ -626,6 +970,8 @@ class _LedgerRow extends StatelessWidget {
     required this.item,
     required this.grouped,
     required this.imagePath,
+    required this.selecting,
+    required this.selected,
     required this.onTap,
     required this.onLongPress,
   });
@@ -635,8 +981,10 @@ class _LedgerRow extends StatelessWidget {
 
   /// 这条账单首图的缩略图相对路径，没配图的账单为 null。
   final String? imagePath;
+  final bool selecting;
+  final bool selected;
   final VoidCallback onTap;
-  final VoidCallback onLongPress;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -668,6 +1016,7 @@ class _LedgerRow extends StatelessWidget {
         ),
         child: Row(
           children: [
+            _SelectCheckSlot(selecting: selecting, selected: selected),
             Container(
               width: 40,
               height: 40,

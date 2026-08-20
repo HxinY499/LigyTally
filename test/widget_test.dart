@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -593,6 +593,8 @@ void main() {
 
       expect(find.text('确定'), findsOneWidget);
       expect(find.text('取消'), findsOneWidget);
+      // 长按仍然是单条删除，不能误进批量选择。
+      expect(find.textContaining('已选择'), findsNothing);
 
       // 原来「取消」是裸 TextButton，宽度只跟着文字走，
       // 和撑满的「确定」并排时一长一短。这条锁住两颗按钮等宽。
@@ -608,6 +610,139 @@ void main() {
       expect(cancel.width, confirm.width);
       // 高度也应一致（同一组 vertical padding + 同字号）。
       expect(cancel.height, confirm.height);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+    });
+  });
+
+  group('首页批量选择', () {
+    Future<AppDatabase> seedTwo(WidgetTester tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      final categories = await database.exportCategories();
+      final expense = categories.firstWhere((item) => item.kind == 0);
+      final now = DateTime.now();
+      Future<void> add(String id, int cents) {
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: id,
+            kind: 0,
+            amountCents: cents,
+            categoryId: expense.id,
+            accountingDate: dateKey(now),
+            occurredAt: now.millisecondsSinceEpoch,
+            createdAt: now.millisecondsSinceEpoch,
+            updatedAt: now.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      await add('batch-a', 1200);
+      await add('batch-b', 3400);
+      return database;
+    }
+
+    Future<void> pumpLedger(WidgetTester tester, AppDatabase database) async {
+      final forui = buildForuiTheme();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [databaseProvider.overrideWithValue(database)],
+          child: MaterialApp(
+            theme: buildMaterialTheme(Brightness.light),
+            builder: (context, child) => FTheme(
+              data: forui,
+              child: FToaster(child: child!),
+            ),
+            home: const Scaffold(body: LedgerScreen()),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+    }
+
+    Future<void> settleSelect(WidgetTester tester) async {
+      await tester.pump();
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+    }
+
+    testWidgets('右上角勾选入口进入多选，未选时删除键置灰', (tester) async {
+      final database = await seedTwo(tester);
+      await pumpLedger(tester, database);
+
+      expect(find.byIcon(FLucideIcons.squareCheck), findsOneWidget);
+      await tester.tap(find.byIcon(FLucideIcons.squareCheck));
+      await settleSelect(tester);
+
+      expect(find.text('取消'), findsOneWidget);
+      expect(find.text('全选'), findsOneWidget);
+      expect(find.text('已选择 0 项'), findsOneWidget);
+      expect(find.text('删除'), findsOneWidget);
+
+      final delete = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, '删除'),
+      );
+      expect(delete.onPressed, isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+    });
+
+    testWidgets('点行勾选、全选，删除键随选中数启用', (tester) async {
+      final database = await seedTwo(tester);
+      await pumpLedger(tester, database);
+
+      await tester.tap(find.byIcon(FLucideIcons.squareCheck));
+      await settleSelect(tester);
+
+      // 行左侧空框出现；点其中一行进入已选。
+      expect(find.byIcon(FLucideIcons.square), findsNWidgets(2));
+      await tester.tap(find.byIcon(FLucideIcons.square).first);
+      await settleSelect(tester);
+
+      expect(find.text('已选择 1 项'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '删除'))
+            .onPressed,
+        isNotNull,
+      );
+
+      await tester.tap(find.text('全选'));
+      await settleSelect(tester);
+      expect(find.text('已选择 2 项'), findsOneWidget);
+      expect(find.text('取消全选'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+    });
+
+    testWidgets('批量删除确认后账单从列表消失', (tester) async {
+      final database = await seedTwo(tester);
+      await pumpLedger(tester, database);
+
+      await tester.tap(find.byIcon(FLucideIcons.squareCheck));
+      await settleSelect(tester);
+      await tester.tap(find.text('全选'));
+      await settleSelect(tester);
+      await tester.tap(find.widgetWithText(FilledButton, '删除'));
+      await settleSelect(tester);
+
+      expect(find.text('删除这 2 条账单？删除后不可恢复'), findsOneWidget);
+      await tester.tap(
+        find.descendant(of: find.byType(Dialog), matching: find.text('删除')),
+      );
+      await settleSelect(tester);
+
+      expect(find.text('这个月还没有记录'), findsOneWidget);
+      expect(find.textContaining('已选择'), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(Duration.zero);
