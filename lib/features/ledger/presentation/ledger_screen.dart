@@ -522,9 +522,9 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
               ),
               if (_selecting)
                 Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
+                  left: 16,
+                  right: 16,
+                  bottom: 16 + MediaQuery.paddingOf(context).bottom,
                   child: _BatchDeleteBar(
                     enabled: _selected.isNotEmpty && !_busy,
                     onDelete: _confirmDeleteSelected,
@@ -762,7 +762,7 @@ class _HeaderTextButton extends StatelessWidget {
   }
 }
 
-/// 贴在首页最底下的删除键。未选中时置灰，不抢长按单删那条路径。
+/// 悬浮在页面底部的删除键。没有底板，列表从它背后穿过。
 class _BatchDeleteBar extends StatelessWidget {
   const _BatchDeleteBar({required this.enabled, required this.onDelete});
 
@@ -773,40 +773,23 @@ class _BatchDeleteBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Material(
-      color: colors.surface,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: colors.lineSoft)),
+      elevation: 3,
+      color: enabled ? colors.danger : colors.fill,
+      shadowColor: Colors.black.withValues(alpha: 0.28),
+      borderRadius: context.radii.sheetAll,
+      child: FilledButton(
+        onPressed: enabled ? onDelete : null,
+        style: FilledButton.styleFrom(
+          backgroundColor: colors.danger,
+          foregroundColor: colors.isDark ? colors.canvasBase : Colors.white,
+          disabledBackgroundColor: colors.fill,
+          disabledForegroundColor: colors.inactive,
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          shape: RoundedRectangleBorder(borderRadius: context.radii.sheetAll),
         ),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            10,
-            16,
-            10 + MediaQuery.paddingOf(context).bottom,
-          ),
-          child: SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: enabled ? onDelete : null,
-              style: FilledButton.styleFrom(
-                backgroundColor: colors.danger,
-                foregroundColor: colors.isDark
-                    ? colors.canvasBase
-                    : Colors.white,
-                disabledBackgroundColor: colors.fill,
-                disabledForegroundColor: colors.inactive,
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                shape: RoundedRectangleBorder(
-                  borderRadius: context.radii.sheetAll,
-                ),
-              ),
-              child: const Text(
-                '删除',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
+        child: const Text(
+          '删除',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
       ),
     );
