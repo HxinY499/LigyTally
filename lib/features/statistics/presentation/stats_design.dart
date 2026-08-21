@@ -55,9 +55,7 @@ class StatsTokens {
   /// 否则 34px 见方的底座会被圆角吃成一颗圆点。
   double get radiusChip => _radius.chip;
 
-  /// 胶囊圆角：分段选择器滑块、徽章。
-  ///
-  /// 不跟着圆角档位走，见 [AppRadius] 的类文档。
+  /// 胶囊圆角：徽章、环比标签。不跟着圆角档位走，见 [AppRadius] 的类文档。
   static const radiusPill = AppRadius.pill;
 
   // ---------------------------------------------------------------- 间距

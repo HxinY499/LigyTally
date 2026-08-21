@@ -43,6 +43,13 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // 过滤必须写在 defaultConfig：只写在 release 时，插件 AAR 里的
+        // v7a / x86_64 so 仍会打进包。系统会以为这台 32 位机可装，一点就缺引擎。
+        if (isReleaseTask) {
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
+        }
     }
 
     signingConfigs {
@@ -60,6 +67,19 @@ android {
         release {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
+
+    packaging {
+        jniLibs {
+            if (isReleaseTask) {
+                excludes += listOf(
+                    "lib/armeabi-v7a/**",
+                    "lib/armeabi/**",
+                    "lib/x86/**",
+                    "lib/x86_64/**",
+                )
             }
         }
     }

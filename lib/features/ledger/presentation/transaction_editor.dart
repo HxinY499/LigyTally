@@ -1578,12 +1578,14 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-/// 支出/收入胶囊开关：滑块式白底选中块 + 收支语义色文字。
+/// 支出/收入开关：滑块式白底选中块 + 收支语义色文字。
 ///
 /// 刻意**不撑满一行**：它只是个二选一的类型开关，信息量远小于金额与分类网格。
 /// 之前满宽 + 10px 竖向内距，视觉重量压过了真正的主角（金额），一进页面眼睛
-/// 先被它抓住。改成 [_kHeight] 高、内容宽度的小胶囊，层级才回到
+/// 先被它抓住。改成 [_kHeight] 高、内容宽度的分段器，层级才回到
 /// 「金额 > 分类 > 类型开关」。
+///
+/// 圆角走 [AppRadius.block]，和统计页年月日轨道同一档，跟着设置里的圆角走。
 ///
 /// 宽度由 [_kSegmentWidth] 定死、不做居中或拉伸 —— 摆在哪由调用方决定
 /// （现在是「分类」标题行的右端）。自带 [Center] 会在 Row 里撑满剩余宽度。
@@ -1606,13 +1608,14 @@ class _KindSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final selectedColor = kind == 0 ? colors.expense : colors.income;
+    final trackRadius = context.radii.block;
     return SizedBox(
       height: _kHeight,
       width: _kSegmentWidth * 2 + _kPadding * 2,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: colors.line.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(_kHeight / 2),
+          borderRadius: BorderRadius.circular(trackRadius),
         ),
         child: Stack(
           children: [
@@ -1633,7 +1636,7 @@ class _KindSwitch extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: colors.surface,
                     borderRadius: BorderRadius.circular(
-                      (_kHeight - _kPadding * 2) / 2,
+                      (trackRadius - _kPadding).clamp(0.0, trackRadius),
                     ),
                     boxShadow: [
                       BoxShadow(

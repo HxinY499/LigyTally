@@ -683,6 +683,11 @@ void main() {
 
       expect(find.text('取消'), findsOneWidget);
       expect(find.text('全选'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('全选')).dx,
+        lessThan(tester.getTopLeft(find.text('取消')).dx),
+        reason: '多选时全选在左、取消在右',
+      );
       expect(find.text('已选择 0 项'), findsOneWidget);
       expect(find.text('删除'), findsOneWidget);
 

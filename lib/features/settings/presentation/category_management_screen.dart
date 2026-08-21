@@ -970,9 +970,9 @@ class _KindBarDelegate extends SliverPersistentHeaderDelegate {
       oldDelegate.kind != kind;
 }
 
-/// 支出/收入胶囊开关：灰底轨道 + 一块滑动的白色滑块。
+/// 支出/收入开关：灰底轨道 + 一块滑动的白色滑块。
 ///
-/// 与记账页 `_KindSwitch` 同一形态（同尺寸、同缓动、同语义色），
+/// 与记账页 `_KindSwitch` 同一形态（同尺寸、同缓动、同语义色、同圆角档），
 /// 这样「切换收支」在全应用是同一个动作，肌肉记忆能迁移。
 /// 旧版这里用的是两颗 44px 高的实心分段按钮，视觉重量压过了下面的分类卡片。
 class _KindSwitch extends StatelessWidget {
@@ -989,13 +989,14 @@ class _KindSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final selectedColor = kind == 0 ? colors.expense : colors.income;
+    final trackRadius = context.radii.block;
     return SizedBox(
       height: _kHeight,
       width: _kSegmentWidth * 2 + _kPadding * 2,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: colors.line.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(_kHeight / 2),
+          borderRadius: BorderRadius.circular(trackRadius),
         ),
         child: Stack(
           children: [
@@ -1014,7 +1015,7 @@ class _KindSwitch extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: colors.surface,
                     borderRadius: BorderRadius.circular(
-                      (_kHeight - _kPadding * 2) / 2,
+                      (trackRadius - _kPadding).clamp(0.0, trackRadius),
                     ),
                     boxShadow: [
                       BoxShadow(

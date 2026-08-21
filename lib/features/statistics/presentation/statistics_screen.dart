@@ -377,7 +377,9 @@ class _OverviewSlot extends ConsumerWidget {
   }
 }
 
-/// 支出 / 收入切换：小号胶囊分段器，放在卡片标题右侧。
+/// 支出 / 收入切换：小号分段器，放在卡片标题右侧。
+///
+/// 圆角走 [StatsTokens.radiusInner]，和上面的年月日轨道同一档。
 ///
 /// 单独实现而不复用 [AppSegmentedControl]：后者是 44px 高的表单级按钮，
 /// 放进卡片标题行会把标题挤下去。这里需要 28px 的紧凑版。
@@ -395,7 +397,7 @@ class _KindToggle extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: stats.fillMuted,
-        borderRadius: BorderRadius.circular(StatsTokens.radiusPill),
+        borderRadius: BorderRadius.circular(stats.radiusInner),
       ),
       child: Row(
         children: [
@@ -439,7 +441,9 @@ class _KindChip extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: active ? stats.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(StatsTokens.radiusPill),
+          borderRadius: BorderRadius.circular(
+            (stats.radiusInner - 3).clamp(0.0, stats.radiusInner),
+          ),
           boxShadow: active
               ? const [
                   BoxShadow(

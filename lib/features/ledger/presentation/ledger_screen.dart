@@ -681,7 +681,7 @@ class _SelectCheckSlot extends StatelessWidget {
   }
 }
 
-/// 多选态页头：左取消、中已选数量、右全选。
+/// 多选态页头：左全选、中已选数量、右取消。
 ///
 /// 数量放 Stack 正中，不跟两侧文字抢宽度——「全选」变成「取消全选」时标题不能漂。
 class _SelectModeBar extends StatelessWidget {
@@ -719,12 +719,12 @@ class _SelectModeBar extends StatelessWidget {
           ),
           Row(
             children: [
-              _HeaderTextButton(label: '取消', onTap: busy ? null : onCancel),
-              const Spacer(),
               _HeaderTextButton(
                 label: allSelected ? '取消全选' : '全选',
                 onTap: busy ? null : onToggleAll,
               ),
+              const Spacer(),
+              _HeaderTextButton(label: '取消', onTap: busy ? null : onCancel),
             ],
           ),
         ],

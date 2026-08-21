@@ -41,7 +41,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(find.text('导出账单'), findsOneWidget);
-    expect(find.text('不含图片，可用表格软件打开'), findsOneWidget);
+    expect(find.text('不含图片，可用表格软件打开'), findsNothing);
     expect(find.text('同时导出图片'), findsOneWidget);
 
     await tester.tap(find.text('本月'));
@@ -62,7 +62,6 @@ void main() {
 
     await tester.tap(find.text('同时导出图片'));
     await tester.pump();
-    expect(find.text('导出 Excel，图片插在每笔右侧'), findsOneWidget);
     expect(find.text('导出账单'), findsOneWidget, reason: '勾选不能把浮层关掉');
 
     await tester.tap(find.text('全部'));

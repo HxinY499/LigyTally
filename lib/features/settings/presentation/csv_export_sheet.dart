@@ -81,11 +81,6 @@ class _CsvExportSheetState extends State<_CsvExportSheet> {
                 color: colors.ink,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              _includeImages ? '导出 Excel，图片插在每笔右侧' : '不含图片，可用表格软件打开',
-              style: TextStyle(fontSize: 12, color: colors.muted),
-            ),
             const SizedBox(height: 8),
             _ImageToggle(
               value: _includeImages,

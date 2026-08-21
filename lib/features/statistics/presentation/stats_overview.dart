@@ -32,7 +32,7 @@ class StatsPeriodSelector extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: stats.fillMuted,
-        borderRadius: BorderRadius.circular(StatsTokens.radiusPill),
+        borderRadius: BorderRadius.circular(stats.radiusInner),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -51,7 +51,9 @@ class StatsPeriodSelector extends StatelessWidget {
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: stats.surface,
-                    borderRadius: BorderRadius.circular(StatsTokens.radiusPill),
+                    borderRadius: BorderRadius.circular(
+                      (stats.radiusInner - 4).clamp(0.0, stats.radiusInner),
+                    ),
                     boxShadow: const [
                       BoxShadow(
                         color: Color(0x14101828),

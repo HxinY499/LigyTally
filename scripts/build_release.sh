@@ -57,7 +57,8 @@ export PUB_CACHE="$BUILD_DIR/.pub-cache"
 flutter pub get
 flutter build apk --release \
   --obfuscate \
-  --split-debug-info="$SYMBOLS_DIR"
+  --split-debug-info="$SYMBOLS_DIR" \
+  --target-platform android-arm64
 
 DIST_DIR="$ROOT_DIR/dist"
 APK_PATH="$DIST_DIR/LigyTally-$VERSION_NAME.apk"
