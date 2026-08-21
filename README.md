@@ -4,11 +4,10 @@ Android-first 的本地轻量记账应用，使用 Flutter、Riverpod、Drift �
 
 ## 下载 Android 安装包
 
-- [GitHub Releases](https://github.com/HxinY499/LigyTally-Releases/releases/latest)
-- [直接下载 Ligy Tally 1.0.0 APK](https://github.com/HxinY499/LigyTally-Releases/releases/download/v1.0.0/LigyTally-1.0.0.apk)
+- [当前版本 APK](https://ligy-tally-releases.oss-cn-hangzhou.aliyuncs.com/LigyTally-latest.apk)
 
+已安装用户打开应用即可检查更新。覆盖安装新版本会保留数据；卸载应用会删除本地账单和图片。
 在安卓系统中允许浏览器或文件管理器安装未知应用后，打开 APK 即可安装。
-覆盖安装新版本会保留数据；卸载应用会删除本地账单和图片。
 
 ## 当前能力
 

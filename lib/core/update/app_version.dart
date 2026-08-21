@@ -1,7 +1,7 @@
-/// 语义化版本号，用于比较本地版本与 GitHub Release 上的版本。
+/// 语义化版本号，用于比较本地版本与线上 latest.json 的 tag_name。
 ///
 /// 只处理 `major.minor.patch` 三段式，这也是 pubspec.yaml 里的写法。
-/// 解析时容忍前缀 `v`（GitHub tag 惯例是 `v1.0.1`）以及
+/// 解析时容忍前缀 `v`（清单里写成 `v1.0.1`）以及
 /// `1.0.1+2` 这种带 build number 的形式（`+` 之后的部分不参与比较，
 /// 因为 versionCode 只对Android 覆盖安装有意义，不代表版本新旧）。
 class AppVersion implements Comparable<AppVersion> {

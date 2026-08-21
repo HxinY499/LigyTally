@@ -148,8 +148,8 @@ class UpdateController extends StateNotifier<UpdateState> {
   }
 
   /// 下载并拉起安装。
-  Future<void> downloadAndInstall() async {
-    final info = state.info;
+  Future<void> downloadAndInstall([UpdateInfo? explicit]) async {
+    final info = explicit ?? state.info;
     if (info == null || state.isBusy) return;
 
     // 先确认有「安装未知应用」权限，否则下载完也装不上，
@@ -167,6 +167,7 @@ class UpdateController extends StateNotifier<UpdateState> {
     _cancelRequested = false;
     state = state.copyWith(
       phase: UpdatePhase.downloading,
+      info: info,
       progress: DownloadProgress(
         received: 0,
         total: info.apkSize,

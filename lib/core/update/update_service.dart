@@ -25,7 +25,7 @@ class UpdateInfo {
     required this.apkUrl,
     required this.apkName,
     required this.apkSize,
-    this.sha256Url,
+    this.sha256,
     this.releaseNotes,
   });
 
@@ -35,8 +35,8 @@ class UpdateInfo {
   final String apkName;
   final int apkSize;
 
-  /// Release 里附带的 `.sha256` 校验文件地址，用于下载后验完整性。
-  final String? sha256Url;
+  /// latest.json 里的 SHA-256 十六进制摘要，下载后用来验完整性。
+  final String? sha256;
   final String? releaseNotes;
 }
 
@@ -70,11 +70,57 @@ class UpdateCancelledException implements Exception {
   String toString() => '下载已取消';
 }
 
+/// OSS 上固定的更新清单地址。应用只硬编码这一条，APK 路径以清单为准。
+const kUpdateManifestUrl =
+    'https://ligy-tally-releases.oss-cn-hangzhou.aliyuncs.com/latest.json';
+
+/// 解析 OSS 上的 `latest.json`。字段不对或校验值格式错误时返回 null，
+/// 调用方据此静默跳过，不打扰记账。
+UpdateInfo? parseUpdateManifest(String source) {
+  Object? decoded;
+  try {
+    decoded = jsonDecode(source);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! Map) return null;
+  final body = Map<String, dynamic>.from(decoded);
+
+  final version = AppVersion.tryParse(body['tag_name'] as String?);
+  if (version == null) return null;
+
+  final apkUrl = body['apk_url'] as String?;
+  if (apkUrl == null || apkUrl.isEmpty) return null;
+  final uri = Uri.tryParse(apkUrl);
+  if (uri == null || uri.scheme != 'https') return null;
+
+  final apkName = body['apk_name'] as String? ?? 'LigyTally-$version.apk';
+  if (!apkName.endsWith('.apk')) return null;
+
+  String? sha256;
+  final rawSha = body['sha256'] as String?;
+  if (rawSha != null && rawSha.trim().isNotEmpty) {
+    final hex = rawSha.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(hex)) return null;
+    sha256 = hex;
+  }
+
+  return UpdateInfo(
+    version: version,
+    tagName: body['tag_name'] as String? ?? 'v$version',
+    apkUrl: apkUrl,
+    apkName: apkName,
+    apkSize: (body['apk_size'] as num?)?.toInt() ?? 0,
+    sha256: sha256,
+    releaseNotes: body['body'] as String?,
+  );
+}
+
 /// 应用内更新服务。
 ///
-/// 更新源是公开仓库 HxinY499/LigyTally-Releases 的 latest release。
+/// 更新源是阿里云 OSS 桶 `ligy-tally-releases` 上的 [kUpdateManifestUrl]。
 /// 设计原则：
-/// - 检查失败一律静默（无网络、限流、格式变化都不该打扰记账）
+/// - 检查失败一律静默（无网络、格式变化都不该打扰记账）
 /// - 下载完成后必须校验 SHA-256，避免装上损坏的包
 /// - 安装动作交给系统安装器，本应用不静默安装
 class UpdateService {
@@ -83,9 +129,6 @@ class UpdateService {
   final http.Client _client;
 
   static const _channel = MethodChannel('com.ligy.ligy_tally/app_update');
-
-  static const _latestReleaseApi =
-      'https://api.github.com/repos/HxinY499/LigyTally-Releases/releases/latest';
 
   /// 记录用户选择「忽略」的版本号，之后启动时不再为该版本弹窗。
   static const _prefsIgnoredVersion = 'update.ignored_version';
@@ -141,52 +184,11 @@ class UpdateService {
 
   Future<UpdateInfo?> _fetchLatestRelease() async {
     final response = await _client
-        .get(
-          Uri.parse(_latestReleaseApi),
-          headers: const {
-            'Accept': 'application/vnd.github+json',
-            'X-GitHub-Api-Version': '2022-11-28',
-          },
-        )
+        .get(Uri.parse(kUpdateManifestUrl))
         .timeout(const Duration(seconds: 12));
 
     if (response.statusCode != 200) return null;
-
-    final body = jsonDecode(utf8.decode(response.bodyBytes));
-    if (body is! Map<String, Object?>) return null;
-
-    final version = AppVersion.tryParse(body['tag_name'] as String?);
-    if (version == null) return null;
-
-    final assets = body['assets'];
-    if (assets is! List) return null;
-
-    Map<String, Object?>? apkAsset;
-    String? sha256Url;
-    for (final asset in assets) {
-      if (asset is! Map<String, Object?>) continue;
-      final name = asset['name'] as String?;
-      if (name == null) continue;
-      if (name.endsWith('.apk')) {
-        apkAsset = asset;
-      } else if (name.endsWith('.apk.sha256')) {
-        sha256Url = asset['browser_download_url'] as String?;
-      }
-    }
-    if (apkAsset == null) return null;
-
-    final apkUrl = apkAsset['browser_download_url'] as String?;
-    if (apkUrl == null) return null;
-
-    return UpdateInfo(
-      version: version,
-      tagName: body['tag_name'] as String? ?? version.toString(),
-      apkUrl: apkUrl,
-      apkName: apkAsset['name'] as String? ?? 'LigyTally-$version.apk',
-      apkSize: (apkAsset['size'] as num?)?.toInt() ?? 0,
-      sha256Url: sha256Url,
-      releaseNotes: body['body'] as String?,
-    );
+    return parseUpdateManifest(utf8.decode(response.bodyBytes));
   }
 
   /// 记住用户忽略的版本。只影响启动自动提示，不影响手动检查。
@@ -210,9 +212,9 @@ class UpdateService {
     // 避免中断留下的半包被当成可安装的包。
     final part = File('${target.path}.part');
 
-    // 已存在且校验通过的包直接复用，省一次 57MB 下载
+    // 已存在且校验通过的包直接复用，省一次下载
     if (await target.exists()) {
-      final expected = await _fetchExpectedSha256(info);
+      final expected = _expectedSha256(info);
       if (expected == null || await _verify(target, expected)) {
         onProgress(
           DownloadProgress(
@@ -268,7 +270,7 @@ class UpdateService {
         stage: DownloadStage.verifying,
       ),
     );
-    final expected = await _fetchExpectedSha256(info);
+    final expected = _expectedSha256(info);
     if (expected != null && !await _verify(part, expected)) {
       await part.delete();
       throw const FileSystemException('安装包校验失败，可能下载已损坏');
@@ -287,25 +289,8 @@ class UpdateService {
     return target;
   }
 
-  /// 读取 Release 附带的 `.sha256` 文件内容。
-  /// 拿不到就返回 null——此时跳过校验而不是拒绝安装，
-  /// 因为老版本 Release 可能没上传校验文件。
-  Future<String?> _fetchExpectedSha256(UpdateInfo info) async {
-    final url = info.sha256Url;
-    if (url == null) return null;
-    try {
-      final response = await _client
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) return null;
-      // 文件格式是 `<hash>  <filename>`
-      final first = response.body.trim().split(RegExp(r'\s+')).firstOrNull;
-      if (first == null || first.length != 64) return null;
-      return first.toLowerCase();
-    } catch (_) {
-      return null;
-    }
-  }
+  /// 清单里带了合法 SHA-256 就必须用；没有则跳过校验而不是拒绝安装。
+  String? _expectedSha256(UpdateInfo info) => info.sha256;
 
   Future<bool> _verify(File file, String expectedSha256) async {
     final digest = await file.openRead().transform(sha256).first;

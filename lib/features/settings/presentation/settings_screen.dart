@@ -12,6 +12,7 @@ import '../../../core/preferences/quick_tally_mode.dart';
 import '../../../core/storage/storage_usage.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/update/update_controller.dart';
+import '../../../core/update/update_progress.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
@@ -395,44 +396,61 @@ class _AboutCardState extends ConsumerState<_AboutCard> {
   @override
   Widget build(BuildContext context) {
     final updateState = ref.watch(updateControllerProvider);
-    final pending = updateState.phase == UpdatePhase.available
-        ? updateState.info
-        : null;
+    final updateInfo = updateState.info;
+    final offeringUpdate =
+        updateInfo != null &&
+        updateState.phase != UpdatePhase.idle &&
+        updateState.phase != UpdatePhase.failed;
     final busy = _checking || updateState.isBusy;
+    final downloading = updateState.isBusy;
 
     // 下载中把进度写进副标题，让这一行自己能交代状态
-    final fraction = updateState.progress?.fraction;
     final String? busySubtitle;
-    if (updateState.phase == UpdatePhase.verifying) {
-      busySubtitle = '正在校验安装包…';
-    } else if (updateState.phase == UpdatePhase.downloading) {
-      busySubtitle = fraction == null
-          ? '正在下载…'
-          : '正在下载 ${(fraction * 100).toStringAsFixed(0)}%';
+    if (downloading) {
+      busySubtitle = updateDownloadLabel(updateState);
     } else if (_checking) {
       busySubtitle = '正在检查…';
-    } else if (pending != null && pending.apkSize > 0) {
+    } else if (offeringUpdate && updateInfo.apkSize > 0) {
       busySubtitle =
-          '安装包 ${(pending.apkSize / 1024 / 1024).toStringAsFixed(0)}MB';
+          '安装包 ${(updateInfo.apkSize / 1024 / 1024).toStringAsFixed(0)}MB';
     } else {
       busySubtitle = null;
     }
 
+    final Widget? trailing;
+    if (downloading) {
+      trailing = SizedBox(
+        width: 48,
+        child: UpdateDownloadTrack(
+          fraction: updateState.phase == UpdatePhase.verifying
+              ? null
+              : updateState.progress?.fraction,
+          height: 6,
+        ),
+      );
+    } else if (_checking) {
+      trailing = const RowSpinner();
+    } else {
+      trailing = null;
+    }
+
     return SettingsCard(
       children: [
-        _BrandRow(version: _version, hasUpdate: pending != null),
+        _BrandRow(version: _version, hasUpdate: offeringUpdate),
         SettingsItem(
-          icon: pending != null
+          icon: offeringUpdate
               ? FLucideIcons.cloudDownload
               : FLucideIcons.refreshCw,
-          title: pending != null ? '更新到 v${pending.version}' : '检查更新',
+          title: offeringUpdate
+              ? '更新到 v${updateInfo.version}'
+              : '检查更新',
           subtitle: busySubtitle,
-          accent: pending != null,
-          trailing: busy ? const RowSpinner() : null,
+          accent: offeringUpdate,
+          trailing: trailing,
           showChevron: !busy,
           onTap: busy
               ? null
-              : pending != null
+              : offeringUpdate
               ? () => ref
                     .read(updateControllerProvider.notifier)
                     .downloadAndInstall()
