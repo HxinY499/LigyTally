@@ -37,9 +37,9 @@ const _loaded = AppearanceConfig(
     blur: 8,
     stamp: 1755000000000,
   ),
-  transactionImageStyle: TransactionImageStyle.polaroid,
+  transactionImageStyle: TransactionImageStyle.backdrop,
   backdropBlur: 12,
-  categoryPickerLayout: CategoryPickerLayout.grid,
+  categoryPickerLayout: CategoryPickerLayout.list,
 );
 
 void main() {

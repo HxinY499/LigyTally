@@ -9,6 +9,7 @@ import 'package:ligy_tally/core/theme/app_radius.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/core/theme/hero_skin.dart';
 import 'package:ligy_tally/features/settings/presentation/appearance_screen.dart';
+import 'package:ligy_tally/features/settings/presentation/settings_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 外观二级页测试。
@@ -109,13 +110,55 @@ void main() {
     );
   });
 
+  testWidgets('分类选择样式的分段轨道跟着圆角档走，不是永远胶囊', (tester) async {
+    await pumpPage(tester);
+
+    double layoutTrackRadius() {
+      final box = tester
+          .widgetList<Container>(
+            find.descendant(
+              of: find.descendant(
+                of: find.ancestor(
+                  of: find.text('分类选择样式'),
+                  matching: find.byType(SettingsItem),
+                ),
+                matching: find.byType(SettingsToggleTrack),
+              ),
+              matching: find.byType(Container),
+            ),
+          )
+          .first;
+      return ((box.decoration! as BoxDecoration).borderRadius! as BorderRadius)
+          .topLeft
+          .x;
+    }
+
+    expect(layoutTrackRadius(), AppRadius.blockBase);
+
+    await tester.tap(find.text(AppCornerStyle.sharp.label));
+    await tester.pumpAndSettle();
+    expect(layoutTrackRadius(), 0);
+  });
+
   testWidgets('背景模糊只在背板模式下出现，贴纸模式下整行收起', (tester) async {
     await pumpPage(tester);
 
-    // 默认是背板模式。
+    // 默认是拍立得，背景模糊跟背板走，整行不在。
+    expect(find.text('背景模糊'), findsNothing);
+
+    Finder imageStyleIcon(IconData icon) => find.descendant(
+      of: find.ancestor(
+        of: find.text('账单图片'),
+        matching: find.byType(SettingsItem),
+      ),
+      matching: find.byIcon(icon),
+    );
+
+    await tester.tap(imageStyleIcon(FLucideIcons.wallpaper));
+    await tester.pumpAndSettle();
     expect(find.text('背景模糊'), findsOneWidget);
 
-    await tester.tap(find.byIcon(FLucideIcons.sticker));
+    await tester.tap(imageStyleIcon(FLucideIcons.sticker));
     await tester.pumpAndSettle();
     expect(find.text('背景模糊'), findsNothing);
   });

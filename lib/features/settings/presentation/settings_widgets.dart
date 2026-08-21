@@ -224,19 +224,18 @@ class RowSpinner extends StatelessWidget {
   }
 }
 
-/// 设置行右侧胶囊切换器的几何，被各个二 / 三态切换器和 [SettingsToggleIcon] 共用。
+/// 设置行右侧分段切换器的几何，被各个二 / 三态切换器和 [SettingsToggleIcon] 共用。
 ///
-/// 圆角按「高度一半」现算而不是各写一个数字：轨道和滑块必须同心，
-/// 之前轨道 11、滑块 8 是两个拍脑袋的值，滑块四角贴不上轨道内壁。
-///
-/// 这几个切换器是**胶囊**，不跟着全局圆角档位走——理由见 `AppRadius` 类文档。
+/// 尺寸钉死；圆角走 [AppRadius.block]，和统计页年月日、记账页收支同一档。
+/// 真正的胶囊（[AppSwitch]）不在这里。
 const double kTogglePadding = 3;
 const double kToggleIconWidth = 38;
 const double kToggleIconHeight = 28;
-const double kToggleTrackRadius = (kToggleIconHeight + kTogglePadding * 2) / 2;
-const double kToggleThumbRadius = kToggleIconHeight / 2;
 
-/// 胶囊切换器的轨道：灰底 + 内嵌若干枚 [SettingsToggleIcon]。
+/// 分段切换器的轨道：灰底 + 一块滑动的白底滑块 + 内嵌若干枚 [SettingsToggleIcon]。
+///
+/// 滑块用位移，不用每枚自己淡入淡出背景——`Color.lerp` 到
+/// [Colors.transparent]（透明黑）会在取消选中的那枚上闪一层灰。
 class SettingsToggleTrack extends StatelessWidget {
   const SettingsToggleTrack({super.key, required this.children});
 
@@ -244,18 +243,54 @@ class SettingsToggleTrack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
+    final trackRadius = context.radii.block;
+    final selectedIndex = children.indexWhere(
+      (child) => child is SettingsToggleIcon && child.selected,
+    );
+    final index = selectedIndex < 0 ? 0 : selectedIndex;
     return Container(
       padding: const EdgeInsets.all(kTogglePadding),
       decoration: BoxDecoration(
-        color: context.colors.fill,
-        borderRadius: BorderRadius.circular(kToggleTrackRadius),
+        color: colors.fill,
+        borderRadius: BorderRadius.circular(trackRadius),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: children),
+      child: Stack(
+        children: [
+          AnimatedPositioned(
+            duration: context.motion(const Duration(milliseconds: 160)),
+            curve: Curves.easeOutCubic,
+            left: index * kToggleIconWidth,
+            top: 0,
+            width: kToggleIconWidth,
+            height: kToggleIconHeight,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.surface,
+                borderRadius: BorderRadius.circular(
+                  (trackRadius - kTogglePadding).clamp(0.0, trackRadius),
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14000000),
+                    offset: Offset(0, 1),
+                    blurRadius: 3,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: children,
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// 胶囊切换器里的单枚图标按钮。
+/// 分段切换器里的单枚图标按钮。白底由轨道上的滑块提供，这里只负责图标和点击。
 class SettingsToggleIcon extends StatelessWidget {
   const SettingsToggleIcon({
     super.key,
@@ -274,28 +309,15 @@ class SettingsToggleIcon extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: context.motion(const Duration(milliseconds: 160)),
+      child: SizedBox(
         width: kToggleIconWidth,
         height: kToggleIconHeight,
-        decoration: BoxDecoration(
-          color: selected ? colors.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(kToggleThumbRadius),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x14000000),
-                    offset: Offset(0, 1),
-                    blurRadius: 3,
-                  ),
-                ]
-              : null,
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          icon,
-          size: 16,
-          color: selected ? colors.primary : colors.inactive,
+        child: Center(
+          child: Icon(
+            icon,
+            size: 16,
+            color: selected ? colors.primary : colors.inactive,
+          ),
         ),
       ),
     );

@@ -392,24 +392,59 @@ class _KindToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stats = StatsTokens.of(context);
+    final trackRadius = stats.radiusInner;
     return Container(
       height: 28,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: stats.fillMuted,
-        borderRadius: BorderRadius.circular(stats.radiusInner),
+        borderRadius: BorderRadius.circular(trackRadius),
       ),
-      child: Row(
+      child: Stack(
         children: [
-          _KindChip(
-            label: '支出',
-            active: selected == 0,
-            onTap: () => onChanged(0),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedAlign(
+                duration: StatsTokens.durTap,
+                curve: StatsTokens.curveEnter,
+                alignment: selected == 0
+                    ? Alignment.centerLeft
+                    : Alignment.centerRight,
+                child: FractionallySizedBox(
+                  widthFactor: 0.5,
+                  heightFactor: 1,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: stats.surface,
+                      borderRadius: BorderRadius.circular(
+                        (trackRadius - 3).clamp(0.0, trackRadius),
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x14101828),
+                          offset: Offset(0, 1),
+                          blurRadius: 3,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
-          _KindChip(
-            label: '收入',
-            active: selected == 1,
-            onTap: () => onChanged(1),
+          Row(
+            children: [
+              _KindChip(
+                label: '支出',
+                active: selected == 0,
+                onTap: () => onChanged(0),
+              ),
+              _KindChip(
+                label: '收入',
+                active: selected == 1,
+                onTap: () => onChanged(1),
+              ),
+            ],
           ),
         ],
       ),
@@ -434,32 +469,18 @@ class _KindChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: StatsTokens.durTap,
-        curve: StatsTokens.curveEnter,
+      child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: active ? stats.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(
-            (stats.radiusInner - 3).clamp(0.0, stats.radiusInner),
-          ),
-          boxShadow: active
-              ? const [
-                  BoxShadow(
-                    color: Color(0x14101828),
-                    offset: Offset(0, 1),
-                    blurRadius: 3,
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-            color: active ? stats.primary : stats.textMuted,
+        child: Center(
+          child: AnimatedDefaultTextStyle(
+            duration: StatsTokens.durTap,
+            curve: StatsTokens.curveEnter,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              color: active ? stats.primary : stats.textMuted,
+            ),
+            child: Text(label),
           ),
         ),
       ),

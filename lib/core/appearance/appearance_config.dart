@@ -49,7 +49,7 @@ enum TransactionImageStyle {
   backdrop,
   polaroid;
 
-  static const fallback = TransactionImageStyle.backdrop;
+  static const fallback = TransactionImageStyle.polaroid;
 
   static TransactionImageStyle decode(String? name) {
     for (final style in values) {
@@ -67,7 +67,7 @@ enum CategoryPickerLayout {
   list,
   grid;
 
-  static const fallback = CategoryPickerLayout.list;
+  static const fallback = CategoryPickerLayout.grid;
 
   static CategoryPickerLayout decode(String? name) {
     for (final layout in values) {
