@@ -350,6 +350,15 @@ const kWallpaperQuality = 82;
 /// 不需要在恢复流程里单独搬一次。
 const kWallpaperRelativePath = '$kMediaDirName/wallpaper.jpg';
 
+/// 单笔账单最多能挂几张图。
+///
+/// 收口成一个常量：选图上限、面板里「添加」格子的显隐、确认按钮上的计数、
+/// 导出表格的图片列数，四处必须同时变。之前各写各的数字，改一处漏一处
+/// 就会出现「加得进去但面板显示 4/3」这种状态。
+///
+/// 记账页贴纸的倾角表长度必须与它一致。
+const int kMaxTransactionImages = 5;
+
 /// 账单图片与分类图标的根目录名（相对 support 目录）。
 const kMediaDirName = 'media';
 

@@ -35,7 +35,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  bool _busy = false;
+  _SettingsBusy? _busy;
   bool _locationBusy = false;
 
   @override
@@ -50,11 +50,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       showAppPasswordDialog(context, title: title);
 
   Future<void> _exportCsv() async {
-    final preset = await showCsvExportSheet(context);
-    if (preset == null || !mounted) return;
+    final choice = await showCsvExportSheet(context);
+    if (choice == null || !mounted) return;
     final now = DateTime.now();
     final LedgerDateRange? range;
-    switch (preset) {
+    switch (choice.preset) {
       case CsvExportPreset.month:
         range = monthRange(now);
       case CsvExportPreset.year:
@@ -69,11 +69,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (picked == null || !mounted) return;
         range = picked;
     }
-    setState(() => _busy = true);
+    setState(() => _busy = _SettingsBusy.csv);
     try {
       final count = await ref
           .read(csvExportServiceProvider)
-          .exportAndShare(range);
+          .exportAndShare(range, includeImages: choice.includeImages);
       if (!mounted) return;
       if (count == 0) {
         _showMessage('没有账单可导出');
@@ -81,14 +81,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } catch (error) {
       if (mounted) _showMessage('导出失败：$error', level: AppToastLevel.error);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busy = null);
     }
   }
 
   Future<void> _exportBackup() async {
     final password = await _askPassword('导出完整备份');
     if (password == null || !mounted) return;
-    setState(() => _busy = true);
+    setState(() => _busy = _SettingsBusy.backup);
     try {
       await ref
           .read(backupServiceProvider)
@@ -101,7 +101,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } catch (error) {
       if (mounted) _showMessage('备份失败：$error', level: AppToastLevel.error);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busy = null);
     }
   }
 
@@ -111,7 +111,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (file == null || !mounted) return;
     final password = await _askPassword('打开备份');
     if (password == null || !mounted) return;
-    setState(() => _busy = true);
+    setState(() => _busy = _SettingsBusy.restore);
     try {
       final preview = await service.inspect(file, password: password);
       if (!mounted) return;
@@ -143,7 +143,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _showMessage('恢复失败，请检查文件和密码：$error', level: AppToastLevel.error);
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busy = null);
     }
   }
 
@@ -316,21 +316,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   SettingsItem(
                     icon: FLucideIcons.fileSpreadsheet,
                     title: '导出 CSV',
-                    showChevron: !_busy,
-                    onTap: _busy ? null : _exportCsv,
+                    showChevron: _busy == null,
+                    trailing: _busy == _SettingsBusy.csv
+                        ? const RowSpinner()
+                        : null,
+                    onTap: _busy != null ? null : _exportCsv,
                   ),
                   SettingsItem(
                     icon: FLucideIcons.upload,
                     title: '导出完整备份',
-                    showChevron: !_busy,
-                    onTap: _busy ? null : _exportBackup,
+                    showChevron: _busy == null,
+                    trailing: _busy == _SettingsBusy.backup
+                        ? const RowSpinner()
+                        : null,
+                    onTap: _busy != null ? null : _exportBackup,
                   ),
                   SettingsItem(
                     icon: FLucideIcons.download,
                     title: '导入完整备份',
-                    showChevron: !_busy,
-                    trailing: _busy ? const RowSpinner() : null,
-                    onTap: _busy ? null : _restoreBackup,
+                    showChevron: _busy == null,
+                    trailing: _busy == _SettingsBusy.restore
+                        ? const RowSpinner()
+                        : null,
+                    onTap: _busy != null ? null : _restoreBackup,
                   ),
                   _storageItem(),
                 ],
@@ -532,3 +540,6 @@ class _Badge extends StatelessWidget {
     );
   }
 }
+
+/// 设置页同一时刻只跑一种数据操作，转圈落在被点的那一行。
+enum _SettingsBusy { csv, backup, restore }

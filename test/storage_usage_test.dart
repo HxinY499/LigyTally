@@ -43,6 +43,7 @@ void main() {
       expect(isAppCacheFileName('LigyTally-1.4.21.apk.part'), isTrue);
       expect(isAppCacheFileName('ligy-tally-20260815-101500.ligytally'), isTrue);
       expect(isAppCacheFileName('ligy-tally-all.csv'), isTrue);
+      expect(isAppCacheFileName('ligy-tally-all.xlsx'), isTrue);
       expect(isAppCacheFileName('ligy-categories-20260815-101500.json'), isTrue);
     });
 
@@ -388,7 +389,7 @@ void main() {
       expect(find.text('数据库'), findsOneWidget);
       // 「缓存」在图例里也有一处，用这一行独有的副标题定位。
       expect(
-        find.text('更新安装包、导出后留下的备份与 CSV 副本'),
+        find.text('更新安装包、导出后留下的备份、CSV 和表格副本'),
         findsOneWidget,
       );
       expect(find.text('3 个文件不属于任何账单'), findsOneWidget);

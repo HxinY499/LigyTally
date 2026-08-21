@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:file_selector/file_selector.dart';
@@ -65,7 +67,6 @@ class BackupService {
     final transactions = await database.exportTransactions();
     final images = await database.exportImages();
     final iconPaths = _categoryIconPaths(categories);
-    final archive = Archive();
     final manifest = <String, Object>{
       'format': _format,
       'version': formatVersion,
@@ -86,52 +87,62 @@ class BackupService {
       // 比少几个开关大得多。
       if (appearance != null) 'appearance': appearance.encode(),
     };
-    archive.add(ArchiveFile.string('manifest.json', jsonEncode(manifest)));
-    archive.add(ArchiveFile.string('data.json', jsonEncode(data)));
 
+    final files = <({String path, Uint8List bytes})>[];
     for (final image in images) {
       for (final relativePath in [image.imagePath, image.thumbnailPath]) {
-        await _pack(archive, relativePath, label: '图片');
+        final packed = await _readPacked(relativePath, label: '图片');
+        if (packed != null) files.add(packed);
       }
     }
     for (final relativePath in iconPaths) {
-      await _pack(archive, relativePath, label: '分类图标');
+      final packed = await _readPacked(relativePath, label: '分类图标');
+      if (packed != null) files.add(packed);
     }
     // 壁纸文件必须跟着走，否则恢复方拿到一份「说有壁纸、但文件不在」的配置。
     // 缺文件不算致命（用户可能在系统文件管理器里删过），跳过就是。
     if (appearance?.hasWallpaper ?? false) {
-      await _pack(
-        archive,
+      final packed = await _readPacked(
         kWallpaperRelativePath,
         label: '壁纸',
         required: false,
       );
+      if (packed != null) files.add(packed);
     }
 
-    final encoded = ZipEncoder(
-      password: password == null || password.isEmpty ? null : password,
-    ).encodeBytes(archive);
+    // zip 压缩是纯 CPU。多图时在主 isolate 上能卡几秒，转圈都停。
+    // JSON 先在这边编好，isolate 只收字符串和文件字节，避免把 Drift 行对象送过去。
+    final manifestJson = jsonEncode(manifest);
+    final dataJson = jsonEncode(data);
+    final encoded = await Isolate.run(() {
+      return zipBackupBytes(
+        manifestJson: manifestJson,
+        dataJson: dataJson,
+        files: files,
+        password: password,
+      );
+    });
     await target.writeAsBytes(encoded, flush: true);
   }
 
-  /// 把一个本地文件装进包。
+  /// 读一个本地文件，准备交给 isolate 打进 zip。
   ///
   /// 默认缺文件直接抛错——备份的承诺是「一字不差」，悄悄少打一张图，
   /// 用户要到换机恢复那天才会发现。[required] 为 false 时缺文件静默跳过，
   /// 只给「丢了也不影响数据完整性」的附属文件（壁纸）用。
-  Future<void> _pack(
-    Archive archive,
+  Future<({String path, Uint8List bytes})?> _readPacked(
     String relativePath, {
     required String label,
     bool required = true,
   }) async {
     final file = await imageStorage.resolve(relativePath);
     if (!await file.exists()) {
-      if (!required) return;
+      if (!required) return null;
       throw StateError('备份缺少$label：$relativePath');
     }
-    archive.add(
-      ArchiveFile.bytes(_archivePath(relativePath), await file.readAsBytes()),
+    return (
+      path: _archivePath(relativePath),
+      bytes: await file.readAsBytes(),
     );
   }
 
@@ -360,3 +371,24 @@ class BackupPreview {
   /// 包里带的分类自定义图标数量。v3 的老包恒为 0。
   final int categoryIconCount;
 }
+
+/// 在后台 isolate 里把 JSON 和文件打成 zip。只收可发送的字符串和字节。
+Uint8List zipBackupBytes({
+  required String manifestJson,
+  required String dataJson,
+  required List<({String path, Uint8List bytes})> files,
+  String? password,
+}) {
+  final archive = Archive();
+  archive.add(ArchiveFile.string('manifest.json', manifestJson));
+  archive.add(ArchiveFile.string('data.json', dataJson));
+  for (final file in files) {
+    archive.add(ArchiveFile.bytes(file.path, file.bytes));
+  }
+  return Uint8List.fromList(
+    ZipEncoder(
+      password: password == null || password.isEmpty ? null : password,
+    ).encodeBytes(archive),
+  );
+}
+

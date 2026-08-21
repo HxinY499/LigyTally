@@ -1,11 +1,15 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
+import 'package:excel_plus/excel_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ligy_tally/core/database/app_database.dart';
 import 'package:ligy_tally/core/export/csv_export_service.dart';
+import 'package:ligy_tally/core/media/image_storage.dart';
 import 'package:ligy_tally/core/utils/ledger_date.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   late AppDatabase database;
@@ -214,5 +218,94 @@ void main() {
     final text = decode(csv!.bytes);
     expect(text, contains(',新街口,'));
     expect(text, contains(',已记录位置,'));
+  });
+
+  group('带图片的 xlsx', () {
+    late Directory support;
+
+    /// 1×1 透明 PNG。excel_plus 靠文件头认格式，不看出路后缀。
+    const png = <int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+      0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+      0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+      0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    setUp(() async {
+      support = await Directory.systemTemp.createTemp('ligy_xlsx');
+      service = CsvExportService(database, ImageStorage.atRoot(support.path));
+    });
+
+    tearDown(() async {
+      if (await support.exists()) await support.delete(recursive: true);
+    });
+
+    Future<void> writePng(String relativePath) async {
+      final file = File(p.join(support.path, relativePath));
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(png);
+    }
+
+    test('空区间返回 null', () async {
+      final xlsx = await service.buildXlsx(monthRange(DateTime(2026, 8)));
+      expect(xlsx, isNull);
+    });
+
+    test('图片嵌在账单右侧，缺文件的格子留空不让整次导出失败', () async {
+      final food = (await database.exportCategories()).singleWhere(
+        (item) => item.name == '三餐',
+      );
+      await addTx(
+        id: 'with-photos',
+        kind: 0,
+        amountCents: 12850,
+        categoryId: food.id,
+        date: DateTime(2026, 8, 1),
+        note: '咖啡',
+        imageCount: 2,
+      );
+      await addTx(
+        id: 'missing-file',
+        kind: 0,
+        amountCents: 300,
+        categoryId: food.id,
+        date: DateTime(2026, 8, 2),
+        imageCount: 1,
+        hour: 12,
+      );
+      await writePng('media/with-photos/0.jpg');
+      await writePng('media/with-photos/1.jpg');
+
+      final xlsx = await service.buildXlsx(monthRange(DateTime(2026, 8)));
+      expect(xlsx, isNotNull);
+      expect(xlsx!.rowCount, 2);
+
+      final excel = Excel.decodeBytes(xlsx.bytes);
+      final sheet = excel['账单'];
+      expect(sheet.cell(CellIndex.indexByString('A1')).value.toString(), '类型');
+      expect(sheet.cell(CellIndex.indexByString('I1')).value.toString(), '图片1');
+      expect(sheet.cell(CellIndex.indexByString('M1')).value.toString(), '图片5');
+      expect(sheet.cell(CellIndex.indexByString('A2')).value.toString(), '支出');
+      expect(
+        (sheet.cell(CellIndex.indexByString('B2')).value as DoubleCellValue)
+            .value,
+        128.5,
+      );
+      expect(
+        (sheet.cell(CellIndex.indexByString('H2')).value as IntCellValue).value,
+        2,
+      );
+      expect(sheet.images, hasLength(2));
+      expect(
+        sheet.images.map((image) => image.anchor.columnIndex).toList(),
+        [8, 9],
+      );
+      expect(
+        sheet.images.every((image) => image.anchor.rowIndex == 1),
+        isTrue,
+      );
+    });
   });
 }

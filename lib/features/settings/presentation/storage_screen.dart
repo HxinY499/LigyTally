@@ -77,7 +77,7 @@ class _StorageScreenState extends ConsumerState<StorageScreen> {
       final freed = await ref.read(storageUsageServiceProvider).clearCache();
       return freed == 0 ? '没有可清理的缓存' : '已清理 ${formatStorageBytes(freed)}';
     },
-    confirmMessage: '清理更新安装包，以及导出后留在本机的备份、CSV 和分类配置副本。'
+    confirmMessage: '清理更新安装包，以及导出后留在本机的备份、CSV、表格和分类配置副本。'
         '账单、图片和分类都不受影响。',
     destructive: false,
   );
@@ -183,7 +183,7 @@ class _StorageScreenState extends ConsumerState<StorageScreen> {
           SettingsItem(
             icon: FLucideIcons.fileArchive,
             title: '缓存',
-            subtitle: '更新安装包、导出后留下的备份与 CSV 副本',
+            subtitle: '更新安装包、导出后留下的备份、CSV 和表格副本',
             value: formatStorageBytes(usage.cacheBytes),
             trailing: _task == _StorageTask.cache ? const RowSpinner() : null,
             showChevron: !_busy && usage.cacheBytes > 0,

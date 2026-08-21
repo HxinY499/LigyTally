@@ -24,15 +24,6 @@ import '../application/amount_expression.dart';
 import '../application/providers.dart';
 import 'location_name_dialog.dart';
 
-/// 单笔账单最多能挂几张图。
-///
-/// 收口成一个常量：选图上限、面板里「添加」格子的显隐、确认按钮上的计数
-/// 三处必须同时变，之前各写各的 3，改一处漏一处就会出现「加得进去但
-/// 面板显示 4/3」这种状态。
-///
-/// 贴纸的倾角表长度必须与它一致，见 `_PolaroidStackState._kTilts`。
-const int kMaxTransactionImages = 5;
-
 class TransactionEditor extends ConsumerStatefulWidget {
   const TransactionEditor({super.key, this.existing, this.initialDate});
 

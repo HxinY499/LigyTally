@@ -742,6 +742,29 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
+  /// 一批账单各自的图片，按 [sortOrder] 排好。
+  ///
+  /// 导出带图表格时一行一次 [imagesFor] 会变成 N 次查询，按 id 一把捞回来
+  /// 再分组。
+  Future<Map<String, List<TransactionImageEntry>>> imagesGroupedFor(
+    List<String> transactionIds,
+  ) async {
+    if (transactionIds.isEmpty) return const {};
+    final rows =
+        await (select(transactionImages)
+              ..where((row) => row.transactionId.isIn(transactionIds))
+              ..orderBy([
+                (row) => OrderingTerm.asc(row.transactionId),
+                (row) => OrderingTerm.asc(row.sortOrder),
+              ]))
+            .get();
+    final grouped = <String, List<TransactionImageEntry>>{};
+    for (final row in rows) {
+      grouped.putIfAbsent(row.transactionId, () => []).add(row);
+    }
+    return grouped;
+  }
+
   /// 一批账单各自挂了几张图。CSV 只记数量、不带文件。
   Future<Map<String, int>> imageCountsFor(List<String> transactionIds) async {
     if (transactionIds.isEmpty) return const {};

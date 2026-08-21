@@ -3,13 +3,15 @@
 
   <g transform="translate(92 104)">
     <rect width="412" height="412" fill="#111111"/>
-    <path
-      d="M306 103H106V309H306V225H222"
-      stroke="white"
-      stroke-width="40"
-      stroke-linecap="square"
-      stroke-linejoin="miter"
-    />
+    <g transform="translate(206 206) scale(1.1) translate(-206 -206)">
+      <path
+        d="M306 103H106V309H306V225H222"
+        stroke="white"
+        stroke-width="40"
+        stroke-linecap="square"
+        stroke-linejoin="miter"
+      />
+    </g>
   </g>
 
   <g transform="translate(570 228)">
@@ -55,15 +57,21 @@
     >SMALL SCALE</text>
     <g transform="translate(0 46)">
       <rect width="72" height="72" fill="#111111"/>
-      <path d="M54 18H18V54H54V39H39" stroke="white" stroke-width="7" stroke-linecap="square" stroke-linejoin="miter"/>
+      <g transform="translate(36 36) scale(1.1) translate(-36 -36)">
+        <path d="M54 18H18V54H54V39H39" stroke="white" stroke-width="7" stroke-linecap="square" stroke-linejoin="miter"/>
+      </g>
     </g>
     <g transform="translate(96 62)">
       <rect width="48" height="48" fill="#111111"/>
-      <path d="M36 12H12V36H36V26H26" stroke="white" stroke-width="5" stroke-linecap="square" stroke-linejoin="miter"/>
+      <g transform="translate(24 24) scale(1.1) translate(-24 -24)">
+        <path d="M36 12H12V36H36V26H26" stroke="white" stroke-width="5" stroke-linecap="square" stroke-linejoin="miter"/>
+      </g>
     </g>
     <g transform="translate(168 74)">
       <rect width="32" height="32" fill="#111111"/>
-      <path d="M24 8H8V24H24V17.5H17.5" stroke="white" stroke-width="3.5" stroke-linecap="square" stroke-linejoin="miter"/>
+      <g transform="translate(16 16) scale(1.1) translate(-16 -16)">
+        <path d="M24 8H8V24H24V17.5H17.5" stroke="white" stroke-width="3.5" stroke-linecap="square" stroke-linejoin="miter"/>
+      </g>
     </g>
   </g>
 

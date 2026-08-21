@@ -20,14 +20,20 @@
   <text x="72" y="870" fill="#7A7D83" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" letter-spacing="0">APP ICON</text>
   <g transform="translate(72 910)">
     <rect width="218" height="218" fill="#111111"/>
-    <path d="M159.2 55.4H58.8V162.6H159.2V117.9H117.9" stroke="white" stroke-width="19.6" stroke-linecap="square" stroke-linejoin="miter"/>
+    <g transform="translate(109 109) scale(1.1) translate(-109 -109)">
+      <path d="M159.2 55.4H58.8V162.6H159.2V117.9H117.9" stroke="white" stroke-width="19.6" stroke-linecap="square" stroke-linejoin="miter"/>
+    </g>
   </g>
   <g transform="translate(338 958)">
     <rect width="122" height="122" fill="#111111"/>
-    <path d="M89 33H33V89H89V65.7H65.7" stroke="white" stroke-width="11" stroke-linecap="square" stroke-linejoin="miter"/>
+    <g transform="translate(61 61) scale(1.1) translate(-61 -61)">
+      <path d="M89 33H33V89H89V65.7H65.7" stroke="white" stroke-width="11" stroke-linecap="square" stroke-linejoin="miter"/>
+    </g>
   </g>
   <g transform="translate(504 988)">
     <rect width="64" height="64" fill="#111111"/>
-    <path d="M47 17H17V47H47V34.5H34.5" stroke="white" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+    <g transform="translate(32 32) scale(1.1) translate(-32 -32)">
+      <path d="M47 17H17V47H47V34.5H34.5" stroke="white" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+    </g>
   </g>
 </svg>

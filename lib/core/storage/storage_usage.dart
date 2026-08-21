@@ -325,7 +325,9 @@ class StorageUsageService {
 bool isAppCacheFileName(String name) {
   if (name.endsWith('.apk') || name.endsWith('.part')) return true;
   if (name.startsWith('ligy-tally-')) {
-    return name.endsWith('.ligytally') || name.endsWith('.csv');
+    return name.endsWith('.ligytally') ||
+        name.endsWith('.csv') ||
+        name.endsWith('.xlsx');
   }
   return name.startsWith('ligy-categories-') && name.endsWith('.json');
 }

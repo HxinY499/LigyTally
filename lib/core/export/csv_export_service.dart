@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
@@ -8,43 +9,64 @@ import 'package:share_plus/share_plus.dart';
 
 import '../database/app_database.dart';
 import '../location/place_fix.dart';
+import '../media/image_storage.dart';
 import '../utils/ledger_date.dart';
+import 'ledger_xlsx.dart';
 
-/// 按时间范围把账单导出成 CSV，给 Excel / Numbers 打开，不带图片。
+/// 按时间范围把账单导出成表格，给 Excel / Numbers 打开。
+///
+/// 默认仍是 CSV、不带图片。勾选「同时导出图片」时改出 .xlsx，把每笔的图
+/// 嵌进右侧单元格——CSV 塞不进图片，这是同一条导出路径上唯一能兑现
+/// 「插到账单后面」的格式。
 ///
 /// 和 [BackupService] 分工不同：完整备份是换机恢复用的私有包，这份是给人
-/// 和表格软件读的明文。所以金额不带 ¥、日期用 `yyyy-MM-dd`、文件头加 UTF-8
-/// BOM——Windows 上的 Excel 不认 BOM 就会把中文头读成乱码。
+/// 和表格软件读的明文。所以金额不带 ¥、日期用 `yyyy-MM-dd`、CSV 文件头加
+/// UTF-8 BOM——Windows 上的 Excel 不认 BOM 就会把中文头读成乱码。
 class CsvExportService {
-  CsvExportService(this.database);
+  CsvExportService(this.database, [this.imageStorage]);
 
   final AppDatabase database;
+  final ImageStorage? imageStorage;
 
   static const _headers = ['类型', '金额', '分类', '日期', '时间', '地点', '备注', '图片数量'];
 
   /// UTF-8 BOM。Excel 靠它判断编码，缺了中文列名会花。
   static const _bom = [0xEF, 0xBB, 0xBF];
 
-  Future<int> exportAndShare([LedgerDateRange? range]) async {
-    final csv = await buildCsv(range);
-    if (csv == null) return 0;
+  static const _xlsxMime =
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  Future<int> exportAndShare(
+    LedgerDateRange? range, {
+    bool includeImages = false,
+  }) async {
+    final built = includeImages
+        ? await buildXlsx(range)
+        : await buildCsv(range);
+    if (built == null) return 0;
     final cache = await getTemporaryDirectory();
-    final file = File(p.join(cache.path, _fileName(range)));
-    await file.writeAsBytes(csv.bytes, flush: true);
+    final file = File(p.join(cache.path, _fileName(range, includeImages)));
+    await file.writeAsBytes(built.bytes, flush: true);
     await SharePlus.instance.share(
       ShareParams(
-        files: [XFile(file.path, mimeType: 'text/csv')],
+        files: [
+          XFile(
+            file.path,
+            mimeType: includeImages ? _xlsxMime : 'text/csv',
+          ),
+        ],
         subject: _subject(range),
       ),
     );
-    return csv.rowCount;
+    return built.rowCount;
   }
 
-  static String _fileName(LedgerDateRange? range) {
-    if (range == null) return 'ligy-tally-all.csv';
+  static String _fileName(LedgerDateRange? range, bool includeImages) {
+    final ext = includeImages ? 'xlsx' : 'csv';
+    if (range == null) return 'ligy-tally-all.$ext';
     final start = dateKey(range.start);
     final end = dateKey(range.endExclusive.subtract(const Duration(days: 1)));
-    return 'ligy-tally-$start-$end.csv';
+    return 'ligy-tally-$start-$end.$ext';
   }
 
   static String _subject(LedgerDateRange? range) {
@@ -68,28 +90,72 @@ class CsvExportService {
     final imageCounts = await database.imageCountsFor([
       for (final item in items) item.transaction.id,
     ]);
-    final buffer = StringBuffer();
-    buffer.write(_row(_headers));
+    final table = <List<String>>[
+      _headers,
+      for (final item in items)
+        [
+          item.transaction.kind == 0 ? '支出' : '收入',
+          _amount(item.transaction.amountCents),
+          _categoryLabel(item.category, byId),
+          item.transaction.accountingDate,
+          formatClock(
+            DateTime.fromMillisecondsSinceEpoch(item.transaction.occurredAt),
+          ),
+          item.transaction.locationLabel ?? '',
+          item.transaction.note,
+          '${imageCounts[item.transaction.id] ?? 0}',
+        ],
+    ];
+    // 转义和拼字节放后台 isolate：账单多的时候主 isolate 会把设置页转圈卡住。
+    final bytes = await Isolate.run(() => encodeCsvBytes(table));
+    return (bytes: bytes, rowCount: items.length);
+  }
+
+  /// 编出带图片的 Excel。文件缺失的图跳过对应格子，不让一张丢图毁掉整次导出——
+  /// 这不是备份，「能打开、其余行还在」比「一字不差」优先。
+  Future<({Uint8List bytes, int rowCount})?> buildXlsx([
+    LedgerDateRange? range,
+  ]) async {
+    final storage = imageStorage;
+    if (storage == null) {
+      throw StateError('导出图片需要 ImageStorage');
+    }
+    final items = await database.transactionsIn(range);
+    if (items.isEmpty) return null;
+    final categories = await database.exportCategories();
+    final byId = {for (final row in categories) row.id: row};
+    final ids = [for (final item in items) item.transaction.id];
+    final grouped = await database.imagesGroupedFor(ids);
+    final rows = <LedgerXlsxRow>[];
     for (final item in items) {
       final tx = item.transaction;
+      final images = grouped[tx.id] ?? const [];
+      final slots = List<LedgerXlsxImage?>.filled(kMaxTransactionImages, null);
+      for (var i = 0; i < images.length && i < kMaxTransactionImages; i++) {
+        final entry = images[i];
+        final file = await storage.resolve(entry.imagePath);
+        if (!await file.exists()) continue;
+        slots[i] = (
+          bytes: await file.readAsBytes(),
+          width: entry.width,
+          height: entry.height,
+        );
+      }
       final occurred = DateTime.fromMillisecondsSinceEpoch(tx.occurredAt);
-      buffer.write(
-        _row([
-          tx.kind == 0 ? '支出' : '收入',
-          _amount(tx.amountCents),
-          _categoryLabel(item.category, byId),
-          tx.accountingDate,
-          formatClock(occurred),
-          tx.locationLabel ?? '',
-          tx.note,
-          '${imageCounts[tx.id] ?? 0}',
-        ]),
-      );
+      rows.add((
+        kind: tx.kind == 0 ? '支出' : '收入',
+        amount: _amount(tx.amountCents),
+        category: _categoryLabel(item.category, byId),
+        date: tx.accountingDate,
+        time: formatClock(occurred),
+        location: tx.locationLabel ?? '',
+        note: tx.note,
+        imageCount: images.length,
+        images: slots,
+      ));
     }
-    return (
-      bytes: Uint8List.fromList([..._bom, ...utf8.encode(buffer.toString())]),
-      rowCount: items.length,
-    );
+    final bytes = await Isolate.run(() => encodeLedgerXlsx(rows));
+    return (bytes: bytes, rowCount: items.length);
   }
 
   /// 金额写成 `12.34`：不带货币符号、不用千分位。Excel 才能当数字求和。
@@ -109,6 +175,15 @@ class CsvExportService {
     final parent = byId[parentId];
     if (parent == null) return category.name;
     return '${parent.name} / ${category.name}';
+  }
+
+  /// 给 isolate 用：只收纯字符串表，不碰数据库。
+  static Uint8List encodeCsvBytes(List<List<String>> rows) {
+    final buffer = StringBuffer();
+    for (final row in rows) {
+      buffer.write(_row(row));
+    }
+    return Uint8List.fromList([..._bom, ...utf8.encode(buffer.toString())]);
   }
 
   static String _row(List<String> fields) =>

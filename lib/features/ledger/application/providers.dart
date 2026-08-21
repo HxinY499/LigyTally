@@ -34,7 +34,10 @@ final backupServiceProvider = Provider<BackupService>((ref) {
 });
 
 final csvExportServiceProvider = Provider<CsvExportService>((ref) {
-  return CsvExportService(ref.watch(databaseProvider));
+  return CsvExportService(
+    ref.watch(databaseProvider),
+    ref.watch(imageStorageProvider),
+  );
 });
 
 final categoryConfigServiceProvider = Provider<CategoryConfigService>((ref) {
