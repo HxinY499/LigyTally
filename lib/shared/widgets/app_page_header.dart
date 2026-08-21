@@ -19,12 +19,13 @@ import '../../core/theme/app_theme.dart';
 /// 固定条。这是毛玻璃唯一可行的形态：Column 形态下内容永远走不到页头背后。
 /// 代价是**页面内容必须以 sliver 形式交进来**，见 [AppPageHeader.slivers]。
 ///
-/// 三条硬性一致规则（由 test/app_page_header_test.dart 锁死）：
+/// 四条硬性一致规则（由 test/app_page_header_test.dart 锁死）：
 /// 1. **所有一级页展开高度相同** = [kAppHeaderExpandedHeight]，
 ///    没有 actions 的页面就留空，不缩高度 —— 否则切 Tab 时内容起始线会跳。
 /// 2. **所有紧凑态标题垂直中心线相同**（一级页折叠后、二级页、搜索框）。
-/// 3. **操作行位置完全不随折叠变化**：返回箭头与 actions 恒定居中在顶部
-///    56 区内（中心线 28）。只有一级页的标题在动，图标不跟着漂。
+/// 3. **操作图标与标题垂直中心对齐**：展开时跟大标题同一条线，折叠后收到
+///    紧凑条中心。图标右缘恒为 gutter。
+/// 4. 毛玻璃**只在内容穿过后存在**：静止时不该挂 BackdropFilter
 
 /// 折叠态页头高度（不含状态栏）。也是 [AppPageHeader.content]（搜索框）的固定高度。
 const double kAppHeaderHeight = 56;
@@ -36,7 +37,8 @@ const double kAppHeaderHeight = 56;
 /// 旧版是 112 = 操作行 56 + 大标题行 56，两段上下叠放。问题在于统计页与设置页
 /// 的 actions 是空的、也没有返回箭头，那 56 就是一整片纯空白，加上状态栏顶部
 /// 要吃掉近 20% 屏高。现在让大标题上缘插进操作行那一带（38 < 56）：横向上
-/// 标题在最左、图标在最右，两者根本碰不到面，于是这 24px 是纯赚的。
+/// 标题在最左、图标在最右。有 actions 时图标垂直中心跟大标题对齐，
+/// 不再钉死在顶栏——否则漏斗会浮在「统计」上方，看起来像没排好。
 const double kAppHeaderExpandedHeight = 88;
 
 /// 二级页页头占掉的屏幕高度（含状态栏）。
@@ -83,6 +85,14 @@ const double _kTitleTopCollapsed =
 
 /// 展开态标题顶边。见 [kAppHeaderExpandedHeight] 里的高度构成说明。
 const double _kTitleTopExpanded = 38;
+
+/// 展开态标题垂直中心。有 actions 时图标跟这条线对齐。
+const double _kTitleCenterExpanded =
+    _kTitleTopExpanded + _kTitleSizeExpanded * _kTitleHeight / 2;
+
+/// 折叠态标题垂直中心，也是紧凑条中心。
+const double _kTitleCenterCollapsed =
+    _kTitleTopCollapsed + _kTitleSizeCollapsed * _kTitleHeight / 2;
 
 /// 折叠态标题左缘：有返回箭头时让位到箭头右侧。
 const double _kTitleLeftCollapsedWithBack = 56;
@@ -277,9 +287,9 @@ class AppChromeGlass extends StatelessWidget {
 /// [t] 是折叠进度（0 = 完全展开的大标题，1 = 完全折叠的紧凑条）。
 /// 所有随滚动变化的量都由它线性插值，过渡连续无跳变。
 ///
-/// 布局是「一层钉死的操作行 + 一个会移动缩放的标题」：
-/// 只有标题随 t 动（字号 28↔20、顶边 38↔16、左缘 20↔56），
-/// 操作行始终居中在顶部 56 区内，绝不漂移。
+/// 布局是「一层跟着标题走的操作行 + 一个会移动缩放的标题」：
+/// 标题随 t 动（字号 28↔20、顶边 38↔16），操作行的垂直中心同步对齐标题，
+/// 展开时和「统计」同一条线，折叠后收到紧凑条中心。
 class _HeaderContent extends StatelessWidget {
   const _HeaderContent({
     required this.t,
@@ -336,9 +346,12 @@ class _HeaderContent extends StatelessWidget {
 
     return Stack(
       children: [
-        // ── 操作行：钉在顶部 56 区，位置不随 t 变化 ──
+        // ── 操作行：垂直中心跟着标题走 ──
         Positioned(
-          top: 0,
+          top: _lerp(
+            _kTitleCenterExpanded - kAppHeaderHeight / 2,
+            _kTitleCenterCollapsed - kAppHeaderHeight / 2,
+          ),
           left: 0,
           right: 0,
           height: kAppHeaderHeight,
@@ -361,7 +374,7 @@ class _HeaderContent extends StatelessWidget {
             ],
           ),
         ),
-        // ── 标题：唯一随 t 移动缩放的元素 ──
+        // ── 标题：字号和顶边随 t 走，操作行中心跟着它对齐 ──
         Positioned(
           top: _lerp(_kTitleTopExpanded, _kTitleTopCollapsed),
           left: _lerp(

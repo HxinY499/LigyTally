@@ -6,21 +6,26 @@ import '../../../core/database/app_database.dart';
 import '../../../core/appearance/appearance.dart';
 import '../../../features/ledger/application/providers.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../application/stats_exclusion.dart';
 import 'stats_card.dart';
 import 'stats_category.dart';
 import 'stats_category_delta.dart';
 import 'stats_charts.dart';
 import 'stats_design.dart';
+import 'stats_exclusion.dart';
 import 'stats_overview.dart';
 import 'stats_states.dart';
 import 'statistics_window.dart';
 
 /// 收支统计页。
 ///
-/// 结构：页头 → 周期选择器 → 概览 Hero 卡 → 收支趋势 → 分类构成 → 周期对比。
+/// 结构：页头（过滤在右上）→ 周期选择器 → 概览 Hero 卡 → 收支趋势 → 分类构成 → 周期对比。
 /// 页面本身只做「组合 + 状态派发」，日期语义在 [StatisticsWindow]，
 /// 样式令牌在 [StatsTokens]，图表在 stats_charts.dart，
 /// 加载/空/异常态在 stats_states.dart。
+///
+/// 排除分类是整页同一套口径：概览、趋势、构成、环比、周期对比都吃同一份
+/// 支出分类黑名单（一级或二级）。首页的本月支出不读这份名单。
 class StatisticsScreen extends ConsumerStatefulWidget {
   const StatisticsScreen({super.key});
 
@@ -74,14 +79,38 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     if (_window.period == StatisticsPeriod.custom) _pickCustomRange();
   }
 
+  /// 排除名单还没从本地读回来时不要订阅查询，避免先画出全量数字再跳变。
+  Stream<T> _whenReady<T>(bool ready, Stream<T> Function() create) {
+    return ready ? create() : Stream<T>.empty();
+  }
+
   @override
   Widget build(BuildContext context) {
     final database = ref.watch(databaseProvider);
     final grouped = ref.watch(moneyGroupedProvider);
+    final exclusion = ref.watch(statsExclusionProvider);
+    final excludedIds = exclusion.ids;
+    final ready = exclusion.ready;
     final range = _window.range;
 
     return AppPageHeader(
       title: '统计',
+      actions: [
+        SizedBox.square(
+          dimension: kAppHeaderActionSize,
+          child: StreamBuilder<List<CategoryEntry>>(
+            stream: database.watchCategories(0, activeOnly: false),
+            builder: (context, snapshot) {
+              return StatsExclusionAction(
+                categories: snapshot.data ?? const <CategoryEntry>[],
+                excludedIds: excludedIds,
+                onChanged: (ids) =>
+                    ref.read(statsExclusionProvider.notifier).setIds(ids),
+              );
+            },
+          ),
+        ),
+      ],
       slivers: [
         SliverPadding(
           // 本页无 FAB，28 只是收尾留白。MediaQuery 的底部留白在贴底档下是 0
@@ -134,9 +163,13 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       SizedBox(
                         height: 176,
                         child: StatsStreamBuilder<List<TrendPoint>>(
-                          stream: database.watchTrend(
-                            range,
-                            groupByMonth: _window.groupByMonth,
+                          stream: _whenReady(
+                            ready,
+                            () => database.watchTrend(
+                              range,
+                              groupByMonth: _window.groupByMonth,
+                              excludedExpenseCategoryIds: excludedIds,
+                            ),
                           ),
                           loading: const StatsChartSkeleton(height: 176),
                           builder: (context, points) {
@@ -185,9 +218,13 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       ),
                       const SizedBox(height: 14),
                       StatsStreamBuilder<List<CategoryTotal>>(
-                        stream: database.watchCategoryTotals(
-                          range,
-                          _categoryKind,
+                        stream: _whenReady(
+                          ready,
+                          () => database.watchCategoryTotals(
+                            range,
+                            _categoryKind,
+                            excludedExpenseCategoryIds: excludedIds,
+                          ),
                         ),
                         loading: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 12),
@@ -234,10 +271,14 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       StatsStreamBuilder<List<CategoryDelta>>(
                         // 跟随分类构成卡的支出/收入切换：两张卡讲的是同一批分类，
                         // 各带一个切换开关会让「哪张卡现在是收入」变得要猜。
-                        stream: database.watchCategoryDeltas(
-                          current: range,
-                          comparison: _window.comparisonRange,
-                          kind: _categoryKind,
+                        stream: _whenReady(
+                          ready,
+                          () => database.watchCategoryDeltas(
+                            current: range,
+                            comparison: _window.comparisonRange,
+                            kind: _categoryKind,
+                            excludedExpenseCategoryIds: excludedIds,
+                          ),
                         ),
                         loading: const StatsDeltaSkeleton(),
                         errorHeight: 148,
@@ -271,8 +312,12 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       SizedBox(
                         height: 196,
                         child: StatsStreamBuilder<List<PeriodBar>>(
-                          stream: database.watchPeriodBars(
-                            _window.comparisonSpans,
+                          stream: _whenReady(
+                            ready,
+                            () => database.watchPeriodBars(
+                              _window.comparisonSpans,
+                              excludedExpenseCategoryIds: excludedIds,
+                            ),
                           ),
                           loading: const StatsChartSkeleton(
                             height: 196,
@@ -354,21 +399,49 @@ class _OverviewSlot extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final database = ref.watch(databaseProvider);
-    return StreamBuilder<LedgerSummary>(
-      stream: database.watchSummary(window.range),
-      builder: (context, currentSnap) {
+    final exclusion = ref.watch(statsExclusionProvider);
+    return StreamBuilder<List<CategoryEntry>>(
+      stream: database.watchCategories(0, activeOnly: false),
+      builder: (context, catSnap) {
+        final categories = catSnap.data ?? const <CategoryEntry>[];
+        final caption = statsExclusionCaption(
+          resolveExcludedCategories(categories, exclusion.ids),
+        );
+        if (!exclusion.ready) {
+          return StatsOverviewCard(
+            window: window,
+            current: null,
+            previous: null,
+            grouped: grouped,
+            onShift: onShift,
+            onPickRange: onPickRange,
+            exclusionCaption: caption,
+          );
+        }
         return StreamBuilder<LedgerSummary>(
-          // 对照区间而不是完整上一周期：当期没走完时两者长度不同，
-          // 直接比会让徽章长期误报。口径见 [StatisticsWindow.comparisonRange]。
-          stream: database.watchSummary(window.comparisonRange),
-          builder: (context, prevSnap) {
-            return StatsOverviewCard(
-              window: window,
-              current: currentSnap.data,
-              previous: prevSnap.data,
-              grouped: grouped,
-              onShift: onShift,
-              onPickRange: onPickRange,
+          stream: database.watchSummary(
+            window.range,
+            excludedExpenseCategoryIds: exclusion.ids,
+          ),
+          builder: (context, currentSnap) {
+            return StreamBuilder<LedgerSummary>(
+              // 对照区间而不是完整上一周期：当期没走完时两者长度不同，
+              // 直接比会让徽章长期误报。口径见 [StatisticsWindow.comparisonRange]。
+              stream: database.watchSummary(
+                window.comparisonRange,
+                excludedExpenseCategoryIds: exclusion.ids,
+              ),
+              builder: (context, prevSnap) {
+                return StatsOverviewCard(
+                  window: window,
+                  current: currentSnap.data,
+                  previous: prevSnap.data,
+                  grouped: grouped,
+                  onShift: onShift,
+                  onPickRange: onPickRange,
+                  exclusionCaption: caption,
+                );
+              },
             );
           },
         );

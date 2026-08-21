@@ -116,6 +116,7 @@ class StatsOverviewCard extends StatelessWidget {
     required this.grouped,
     required this.onShift,
     required this.onPickRange,
+    this.exclusionCaption = '',
   });
 
   final StatisticsWindow window;
@@ -131,6 +132,9 @@ class StatsOverviewCard extends StatelessWidget {
 
   final ValueChanged<int> onShift;
   final VoidCallback onPickRange;
+
+  /// 排除分类时的口径标注，如「不含居住」。空串表示未排除。
+  final String exclusionCaption;
 
   @override
   Widget build(BuildContext context) {
@@ -163,7 +167,24 @@ class StatsOverviewCard extends StatelessWidget {
               isCustom: window.period == StatisticsPeriod.custom,
             ),
             const SizedBox(height: 14),
-            Text('本期支出', style: stats.heroLabel),
+            Row(
+              children: [
+                Text('本期支出', style: stats.heroLabel),
+                if (exclusionCaption.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      exclusionCaption,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: stats.heroLabel.copyWith(
+                        color: stats.onHeroTertiary,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
             const SizedBox(height: 6),
             // 大数字：加载中给骨架条，避免先渲染 ¥0.00 再跳到真实值
             //（那一下跳变看着像数据出错）。

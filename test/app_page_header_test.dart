@@ -12,7 +12,7 @@ import 'package:ligy_tally/shared/widgets/app_widgets.dart';
 ///
 /// 1. 一级页展开态：标题左缘 / 顶边 / 字号完全相同（切 Tab 不跳动）
 /// 2. 紧凑态（一级页折叠后、二级页默认、搜索框）：标题垂直中心线 / 字号相同
-/// 3. 操作行图标位置**不随折叠变化**（中心线恒为 56/2，右缘恒为 gutter）
+/// 3. 操作图标与标题垂直中心对齐（展开跟大标题、折叠收到 56/2，右缘恒为 gutter）
 /// 4. 毛玻璃**只在内容穿过后存在**：静止时不该挂 BackdropFilter
 void main() {
   final forui = buildForuiTheme();
@@ -55,7 +55,7 @@ void main() {
   }
 
   group('一级页页头', () {
-    testWidgets('展开态：大标题左缘对齐 gutter，图标居中在操作行', (tester) async {
+    testWidgets('展开态：大标题左缘对齐 gutter，图标与标题同一高度', (tester) async {
       await tester.pumpWidget(
         host(
           Scaffold(
@@ -70,11 +70,16 @@ void main() {
         ),
       );
 
-      expect(tester.getRect(find.text('统计')).left, kAppHeaderGutter);
+      final title = tester.getRect(find.text('统计'));
+      expect(title.left, kAppHeaderGutter);
       expect(fontSizeOf(tester, '统计'), 28, reason: '展开态是大标题');
 
       final icon = tester.getRect(find.byIcon(FLucideIcons.search));
-      expect(icon.center.dy, centerLine, reason: '图标居中在顶部操作行，不跟着大标题下移');
+      expect(
+        icon.center.dy,
+        closeTo(title.center.dy, 1.5),
+        reason: '不滚动时图标也要和大标题同一条水平线',
+      );
       expect(
         viewportWidth - icon.right,
         kAppHeaderGutter,
@@ -93,7 +98,7 @@ void main() {
       );
     });
 
-    testWidgets('折叠态：标题缩到紧凑条并垂直居中，图标位置不变，浮出毛玻璃', (tester) async {
+    testWidgets('折叠态：标题与图标收到紧凑条同一中心线，浮出毛玻璃', (tester) async {
       await tester.pumpWidget(
         host(
           Scaffold(
@@ -107,7 +112,6 @@ void main() {
           ),
         ),
       );
-      final iconBefore = tester.getRect(find.byIcon(FLucideIcons.search));
 
       await collapse(tester);
 
@@ -115,9 +119,9 @@ void main() {
       expect(tester.getRect(find.text('统计')).center.dy, centerLine);
       expect(tester.getRect(find.text('统计')).left, kAppHeaderGutter);
       expect(
-        tester.getRect(find.byIcon(FLucideIcons.search)),
-        iconBefore,
-        reason: '折叠过程中图标必须绝对静止，否则观感会漂',
+        tester.getRect(find.byIcon(FLucideIcons.search)).center.dy,
+        centerLine,
+        reason: '折叠后图标和大标题一起收到紧凑条中心',
       );
       expect(
         find.byType(BackdropFilter),

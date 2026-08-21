@@ -8,12 +8,15 @@ import 'package:ligy_tally/core/database/app_database.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/core/utils/ledger_date.dart';
 import 'package:ligy_tally/features/ledger/application/providers.dart';
+import 'package:ligy_tally/features/statistics/application/stats_exclusion.dart';
+import 'package:ligy_tally/features/statistics/presentation/stats_exclusion.dart';
 import 'package:ligy_tally/features/statistics/presentation/statistics_screen.dart';
 import 'package:ligy_tally/features/statistics/presentation/statistics_window.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_card.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_category.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_charts.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_design.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 统计页回归测试。
 ///
@@ -22,6 +25,15 @@ import 'package:ligy_tally/features/statistics/presentation/stats_design.dart';
 /// 1. [StatisticsWindow] 的日期口径（区间、环比、对比区间、聚合粒度）
 /// 2. 轴刻度金额的紧凑格式
 /// 3. 页面在「空库」与「有账单」两种情况下都能渲染出关键文案，不抛异常
+Future<StatsExclusion> _waitExclusionReady(ProviderContainer container) async {
+  for (var i = 0; i < 40; i++) {
+    final value = container.read(statsExclusionProvider);
+    if (value.ready) return value;
+    await Future<void>.delayed(Duration.zero);
+  }
+  fail('排除名单没有从 prefs 读完');
+}
+
 void main() {
   group('StatisticsWindow 日期口径', () {
     test('月视图：区间为自然月，上一周期为上个自然月', () {
@@ -408,7 +420,234 @@ void main() {
     });
   });
 
+  group('支出分类排除', () {
+    Future<void> addTx(
+      AppDatabase database, {
+      required String id,
+      required int kind,
+      required int cents,
+      required String categoryId,
+      required String date,
+    }) {
+      return database.saveTransaction(
+        entry: TransactionsCompanion.insert(
+          id: id,
+          kind: kind,
+          amountCents: cents,
+          categoryId: categoryId,
+          accountingDate: date,
+          occurredAt: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        ),
+        newImages: const [],
+        removedImageIds: const {},
+      );
+    }
+
+    Future<AppDatabase> seedAugust() async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await addTx(
+        database,
+        id: 'ex-food',
+        kind: 0,
+        cents: 10000,
+        categoryId: 'expense_food',
+        date: '2026-08-05',
+      );
+      await addTx(
+        database,
+        id: 'ex-rent',
+        kind: 0,
+        cents: 20000,
+        categoryId: 'expense_housing_rent',
+        date: '2026-08-06',
+      );
+      await addTx(
+        database,
+        id: 'ex-housing',
+        kind: 0,
+        cents: 30000,
+        categoryId: 'expense_housing',
+        date: '2026-08-07',
+      );
+      await addTx(
+        database,
+        id: 'ex-salary',
+        kind: 1,
+        cents: 80000,
+        categoryId: 'income_salary',
+        date: '2026-08-08',
+      );
+      return database;
+    }
+
+    test('文案：1 类直出名称，3 类起收成「等 N 类」', () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      final categories = await database.exportCategories();
+      final food = categories.firstWhere((item) => item.id == 'expense_food');
+      final housing = categories.firstWhere(
+        (item) => item.id == 'expense_housing',
+      );
+      final medical = categories.firstWhere(
+        (item) => item.id == 'expense_medical',
+      );
+      expect(statsExclusionCaption(const []), '');
+      expect(statsExclusionCaption([food]), '不含餐饮');
+      expect(statsExclusionCaption([food, housing]), '不含餐饮、居住');
+      expect(
+        statsExclusionCaption([food, housing, medical]),
+        '不含餐饮、居住等 3 类',
+      );
+    });
+
+    test('排除居住：支出与笔数去掉该类及其二级，收入不动', () async {
+      final database = await seedAugust();
+      final august = LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9));
+      const excluded = {'expense_housing'};
+
+      final full = await database.watchSummary(august).first;
+      expect(full.expenseCents, 60000);
+      expect(full.incomeCents, 80000);
+      expect(full.entryCount, 4);
+      expect(full.activeDayCount, 4);
+
+      final filtered = await database
+          .watchSummary(august, excludedExpenseCategoryIds: excluded)
+          .first;
+      expect(filtered.expenseCents, 10000);
+      expect(filtered.incomeCents, 80000);
+      expect(filtered.entryCount, 2);
+      expect(filtered.activeDayCount, 2);
+    });
+
+    test('只排除房租：居住一级仍在，只拿掉该二级', () async {
+      final database = await seedAugust();
+      final august = LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9));
+      const excluded = {'expense_housing_rent'};
+
+      final filtered = await database
+          .watchSummary(august, excludedExpenseCategoryIds: excluded)
+          .first;
+      expect(filtered.expenseCents, 40000);
+      expect(filtered.incomeCents, 80000);
+      expect(filtered.entryCount, 3);
+
+      final totals = await database
+          .watchCategoryTotals(august, 0, excludedExpenseCategoryIds: excluded)
+          .first;
+      expect(
+        totals.map((item) => (item.categoryId, item.totalCents)),
+        [
+          ('expense_housing', 30000),
+          ('expense_food', 10000),
+        ],
+      );
+    });
+
+    test('点一级会清掉已勾的二级；点二级会把一级从名单拿掉', () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      final categories = await database.exportCategories();
+
+      final onlyChild = toggleExcludedCategory(
+        categories: categories,
+        selected: const {},
+        id: 'expense_housing_rent',
+      );
+      expect(onlyChild, {'expense_housing_rent'});
+
+      final parentOverrides = toggleExcludedCategory(
+        categories: categories,
+        selected: onlyChild,
+        id: 'expense_housing',
+      );
+      expect(parentOverrides, {'expense_housing'});
+
+      final refine = toggleExcludedCategory(
+        categories: categories,
+        selected: parentOverrides,
+        id: 'expense_housing_rent',
+      );
+      expect(refine, {'expense_housing_rent'});
+    });
+
+    test('分类构成与环比都拿掉被排除的一级分类', () async {
+      final database = await seedAugust();
+      final august = LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9));
+      final july = LedgerDateRange(DateTime(2026, 7), DateTime(2026, 8));
+      const excluded = {'expense_housing'};
+
+      final totals = await database
+          .watchCategoryTotals(august, 0, excludedExpenseCategoryIds: excluded)
+          .first;
+      expect(totals.map((item) => item.categoryId), ['expense_food']);
+      expect(totals.single.totalCents, 10000);
+
+      final deltas = await database
+          .watchCategoryDeltas(
+            current: august,
+            comparison: july,
+            kind: 0,
+            excludedExpenseCategoryIds: excluded,
+          )
+          .first;
+      expect(deltas.map((item) => item.categoryId), ['expense_food']);
+    });
+
+    test('趋势与周期对比只从支出侧扣除，收入柱保持全量', () async {
+      final database = await seedAugust();
+      final august = LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9));
+      const excluded = {'expense_housing'};
+
+      final trend = await database
+          .watchTrend(august, groupByMonth: false, excludedExpenseCategoryIds: excluded)
+          .first;
+      expect(
+        trend.map((point) => (point.bucket, point.expenseCents, point.incomeCents)),
+        [
+          ('2026-08-05', 10000, 0),
+          ('2026-08-08', 0, 80000),
+        ],
+      );
+
+      final spans = [
+        PeriodSpan(
+          range: LedgerDateRange(DateTime(2026, 7), DateTime(2026, 8)),
+          label: '7月',
+        ),
+        PeriodSpan(range: august, label: '8月'),
+      ];
+      final bars = await database
+          .watchPeriodBars(spans, excludedExpenseCategoryIds: excluded)
+          .first;
+      expect(bars.map((bar) => bar.expenseCents), [0, 10000]);
+      expect(bars.map((bar) => bar.incomeCents), [0, 80000]);
+    });
+
+    test('排除名单写入 prefs 后，新的容器能读回来', () async {
+      SharedPreferences.setMockInitialValues({});
+      final first = ProviderContainer();
+      await _waitExclusionReady(first);
+      await first
+          .read(statsExclusionProvider.notifier)
+          .setIds({'expense_housing'});
+      first.dispose();
+
+      final second = ProviderContainer();
+      addTearDown(second.dispose);
+      final loaded = await _waitExclusionReady(second);
+      expect(loaded.ids, {'expense_housing'});
+    });
+  });
+
   group('统计页渲染', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+    });
+
     /// 用内存库跑真实页面，避免 mock 与真实 SQL 口径脱节。
     Future<Widget> host(AppDatabase database) async {
       final forui = buildForuiTheme();
@@ -566,6 +805,64 @@ void main() {
       expect(find.text(expenseCategory.name), findsWidgets);
       // 唯一一个分类必然占 100%。
       expect(find.text('100%'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
+    testWidgets('排除居住后本期支出只剩其他分类，清除后恢复全量', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final now = DateTime.now();
+      final today = dateKey(now);
+      Future<void> add(String id, String categoryId, int cents) {
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: id,
+            kind: 0,
+            amountCents: cents,
+            categoryId: categoryId,
+            accountingDate: today,
+            occurredAt: now.millisecondsSinceEpoch,
+            createdAt: now.millisecondsSinceEpoch,
+            updatedAt: now.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      await add('food-1', 'expense_food', 10000);
+      await add('rent-1', 'expense_housing_rent', 50000);
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      expect(find.text('600.00'), findsOneWidget);
+      expect(find.byKey(const ValueKey('stats-exclusion-action')), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('stats-exclusion-action')));
+      await settle(tester);
+
+      await tester.tap(find.byKey(const ValueKey('category-expense_housing')));
+      await tester.pump();
+      await tester.tap(find.text('确定'));
+      await settle(tester);
+
+      expect(find.text('100.00'), findsWidgets);
+      expect(find.text('不含居住'), findsWidgets);
+      expect(find.text('600.00'), findsNothing);
+      expect(find.text('¥500.00'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('stats-exclusion-action')));
+      await settle(tester);
+      await tester.tap(find.text('清除全部'));
+      await tester.tap(find.text('确定'));
+      await settle(tester);
+
+      expect(find.text('600.00'), findsOneWidget);
+      expect(find.text('不含居住'), findsNothing);
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
     });

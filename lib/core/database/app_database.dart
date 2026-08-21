@@ -510,9 +510,18 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  Stream<LedgerSummary> watchSummary(LedgerDateRange range) {
-    return customSelect(
-      '''
+  /// [excludedExpenseCategoryIds] 非空时，支出、笔数、有记录天数都不计入这些
+  /// 分类。一级会连同它的二级一起去掉；二级只去掉自己。收入不受影响。
+  /// 空集合保持全量口径。
+  ///
+  /// 这是统计页的分析镜头，首页的本月支出不传这个参数。
+  Stream<LedgerSummary> watchSummary(
+    LedgerDateRange range, {
+    Set<String> excludedExpenseCategoryIds = const {},
+  }) {
+    final exclusion = _ExpenseCategoryExclusion(excludedExpenseCategoryIds);
+    final sql = exclusion.isEmpty
+        ? '''
       SELECT
         COALESCE(SUM(CASE WHEN kind = 1 THEN amount_cents ELSE 0 END), 0) AS income,
         COALESCE(SUM(CASE WHEN kind = 0 THEN amount_cents ELSE 0 END), 0) AS expense,
@@ -520,12 +529,26 @@ class AppDatabase extends _$AppDatabase {
         COUNT(DISTINCT accounting_date) AS active_days
       FROM transactions
       WHERE accounting_date >= ? AND accounting_date < ?
-      ''',
+      '''
+        : '''
+      SELECT
+        COALESCE(SUM(CASE WHEN t.kind = 1 THEN t.amount_cents ELSE 0 END), 0) AS income,
+        COALESCE(SUM(CASE WHEN t.kind = 0 THEN t.amount_cents ELSE 0 END), 0) AS expense,
+        COUNT(*) AS entry_count,
+        COUNT(DISTINCT t.accounting_date) AS active_days
+      FROM transactions t
+      JOIN categories c ON c.id = t.category_id
+      WHERE t.accounting_date >= ? AND t.accounting_date < ?
+        ${exclusion.expenseKeptWhere}
+      ''';
+    return customSelect(
+      sql,
       variables: [
         Variable.withString(dateKey(range.start)),
         Variable.withString(dateKey(range.endExclusive)),
+        ...exclusion.expenseKeptVariables,
       ],
-      readsFrom: {transactions},
+      readsFrom: exclusion.isEmpty ? {transactions} : {transactions, categories},
     ).watchSingle().map(
       (row) => LedgerSummary(
         incomeCents: row.read<int>('income'),
@@ -538,8 +561,10 @@ class AppDatabase extends _$AppDatabase {
 
   Stream<List<CategoryTotal>> watchCategoryTotals(
     LedgerDateRange range,
-    int kind,
-  ) {
+    int kind, {
+    Set<String> excludedExpenseCategoryIds = const {},
+  }) {
+    final exclusion = _ExpenseCategoryExclusion(excludedExpenseCategoryIds);
     return customSelect(
       '''
       SELECT root.id, root.name, root.icon_key,
@@ -548,6 +573,7 @@ class AppDatabase extends _$AppDatabase {
       JOIN categories c ON c.id = t.category_id
       JOIN categories root ON root.id = COALESCE(c.parent_id, c.id)
       WHERE t.accounting_date >= ? AND t.accounting_date < ? AND t.kind = ?
+        ${exclusion.expenseKeptWhere}
       GROUP BY root.id, root.name, root.icon_key
       ORDER BY total DESC
       ''',
@@ -555,6 +581,7 @@ class AppDatabase extends _$AppDatabase {
         Variable.withString(dateKey(range.start)),
         Variable.withString(dateKey(range.endExclusive)),
         Variable.withInt(kind),
+        ...exclusion.expenseKeptVariables,
       ],
       readsFrom: {transactions, categories},
     ).watch().map(
@@ -587,11 +614,13 @@ class AppDatabase extends _$AppDatabase {
     required LedgerDateRange current,
     required LedgerDateRange comparison,
     required int kind,
+    Set<String> excludedExpenseCategoryIds = const {},
   }) {
     final currentStart = dateKey(current.start);
     final currentEnd = dateKey(current.endExclusive);
     final comparisonStart = dateKey(comparison.start);
     final comparisonEnd = dateKey(comparison.endExclusive);
+    final exclusion = _ExpenseCategoryExclusion(excludedExpenseCategoryIds);
     return customSelect(
       '''
       SELECT root.id AS id, root.name AS name, root.icon_key AS icon_key,
@@ -605,6 +634,7 @@ class AppDatabase extends _$AppDatabase {
       WHERE t.kind = ?
         AND ((t.accounting_date >= ? AND t.accounting_date < ?)
           OR (t.accounting_date >= ? AND t.accounting_date < ?))
+        ${exclusion.expenseKeptWhere}
       GROUP BY root.id, root.name, root.icon_key
       ''',
       // 顺序必须与 SQL 中 `?` 的出现顺序一致。
@@ -618,6 +648,7 @@ class AppDatabase extends _$AppDatabase {
         Variable.withString(currentEnd),
         Variable.withString(comparisonStart),
         Variable.withString(comparisonEnd),
+        ...exclusion.expenseKeptVariables,
       ],
       readsFrom: {transactions, categories},
     ).watch().map(
@@ -638,12 +669,16 @@ class AppDatabase extends _$AppDatabase {
   Stream<List<TrendPoint>> watchTrend(
     LedgerDateRange range, {
     required bool groupByMonth,
+    Set<String> excludedExpenseCategoryIds = const {},
   }) {
-    final bucket = groupByMonth
-        ? "substr(accounting_date, 1, 7)"
-        : 'accounting_date';
-    return customSelect(
-      '''
+    final exclusion = _ExpenseCategoryExclusion(excludedExpenseCategoryIds);
+    final bucket = exclusion.isEmpty
+        ? (groupByMonth ? "substr(accounting_date, 1, 7)" : 'accounting_date')
+        : (groupByMonth
+              ? "substr(t.accounting_date, 1, 7)"
+              : 't.accounting_date');
+    final sql = exclusion.isEmpty
+        ? '''
       SELECT $bucket AS bucket,
         COALESCE(SUM(CASE WHEN kind = 1 THEN amount_cents ELSE 0 END), 0) AS income,
         COALESCE(SUM(CASE WHEN kind = 0 THEN amount_cents ELSE 0 END), 0) AS expense
@@ -651,12 +686,26 @@ class AppDatabase extends _$AppDatabase {
       WHERE accounting_date >= ? AND accounting_date < ?
       GROUP BY bucket
       ORDER BY bucket ASC
-      ''',
+      '''
+        : '''
+      SELECT $bucket AS bucket,
+        COALESCE(SUM(CASE WHEN t.kind = 1 THEN t.amount_cents ELSE 0 END), 0) AS income,
+        COALESCE(SUM(CASE WHEN t.kind = 0 THEN t.amount_cents ELSE 0 END), 0) AS expense
+      FROM transactions t
+      JOIN categories c ON c.id = t.category_id
+      WHERE t.accounting_date >= ? AND t.accounting_date < ?
+        ${exclusion.expenseKeptWhere}
+      GROUP BY bucket
+      ORDER BY bucket ASC
+      ''';
+    return customSelect(
+      sql,
       variables: [
         Variable.withString(dateKey(range.start)),
         Variable.withString(dateKey(range.endExclusive)),
+        ...exclusion.expenseKeptVariables,
       ],
-      readsFrom: {transactions},
+      readsFrom: exclusion.isEmpty ? {transactions} : {transactions, categories},
     ).watch().map(
       (rows) => rows
           .map(
@@ -677,9 +726,13 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// [rootCategoryId] 非空时只统计该一级分类及其二级分类，归集口径与
   /// [watchCategoryTotals] 一致，用于分类下钻面板里的走势。
+  ///
+  /// [excludedExpenseCategoryIds] 只从支出柱里拿掉这些分类；收入柱不动。
+  /// 一级会连同二级一起去掉。下钻面板已经按单个分类收口，不要再传排除列表。
   Stream<List<PeriodBar>> watchPeriodBars(
     List<PeriodSpan> ranges, {
     String? rootCategoryId,
+    Set<String> excludedExpenseCategoryIds = const {},
   }) {
     if (ranges.isEmpty) {
       return Stream.value(const <PeriodBar>[]);
@@ -715,14 +768,22 @@ class AppDatabase extends _$AppDatabase {
       ..add(Variable.withString(overallEnd));
     final scoped = rootCategoryId != null;
     if (scoped) variables.add(Variable.withString(rootCategoryId));
+    final exclusion = _ExpenseCategoryExclusion(excludedExpenseCategoryIds);
+    if (!exclusion.isEmpty) variables.addAll(exclusion.expenseKeptVariables);
+    final join = (scoped || !exclusion.isEmpty)
+        ? 'JOIN categories c ON c.id = t.category_id '
+        : '';
     return customSelect(
       'SELECT ${expenseCases.toString()}${incomeCases.toString().replaceAll(RegExp(r', $'), '')} '
       'FROM transactions t '
-      '${scoped ? 'JOIN categories c ON c.id = t.category_id ' : ''}'
+      '$join'
       'WHERE t.accounting_date >= ? AND t.accounting_date < ?'
-      '${scoped ? ' AND COALESCE(c.parent_id, c.id) = ?' : ''}',
+      '${scoped ? ' AND COALESCE(c.parent_id, c.id) = ?' : ''}'
+      '${exclusion.expenseKeptWhere}',
       variables: variables,
-      readsFrom: scoped ? {transactions, categories} : {transactions},
+      readsFrom: (scoped || !exclusion.isEmpty)
+          ? {transactions, categories}
+          : {transactions},
     ).watchSingle().map((row) {
       return [
         for (var i = 0; i < ranges.length; i++)
@@ -1087,4 +1148,37 @@ class PeriodBar {
   final String label;
   final int expenseCents;
   final int incomeCents;
+}
+
+/// 统计查询共用的「按分类排除支出」SQL 片段。
+///
+/// [ids] 里的一级分类会连同二级一起去掉；二级只去掉自己。
+/// 空集合时所有片段都是空串，调用方保持原 SQL，避免无排除时多一次 JOIN。
+class _ExpenseCategoryExclusion {
+  _ExpenseCategoryExclusion(Set<String> ids)
+    : ids = [for (final id in ids) if (id.isNotEmpty) id];
+
+  final List<String> ids;
+  bool get isEmpty => ids.isEmpty;
+
+  String get _inPlaceholders => List.filled(ids.length, '?').join(', ');
+
+  List<Variable<Object>> get variables => [
+    for (final id in ids) Variable.withString(id),
+  ];
+
+  /// `category_id` 与 `parent_id` 各用一份 `?`，调用方必须接 [expenseKeptVariables]。
+  List<Variable<Object>> get expenseKeptVariables => [
+    ...variables,
+    ...variables,
+  ];
+
+  /// 已有 `FROM transactions t JOIN categories c` 时：留下收入 + 未排除的支出。
+  String get expenseKeptWhere {
+    if (isEmpty) return '';
+    return ' AND (t.kind = 1 OR ('
+        't.category_id NOT IN ($_inPlaceholders)'
+        " AND COALESCE(c.parent_id, '') NOT IN ($_inPlaceholders)"
+        '))';
+  }
 }
