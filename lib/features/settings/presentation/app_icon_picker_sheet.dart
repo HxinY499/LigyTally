@@ -4,7 +4,7 @@ import 'package:forui/forui.dart';
 import '../../../core/preferences/app_icon.dart';
 import '../../../core/theme/app_theme.dart';
 
-/// 应用图标选择底部弹窗：白面 + 顶部抓手 + 两枚大缩略卡。
+/// 应用图标选择底部弹窗：白面 + 顶部抓手 + 四枚缩略卡（2×2）。
 ///
 /// 点击卡片即选中并关闭浮层，选中态用品牌色描边 + 右上角勾标提示；
 /// 结构上刻意不放「取消/确定」按钮——图标是即时切换，二次确认反而累赘。
@@ -63,23 +63,26 @@ class _AppIconPickerSheet extends StatelessWidget {
             const SizedBox(height: 20),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-              child: Row(
+              // 四款排成 2×2。不用 GridView：项数固定且很少，
+              // Row/Column 组合更轻，也不引入多余的滚动容器。
+              child: Column(
                 children: [
-                  Expanded(
-                    child: _IconOption(
-                      asset: 'assets/branding/app-icon-dark.png',
-                      selected: current == AppIconStyle.dark,
-                      onTap: () => Navigator.pop(context, AppIconStyle.dark),
+                  for (var row = 0; row < 2; row++) ...[
+                    if (row > 0) const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        for (var col = 0; col < 2; col++) ...[
+                          if (col > 0) const SizedBox(width: 14),
+                          Expanded(
+                            child: _buildOption(
+                              context,
+                              AppIconStyle.values[row * 2 + col],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _IconOption(
-                      asset: 'assets/branding/app-icon-light.png',
-                      selected: current == AppIconStyle.light,
-                      onTap: () => Navigator.pop(context, AppIconStyle.light),
-                    ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -88,20 +91,26 @@ class _AppIconPickerSheet extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildOption(BuildContext context, AppIconStyle style) => _IconOption(
+    style: style,
+    selected: current == style,
+    onTap: () => Navigator.pop(context, style),
+  );
 }
 
-/// 单个图标选项：大圆角缩略图 + 选中态描边。
+/// 单个图标选项：大圆角缩略图 + 中文名 + 选中态描边。
 ///
-/// 卡片自身没有文字标签——图标本身即是描述，用户看图选图，
-/// 加文字反而破坏「所见即所得」。
+/// 只有两款时靠图本身足以分辨；四款里「素白」与「浅蓝」缩略图的差异仅在
+/// 标记颜色，小尺寸下不易区分，所以补一行文字标签。
 class _IconOption extends StatelessWidget {
   const _IconOption({
-    required this.asset,
+    required this.style,
     required this.selected,
     required this.onTap,
   });
 
-  final String asset;
+  final AppIconStyle style;
   final bool selected;
   final VoidCallback onTap;
 
@@ -124,45 +133,59 @@ class _IconOption extends StatelessWidget {
             borderRadius: context.radii.cardAll,
             border: Border.all(color: borderColor, width: selected ? 2 : 1),
           ),
-          child: AspectRatio(
-            aspectRatio: 1,
-            child: Stack(
-              children: [
-                // 缩略图本身走圆角矩形裁剪，模拟系统桌面上的图标呈现
-                Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: context.radii.blockAll,
-                    child: Image.asset(asset, fit: BoxFit.cover),
-                  ),
-                ),
-                if (selected)
-                  Positioned(
-                    right: 6,
-                    top: 6,
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: colors.primary,
-                        shape: BoxShape.circle,
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x33000000),
-                            offset: Offset(0, 1),
-                            blurRadius: 3,
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: const Icon(
-                        FLucideIcons.check,
-                        size: 15,
-                        color: Colors.white,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AspectRatio(
+                aspectRatio: 1,
+                child: Stack(
+                  children: [
+                    // 缩略图本身走圆角矩形裁剪，模拟系统桌面上的图标呈现
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: context.radii.blockAll,
+                        child: Image.asset(style.asset, fit: BoxFit.cover),
                       ),
                     ),
-                  ),
-              ],
-            ),
+                    if (selected)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: colors.primary,
+                            shape: BoxShape.circle,
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x33000000),
+                                offset: Offset(0, 1),
+                                blurRadius: 3,
+                              ),
+                            ],
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            FLucideIcons.check,
+                            size: 15,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                style.label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: selected ? colors.primary : colors.muted,
+                ),
+              ),
+            ],
           ),
         ),
       ),

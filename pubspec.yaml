@@ -83,8 +83,16 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # 只声明运行时真正用到的图片。
+  # assets/branding/ 下还有 SVG 源文件、系统总览图和品牌规范文档，
+  # 那些是设计交付物，不该进 APK —— 勿改回整目录声明。
+  # app-icon-*.png 是四款可切换桌面图标的应用内预览图，与 AppIconStyle 一一对应。
   assets:
-    - assets/branding/
+    - assets/branding/app-icon-dark.png
+    - assets/branding/app-icon-blue.png
+    - assets/branding/app-icon-light.png
+    - assets/branding/app-icon-tint.png
+    - assets/branding/ligytally-mark.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

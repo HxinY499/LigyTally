@@ -25,10 +25,18 @@ class MainActivity : FlutterActivity() {
         private const val ICON_CHANNEL = "com.ligy.ligy_tally/app_icon"
         private const val FILE_PROVIDER_AUTHORITY = "com.ligy.ligy_tally.update_provider"
 
-        // 桌面图标对应的两个 activity-alias 短名，
-        // 保持与 AndroidManifest.xml 里声明的一致。
-        private const val ALIAS_DARK = "LauncherDark"
-        private const val ALIAS_LIGHT = "LauncherLight"
+        // 桌面图标 key → activity-alias 短名。
+        // key 与 Dart 侧 AppIconStyle.key 一一对应，
+        // alias 名与 AndroidManifest.xml 里声明的保持一致。
+        // 顺序有意义：第一项是默认图标，manifest 里只有它 enabled="true"。
+        private val ICON_ALIASES = linkedMapOf(
+            "dark" to "LauncherDark",
+            "blue" to "LauncherBlue",
+            "light" to "LauncherLight",
+            "tint" to "LauncherTint",
+        )
+
+        private val DEFAULT_ICON_KEY = ICON_ALIASES.keys.first()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -145,45 +153,51 @@ class MainActivity : FlutterActivity() {
     /**
      * 读取当前生效的 activity-alias。
      *
-     * 只关心 dark 是否启用——两个 alias 不允许同时禁用（会导致桌面上应用消失），
-     * 所以「非 dark 即 light」。
+     * 逐个查启用状态，返回第一个明确 enabled 的 key。
+     * COMPONENT_ENABLED_STATE_DEFAULT 表示「未被运行时改写，沿用 manifest 声明」，
+     * 这时只有默认 alias 算启用——其余在 manifest 里都是 enabled="false"。
+     *
+     * 一个都没查到就落回默认 key（理论上不会发生，四个 alias 至少有一个启用）。
      */
     private fun currentIconKey(): String {
-        val dark = ComponentName(packageName, "$packageName.$ALIAS_DARK")
-        val state = packageManager.getComponentEnabledSetting(dark)
-        val enabled = when (state) {
-            PackageManager.COMPONENT_ENABLED_STATE_DEFAULT -> true // manifest 里 dark 默认 enabled
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
-            else -> false
+        for ((key, alias) in ICON_ALIASES) {
+            val component = ComponentName(packageName, "$packageName.$alias")
+            val enabled = when (packageManager.getComponentEnabledSetting(component)) {
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
+                PackageManager.COMPONENT_ENABLED_STATE_DEFAULT -> key == DEFAULT_ICON_KEY
+                else -> false
+            }
+            if (enabled) return key
         }
-        return if (enabled) "dark" else "light"
+        return DEFAULT_ICON_KEY
     }
 
     /**
      * 切换到指定图标。
      *
-     * 关键点：先启用目标 alias，再禁用另一个。反过来做会出现「两个都禁用」
+     * 关键点：先启用目标 alias，再禁用其余的。反过来做会出现「全部禁用」
      * 的瞬时状态，某些 launcher 会把应用图标从桌面上移除。
      *
      * DONT_KILL_APP 让 PackageManager 不重启进程——效果一般是桌面刷新
      * 需要几秒才能看到新图标，属正常现象。
      */
     private fun applyIcon(key: String) {
-        val (enable, disable) = when (key) {
-            "dark" -> ALIAS_DARK to ALIAS_LIGHT
-            "light" -> ALIAS_LIGHT to ALIAS_DARK
-            else -> throw IllegalArgumentException("未知图标 key: $key")
-        }
+        val target = ICON_ALIASES[key]
+            ?: throw IllegalArgumentException("未知图标 key: $key")
+
         val pm = packageManager
         pm.setComponentEnabledSetting(
-            ComponentName(packageName, "$packageName.$enable"),
+            ComponentName(packageName, "$packageName.$target"),
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
             PackageManager.DONT_KILL_APP,
         )
-        pm.setComponentEnabledSetting(
-            ComponentName(packageName, "$packageName.$disable"),
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP,
-        )
+        for ((otherKey, alias) in ICON_ALIASES) {
+            if (otherKey == key) continue
+            pm.setComponentEnabledSetting(
+                ComponentName(packageName, "$packageName.$alias"),
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP,
+            )
+        }
     }
 }

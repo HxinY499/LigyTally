@@ -65,10 +65,7 @@ class AppearanceScreen extends ConsumerWidget {
               const SizedBox(height: 18),
 
               const SectionLabel('风格'),
-              AppearancePresetRow(
-                config: config,
-                onPick: notifier.applyPreset,
-              ),
+              AppearancePresetRow(config: config, onPick: notifier.applyPreset),
 
               const SizedBox(height: 18),
               const SectionLabel('主题'),
@@ -716,9 +713,6 @@ class AppIconPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final asset = style == AppIconStyle.dark
-        ? 'assets/branding/app-icon-dark.png'
-        : 'assets/branding/app-icon-light.png';
     return Container(
       width: 30,
       height: 30,
@@ -727,7 +721,7 @@ class AppIconPreview extends StatelessWidget {
         border: Border.all(color: context.colors.line, width: 1),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Image.asset(asset, fit: BoxFit.cover),
+      child: Image.asset(style.asset, fit: BoxFit.cover),
     );
   }
 }

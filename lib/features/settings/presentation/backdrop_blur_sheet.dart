@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/appearance/appearance.dart';
+import '../../../core/preferences/app_icon.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/image_backdrop.dart';
 
@@ -132,10 +133,12 @@ class _BlurPreview extends StatelessWidget {
           ImageBackdrop(
             // 样本图要挑和 canvas 反差最大的那版：和底色同明度的图虚化后
             // 会糊进背景，滑杆拖到头也看不出差别，等于没有预览。
+            // 固定用 light/dark 这两款纯黑白的，不跟随用户选的桌面图标 ——
+            // 用户若选了浅蓝那款，虚化后与浅色 canvas 几乎无差。
             image: AssetImage(
               colors.isDark
-                  ? 'assets/branding/app-icon-light.png'
-                  : 'assets/branding/app-icon-dark.png',
+                  ? AppIconStyle.light.asset
+                  : AppIconStyle.dark.asset,
             ),
             blurSigma: sigma,
           ),
