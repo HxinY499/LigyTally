@@ -86,21 +86,43 @@ class _UpdateNotificationLayerState
     return Stack(
       children: [
         widget.child,
-        if (showChip)
-          Positioned(
-            top: MediaQuery.paddingOf(context).top + 8,
-            left: 20,
-            right: 20,
-            child: Center(
-              child: UpdateDownloadChip(
-                key: const ValueKey('update-download-chip'),
-                state: state,
-                onCancel: () => ref
-                    .read(updateControllerProvider.notifier)
-                    .cancelDownload(),
-              ),
+        Positioned(
+          top: MediaQuery.paddingOf(context).top + 8,
+          left: 20,
+          right: 20,
+          child: Center(
+            // 关掉浮层时胶囊要接上，直接插进 Stack 会凭空蹦出来。
+            // 从状态栏方向滑入淡出，视觉上承接刚收起的那层浮层。
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (child, animation) {
+                final curved = CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                );
+                return FadeTransition(
+                  opacity: curved,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, -0.35),
+                      end: Offset.zero,
+                    ).animate(curved),
+                    child: child,
+                  ),
+                );
+              },
+              child: showChip
+                  ? UpdateDownloadChip(
+                      key: const ValueKey('update-download-chip'),
+                      state: state,
+                      onCancel: () => ref
+                          .read(updateControllerProvider.notifier)
+                          .cancelDownload(),
+                    )
+                  : const SizedBox.shrink(),
             ),
           ),
+        ),
       ],
     );
   }

@@ -178,32 +178,38 @@ class _DownloadPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    // 排成一行、由「取消」按钮撑起高度，和「忽略 / 更新」那一行等高：
+    // 点「更新」只是这一格的内容换掉，浮层不会跟着长高。
+    return Row(
       children: [
-        Text(
-          updateDownloadLabel(state),
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 13, color: colors.muted),
+        Expanded(
+          child: UpdateDownloadTrack(
+            fraction: verifying ? null : state.progress?.fraction,
+            height: 10,
+          ),
         ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: UpdateDownloadTrack(
-                fraction: verifying ? null : state.progress?.fraction,
-                height: 10,
-              ),
+        const SizedBox(width: 12),
+        // 锁死宽度：数字位数变化不该把进度条挤来挤去。
+        SizedBox(
+          width: 82,
+          child: Text(
+            updateDownloadLabel(state),
+            textAlign: TextAlign.right,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: colors.muted,
             ),
-            if (onCancel != null) ...[
-              const SizedBox(width: 12),
-              AppButton(
-                variant: AppButtonVariant.outline,
-                onPress: onCancel,
-                child: const Text('取消'),
-              ),
-            ],
-          ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        // 校验阶段 onCancel 为 null，按钮自动进入禁用态但仍占着位置，
+        // 避免最后一秒进度条突然变长。
+        AppButton(
+          variant: AppButtonVariant.outline,
+          onPress: onCancel,
+          child: const Text('取消'),
         ),
       ],
     );

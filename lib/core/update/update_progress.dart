@@ -53,13 +53,24 @@ class UpdateDownloadTrack extends StatelessWidget {
             if (fraction == null)
               const _IndeterminateFill()
             else
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  widthFactor: fraction!.clamp(0.0, 1.0),
-                  heightFactor: 1,
-                  child: ColoredBox(color: colors.primary),
+              // 控制器按 1% 节流推送，直接把 fraction 交给 widthFactor
+              // 会一格一格地跳。补间到下一个百分点，读起来才是连续推进。
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(
+                  begin: 0,
+                  end: fraction!.clamp(0.0, 1.0),
                 ),
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOut,
+                builder: (context, value, child) => Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: value,
+                    heightFactor: 1,
+                    child: child,
+                  ),
+                ),
+                child: ColoredBox(color: colors.primary),
               ),
           ],
         ),
@@ -131,19 +142,20 @@ class UpdateDownloadChip extends StatelessWidget {
     final verifying = state.phase == UpdatePhase.verifying;
     final fraction = verifying ? null : state.progress?.fraction;
 
-    return Material(
-      color: colors.surface,
-      elevation: 0,
-      shadowColor: Colors.black.withValues(alpha: 0.16),
-      borderRadius: context.radii.blockAll,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: context.radii.blockAll,
-          boxShadow: colors.shadowCard,
-        ),
+    // 底色和阴影只画在 DecoratedBox 上，Material 退成透明层，
+    // 单纯为「取消」提供水波纹和裁切。
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: context.radii.blockAll,
+        boxShadow: colors.shadowCard,
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: context.radii.blockAll,
+        clipBehavior: Clip.antiAlias,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+          padding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -152,23 +164,40 @@ class UpdateDownloadChip extends StatelessWidget {
                 child: UpdateDownloadTrack(fraction: fraction, height: 6),
               ),
               const SizedBox(width: 10),
-              Text(
-                updateDownloadChipLabel(state),
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: colors.ink,
-                ),
-              ),
-              if (!verifying)
-                InkWell(
-                  onTap: onCancel,
-                  borderRadius: context.radii.chipAll,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    child: Text('取消'),
+              // 锁死宽度：「下载 7%」和「正在校验」不一样宽，
+              // 不锁的话胶囊会跟着进度一路改宽度。
+              SizedBox(
+                width: 62,
+                child: Text(
+                  updateDownloadChipLabel(state),
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: colors.ink,
                   ),
                 ),
+              ),
+              // 校验阶段取消已经没有意义，但位置留着并置灰，
+              // 否则胶囊会在最后一秒突然缩短。
+              InkWell(
+                onTap: verifying ? null : onCancel,
+                borderRadius: context.radii.chipAll,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Text(
+                    '取消',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: verifying ? colors.inactive : colors.primary,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
