@@ -87,7 +87,7 @@ void main() {
             notes: '''
 ## 更新内容
 
-- 记账时可记录位置
+- 功能 记账时可记录位置
 - 地点可改成店名
 ''',
           ),
@@ -100,7 +100,9 @@ void main() {
     expect(find.text('发现新版本'), findsOneWidget);
     expect(find.text('v1.5.2 · 57MB'), findsOneWidget);
     expect(find.text('记账时可记录位置'), findsOneWidget);
+    expect(find.text('功能 记账时可记录位置'), findsNothing);
     expect(find.text('地点可改成店名'), findsOneWidget);
+    expect(find.byIcon(FLucideIcons.sparkles), findsOneWidget);
     expect(find.text('忽略'), findsOneWidget);
     expect(find.text('更新'), findsOneWidget);
   });

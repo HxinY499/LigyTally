@@ -49,7 +49,7 @@ class _UpdateAvailableSheetState extends ConsumerState<_UpdateAvailableSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final notes = parseReleaseNotes(widget.info.releaseNotes);
+    final notes = parseReleaseNoteItems(widget.info.releaseNotes);
     final sizeLabel = widget.info.apkSize > 0
         ? '${(widget.info.apkSize / 1024 / 1024).toStringAsFixed(0)}MB'
         : null;
@@ -211,31 +211,38 @@ class _DownloadPanel extends StatelessWidget {
 }
 
 class _NoteLine extends StatelessWidget {
-  const _NoteLine(this.text);
+  const _NoteLine(this.item);
 
-  final String text;
+  final ReleaseNoteItem item;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final kind = item.kind;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(
-              color: colors.primary,
-              shape: BoxShape.circle,
-            ),
-          ),
+          padding: EdgeInsets.only(top: kind == null ? 8 : 2),
+          child: kind == null
+              ? Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: colors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                )
+              : Icon(
+                  _iconFor(kind),
+                  size: 15,
+                  color: colors.primary,
+                ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
-            text,
+            item.text,
             style: TextStyle(
               fontSize: 14,
               height: 1.45,
@@ -246,4 +253,10 @@ class _NoteLine extends StatelessWidget {
       ],
     );
   }
+
+  static IconData _iconFor(ReleaseNoteKind kind) => switch (kind) {
+    ReleaseNoteKind.feature => FLucideIcons.sparkles,
+    ReleaseNoteKind.fix => FLucideIcons.wrench,
+    ReleaseNoteKind.improvement => FLucideIcons.slidersHorizontal,
+  };
 }
