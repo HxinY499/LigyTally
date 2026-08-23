@@ -47,7 +47,7 @@ List<ReleaseNoteItem> parseReleaseNoteItems(String? body) {
 
   return [
     for (final line in section.split(RegExp(r'\r?\n')))
-      if (_itemFromLine(line) case final item?) item,
+      ?_itemFromLine(line),
   ];
 }
 

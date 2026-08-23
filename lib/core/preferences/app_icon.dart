@@ -33,7 +33,7 @@ enum AppIconStyle {
   /// 选择器里的中文名。图标本身已说明样式，标签只用于辅助确认。
   final String label;
 
-  /// 应用内预览图路径。与安卓 mipmap 同源，由 scripts/build_branding.py 生成。
+  /// 应用内预览图路径。与安卓 mipmap 同源。
   String get asset => 'assets/branding/app-icon-$key.png';
 
   /// 未知或缺失的 key 一律落回默认值，不抛异常 ——

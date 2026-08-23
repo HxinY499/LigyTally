@@ -99,8 +99,8 @@ App 图标为**全出血、不自绘圆角** —— 圆角交由各平台系统�
 `dark` 是默认值，落在无后缀的 `ic_launcher` 上 —— 它同时是 application 级默认图标，必须存在。
 `dark` / `light` 沿用了早期版本的 key 原义，所以老用户的 SharedPreferences 值零迁移成本。
 
-改这套需五处同步：`AppIconStyle` 枚举 · `pubspec.yaml` 声明 · `AndroidManifest.xml` alias ·
-`MainActivity.kt` 的 `ICON_ALIASES` · `build_branding.py` 的 `APP_ICON_STYLES`。
+改这套需四处同步：`AppIconStyle` 枚举 · `pubspec.yaml` 声明 · `AndroidManifest.xml` alias ·
+`MainActivity.kt` 的 `ICON_ALIASES`。
 
 ### ⚠️ 新增图标时的两条硬约束
 
@@ -114,11 +114,3 @@ App 图标为**全出血、不自绘圆角** —— 圆角交由各平台系统�
 + 4 个 `mipmap-anydpi-v26/*.xml`。
 自适应前景标记占 40%，落在 66/108 安全区内；圆形 / 圆角方 / 全出血三种系统裁切均已验证无截断。
 背景色在 `values/ic_launcher_colors.xml`。
-
-## 重新生成
-
-```bash
-python3 scripts/build_branding.py
-```
-
-改几何只需改 `scripts/build_branding.py` 顶部常量与 `GLYPHS` 字典，全部资产会一并重算。依赖 `rsvg-convert`（`brew install librsvg`）出 PNG；缺失时只产 SVG。
