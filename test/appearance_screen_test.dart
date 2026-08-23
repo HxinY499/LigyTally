@@ -260,8 +260,8 @@ void main() {
     expect(matchedPreset(configOf(tester)), isNotNull);
 
     // 但改一项风格字段之后，就该诚实地变成「自定义」。
-    // 墨夜本身是宽松档，这里改到适中才能跟预设错开。
-    await notifier.setDensity(AppDensityLevel.standard);
+    // 墨夜是适中档，改到紧凑才能跟预设错开。
+    await notifier.setDensity(AppDensityLevel.compact);
     await tester.pumpAndSettle();
     expect(matchedPreset(configOf(tester)), isNull);
   });

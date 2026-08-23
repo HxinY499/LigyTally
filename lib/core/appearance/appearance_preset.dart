@@ -83,13 +83,16 @@ class AppearancePreset {
 ///
 /// 六套而不是更多：一行能横滑完，且每套之间的差别一眼看得出。再加就会出现
 /// 「这两个有什么区别」——那时候用户会放弃选择，退回逐项开关，预设就白做了。
+///
+/// 密度只在紧凑 / 适中之间挑。宽松把一行账单放到满档行高，成品组合拿它
+/// 会显得空；想再松的人往下翻逐项开关即可。
 const kAppearancePresets = <AppearancePreset>[
   AppearancePreset(
     label: '素白',
     themeMode: AppThemeMode.light,
     accent: AccentChoice.preset(AppAccent.blue),
     corner: AppCornerStyle.standard,
-    density: AppDensityLevel.relaxed,
+    density: AppDensityLevel.standard,
     heroStyle: HeroCardStyle.gradient,
     navBarStyle: NavBarStyle.docked,
   ),
@@ -98,7 +101,7 @@ const kAppearancePresets = <AppearancePreset>[
     themeMode: AppThemeMode.dark,
     accent: AccentChoice.preset(AppAccent.indigo),
     corner: AppCornerStyle.round,
-    density: AppDensityLevel.relaxed,
+    density: AppDensityLevel.standard,
     heroStyle: HeroCardStyle.gradient,
     navBarStyle: NavBarStyle.docked,
   ),
@@ -117,7 +120,7 @@ const kAppearancePresets = <AppearancePreset>[
     themeMode: AppThemeMode.light,
     accent: AccentChoice.preset(AppAccent.orange),
     corner: AppCornerStyle.extraRound,
-    density: AppDensityLevel.relaxed,
+    density: AppDensityLevel.standard,
     heroStyle: HeroCardStyle.solid,
     navBarStyle: NavBarStyle.floating,
   ),
@@ -136,7 +139,7 @@ const kAppearancePresets = <AppearancePreset>[
     themeMode: AppThemeMode.dark,
     accent: AccentChoice.preset(AppAccent.pink),
     corner: AppCornerStyle.extraRound,
-    density: AppDensityLevel.relaxed,
+    density: AppDensityLevel.standard,
     heroStyle: HeroCardStyle.gradient,
     navBarStyle: NavBarStyle.floating,
   ),
