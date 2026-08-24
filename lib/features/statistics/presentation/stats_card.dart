@@ -133,24 +133,23 @@ class StatsRatioBar extends StatelessWidget {
   }
 }
 
-/// 两档胶囊切换器：浅色底槽 + 一块会滑过去的白色滑块。
+/// 胶囊切换器：浅色底槽 + 一块会滑过去的白色滑块。
 ///
-/// 统计页卡头的收支切换、下钻面板的期段切换是同一种控件——两选一、就地
-/// 换口径、不离开当前视图。两处各写一份，圆角、字号和动效很快就会漂开。
+/// 统计页卡头的收支切换、下钻面板的期段切换是同一种控件——就地换口径、
+/// 不离开当前视图。两处各写一份，圆角、字号和动效很快就会漂开。
 ///
-/// 只支持两档：滑块按半宽定位，多一档就得改成按下标算宽度，而这个页面上
-/// 三档以上的选择一律走 [AppSegmentedControl]。
+/// 滑块按下标等分轨道。四档及以上（日/周/月/年）走 [AppSegmentedControl]。
 class StatsPillToggle extends StatelessWidget {
   const StatsPillToggle({
     super.key,
     required this.labels,
     required this.selected,
     required this.onChanged,
-  }) : assert(labels.length == 2, '滑块按半宽定位，只支持两档');
+  }) : assert(labels.length >= 2, '至少两档才需要滑块');
 
   final List<String> labels;
 
-  /// 选中项的下标（0 或 1）。
+  /// 选中项的下标。
   final int selected;
 
   final ValueChanged<int> onChanged;
@@ -159,6 +158,7 @@ class StatsPillToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final stats = StatsTokens.of(context);
     final trackRadius = stats.radiusInner;
+    final last = labels.length - 1;
     return Container(
       height: 28,
       padding: const EdgeInsets.all(3),
@@ -173,11 +173,9 @@ class StatsPillToggle extends StatelessWidget {
               child: AnimatedAlign(
                 duration: StatsTokens.durTap,
                 curve: StatsTokens.curveEnter,
-                alignment: selected == 0
-                    ? Alignment.centerLeft
-                    : Alignment.centerRight,
+                alignment: Alignment(-1 + 2 * selected / last, 0),
                 child: FractionallySizedBox(
-                  widthFactor: 0.5,
+                  widthFactor: 1 / labels.length,
                   heightFactor: 1,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -202,8 +200,8 @@ class StatsPillToggle extends StatelessWidget {
           //
           // 1. 轨道收成内容宽度。卡头里这颗控件嵌在 Row 中，拿到的是无界
           //    宽度，怎么排都按内容；一旦放进宽度有界的 Column（下钻面板），
-          //    裸 Row 会被拉满整行，而滑块仍按半宽定位，两者就错开。
-          // 2. 两档等宽。滑块是半宽，而「本期 / 对照期」字数不同，
+          //    裸 Row 会被拉满整行，而滑块仍按等分定位，两者就错开。
+          // 2. 各档等宽。滑块按份数切，而「本期 / 对照期」字数不同，
           //    按各自内容排同样会让滑块盖不准文字。
           IntrinsicWidth(
             child: Row(

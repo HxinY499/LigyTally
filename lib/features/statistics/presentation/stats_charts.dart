@@ -448,18 +448,27 @@ class CategoryTrendAreaChart extends StatelessWidget {
 /// - 柱顶金额标在柱外上方（fl_chart 的 offset.dy 为正才是往上抬）
 /// - 均值数字不绑在虚线上：靠近均值的柱顶金额会和它抢同一条高度
 ///
-/// 柱色不随 [kind] 变成收入绿：这里的配色表达的是「当期 vs 历史」的主次，
-/// 换成语义色会和「高亮渐变=当期」这条规则打架。算的是哪一边由卡片标题
-/// 与切换器交代。
+/// 柱色不随 [kind] 变成收入绿或结余发散色：这里的配色表达的是
+/// 「当期 vs 历史」的主次，换成语义色会和「高亮渐变=当期」这条规则打架。
+/// 算的是哪一边由卡片标题与切换器交代。
 class PeriodBarChart extends StatelessWidget {
   const PeriodBarChart({super.key, required this.bars, this.kind = 0});
 
   final List<PeriodBar> bars;
 
-  /// 0 支出 / 1 收入。
+  /// 0 支出 / 1 收入 / 2 结余（收入 − 支出，可负）。
   final int kind;
 
-  int _valueOf(PeriodBar bar) => kind == 0 ? bar.expenseCents : bar.incomeCents;
+  int _valueOf(PeriodBar bar) => switch (kind) {
+    1 => bar.incomeCents,
+    2 => bar.incomeCents - bar.expenseCents,
+    _ => bar.expenseCents,
+  };
+
+  bool _countsInAverage(PeriodBar bar) {
+    if (kind == 2) return bar.expenseCents > 0 || bar.incomeCents > 0;
+    return _valueOf(bar) > 0;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -468,18 +477,27 @@ class PeriodBarChart extends StatelessWidget {
       0,
       (value, bar) => math.max(value, _valueOf(bar)),
     );
-    // 顶部留白：柱顶金额在柱顶上方，不能和柱体或均值线抢同一条高度。
-    final maxY = maxCents == 0 ? 100.0 : maxCents / 100 * 1.38;
+    final minCents = bars.fold<int>(
+      0,
+      (value, bar) => math.min(value, _valueOf(bar)),
+    );
+    // 柱端金额画在柱外，两端都要留空，不能和柱体或均值线抢同一条高度。
+    final maxY = maxCents > 0
+        ? maxCents / 100 * 1.38
+        : (minCents < 0 ? 0.0 : 100.0);
+    final minY = minCents < 0 ? minCents / 100 * 1.38 : 0.0;
+    final axisSpan = maxY - minY;
+    final axisInterval = axisSpan <= 0 ? 1.0 : axisSpan / 3;
 
-    // 均值只统计有金额的周期：把「还没记账的月份」算进分母会把均值拉得毫无意义。
-    final nonZero = bars.where((bar) => _valueOf(bar) > 0).toList();
-    final averageCents = nonZero.isEmpty
+    // 支出/收入：空月不算进均值。结余：有记账的月都算，包括净额为零或为负。
+    final counted = bars.where(_countsInAverage).toList();
+    final averageCents = counted.isEmpty
         ? 0
-        : nonZero.fold<int>(0, (sum, bar) => sum + _valueOf(bar)) ~/
-              nonZero.length;
+        : counted.fold<int>(0, (sum, bar) => sum + _valueOf(bar)) ~/
+              counted.length;
 
     final lastIndex = bars.length - 1;
-    final showAverage = nonZero.length >= 2;
+    final showAverage = counted.length >= 2;
 
     return Column(
       children: [
@@ -494,11 +512,12 @@ class PeriodBarChart extends StatelessWidget {
         Expanded(
           child: BarChart(
             BarChartData(
+              minY: minY,
               maxY: maxY,
               alignment: BarChartAlignment.spaceAround,
               gridData: FlGridData(
                 drawVerticalLine: false,
-                horizontalInterval: maxY / 3,
+                horizontalInterval: axisInterval,
                 getDrawingHorizontalLine: (_) => FlLine(
                   color: stats.gridLine,
                   strokeWidth: 1,
@@ -510,6 +529,12 @@ class PeriodBarChart extends StatelessWidget {
               // 会和柱顶金额叠成一团。数字改到图外右上角。
               extraLinesData: ExtraLinesData(
                 horizontalLines: [
+                  if (minY < 0)
+                    HorizontalLine(
+                      y: 0,
+                      color: stats.textFaint.withValues(alpha: 0.4),
+                      strokeWidth: 1,
+                    ),
                   if (showAverage)
                     HorizontalLine(
                       y: averageCents / 100,
@@ -560,8 +585,8 @@ class PeriodBarChart extends StatelessWidget {
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 38,
-                    interval: maxY / 3,
+                    reservedSize: minY < 0 ? 44 : 38,
+                    interval: axisInterval,
                     maxIncluded: false,
                     getTitlesWidget: (value, meta) => Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -609,21 +634,26 @@ class PeriodBarChart extends StatelessWidget {
                             ? stats.barActiveGradient
                             : null,
                         color: i == lastIndex ? null : stats.barIdle,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(6),
-                        ),
+                        borderRadius: _valueOf(bars[i]) >= 0
+                            ? const BorderRadius.vertical(
+                                top: Radius.circular(6),
+                              )
+                            : const BorderRadius.vertical(
+                                bottom: Radius.circular(6),
+                              ),
                         backDrawRodData: BackgroundBarChartRodData(
                           show: true,
+                          fromY: minY,
                           toY: maxY,
                           color: stats.barTrack,
                         ),
                         label: BarChartRodLabel(
-                          show: _valueOf(bars[i]) > 0,
+                          show: _valueOf(bars[i]) != 0,
                           text: formatAxisMoney(_valueOf(bars[i])),
                           style: i == lastIndex
                               ? stats.axisLabelActive
                               : stats.axisLabel,
-                          // fl_chart：正 dy 才是往柱顶上方抬。负值会把字推进柱体。
+                          // fl_chart：正 dy 把字从柱端往外推。负柱同样适用。
                           offset: const Offset(0, 8),
                         ),
                       ),

@@ -174,12 +174,16 @@ class StatisticsWindow {
     _ => '本期趋势',
   };
 
-  /// 对比卡标题。[kind] 为 0 支出 / 1 收入。
+  /// 对比卡标题。[kind] 为 0 支出 / 1 收入 / 2 结余。
   ///
   /// 收支口径写进标题而不是只靠卡内的切换器：这张卡在页面最下方，
   /// 用户往往是滚到这里才看见它，标题必须自己说清算的是哪一边。
   String comparisonTitle(int kind) {
-    final subject = kind == 0 ? '支出' : '收入';
+    final subject = switch (kind) {
+      1 => '收入',
+      2 => '结余',
+      _ => '支出',
+    };
     return switch (period) {
       StatisticsPeriod.day => '日$subject对比',
       StatisticsPeriod.week => '周$subject对比',

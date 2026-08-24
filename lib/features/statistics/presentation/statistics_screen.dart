@@ -38,12 +38,12 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   int _categoryKind = 0;
   int _trendKind = 0;
 
-  /// 周期对比卡的收支口径。
+  /// 周期对比卡的口径：0 支出 / 1 收入 / 2 结余。
   ///
   /// 与 [_categoryKind] 分开而不是共用一个全局开关：分类构成与分类变化讲的是
   /// 同一批分类，联动是必要的；而周期对比换的是整张图的 Y 轴口径，
   /// 让它跟着上面两张卡走，会出现「只想看收入分类，最下面的柱子也跟着变」
-  /// 这种没人要求的连带效果。
+  /// 这种没人要求的连带效果。结余只加在这张卡上：分类构成没法把净额画成饼。
   int _comparisonKind = 0;
 
   void _shift(int direction) {
@@ -311,7 +311,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                         title: _window.comparisonTitle(_comparisonKind),
                         caption: _window.comparisonCaption,
                         trailing: StatsPillToggle(
-                          labels: const ['支出', '收入'],
+                          key: const ValueKey('comparison-kind-toggle'),
+                          labels: const ['支出', '收入', '结余'],
                           selected: _comparisonKind,
                           onChanged: (value) =>
                               setState(() => _comparisonKind = value),
@@ -333,23 +334,31 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                             bars: 6,
                           ),
                           builder: (context, bars) {
-                            final hasData = bars.any(
-                              (bar) =>
-                                  (_comparisonKind == 0
+                            final hasData = bars.any((bar) {
+                              if (_comparisonKind == 2) {
+                                return bar.expenseCents > 0 ||
+                                    bar.incomeCents > 0;
+                              }
+                              return (_comparisonKind == 0
                                       ? bar.expenseCents
                                       : bar.incomeCents) >
-                                  0,
-                            );
+                                  0;
+                            });
                             if (!hasData) {
+                              final subject = switch (_comparisonKind) {
+                                1 => '收入',
+                                2 => '收支',
+                                _ => '支出',
+                              };
                               return StatsEmpty(
                                 icon: FLucideIcons.chartColumn,
-                                title:
-                                    '近期没有可对比的${_comparisonKind == 0 ? '支出' : '收入'}',
+                                title: '近期没有可对比的$subject',
                                 body: '积累几个周期的记录后即可看到横向对比',
                                 height: 196,
                               );
                             }
                             return PeriodBarChart(
+                              key: ValueKey(_comparisonKind),
                               bars: bars,
                               kind: _comparisonKind,
                             );

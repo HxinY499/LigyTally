@@ -227,6 +227,23 @@ void main() {
       expect(window.comparisonRange.endExclusive, DateTime(2026, 8, 7));
       expect(window.previousLabel, '较上周同期');
     });
+
+    test('对比卡标题随口径写成支出、收入或结余', () {
+      final month = StatisticsWindow(
+        period: StatisticsPeriod.month,
+        anchor: DateTime(2026, 8, 15),
+        today: DateTime(2026, 9, 3),
+      );
+      expect(month.comparisonTitle(0), '月支出对比');
+      expect(month.comparisonTitle(1), '月收入对比');
+      expect(month.comparisonTitle(2), '月结余对比');
+
+      final year = StatisticsWindow(
+        period: StatisticsPeriod.year,
+        anchor: DateTime(2026, 8, 15),
+      );
+      expect(year.comparisonTitle(2), '年结余对比');
+    });
   });
 
   group('轴刻度金额格式', () {
@@ -242,6 +259,9 @@ void main() {
       expect(formatAxisMoney(3500000), '3.5万');
       // 1.2 亿。
       expect(formatAxisMoney(12000000000), '1.2亿');
+      // 结余柱可为负，符号跟金额走。
+      expect(formatAxisMoney(-120000), '-1.2千');
+      expect(formatAxisMoney(-88800), '-888');
     });
   });
 
@@ -790,6 +810,69 @@ void main() {
 
       expect(find.text('本期还没有支出'), findsNothing);
       expect(find.text('880.00'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
+    testWidgets('周期对比卡可切到结余，柱上是收入减支出', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final categories = await database.exportCategories();
+      final expenseCategory = categories.firstWhere(
+        (item) => item.kind == 0 && item.level == 1,
+      );
+      final incomeCategory = categories.firstWhere(
+        (item) => item.kind == 1 && item.level == 1,
+      );
+      final now = DateTime.now();
+      final lastMonth = DateTime(now.year, now.month - 1, 1);
+
+      Future<void> add(
+        String id,
+        int kind,
+        String categoryId,
+        int cents,
+        DateTime day,
+      ) {
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: id,
+            kind: kind,
+            amountCents: cents,
+            categoryId: categoryId,
+            accountingDate: dateKey(day),
+            occurredAt: day.millisecondsSinceEpoch,
+            createdAt: day.millisecondsSinceEpoch,
+            updatedAt: day.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      await add('cmp-expense', 0, expenseCategory.id, 680000, now);
+      await add('cmp-income', 1, incomeCategory.id, 1200000, now);
+      await add('cmp-expense-prev', 0, expenseCategory.id, 680000, lastMonth);
+      await add('cmp-income-prev', 1, incomeCategory.id, 1200000, lastMonth);
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      expect(find.text('月支出对比'), findsOneWidget);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('comparison-kind-toggle')),
+          matching: find.text('结余'),
+        ),
+      );
+      await settle(tester);
+
+      expect(find.text('月结余对比'), findsOneWidget);
+      // 两期结余都是 5200 元，均值是 Text，柱顶金额画在 canvas 上测不到。
+      expect(find.text('均值 5.2千'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
     });
@@ -1396,8 +1479,8 @@ void main() {
       await tester.pumpWidget(await host(database));
       await settle(tester);
 
-      // 支出/收入切换器现在有两处（分类构成卡、周期对比卡），
-      // 必须按卡片限定范围，否则 find.text('收入') 会撞上两个。
+      // 支出/收入切换器不止一处（趋势、分类构成、周期对比），
+      // 必须按卡片限定范围，否则 find.text('收入') 会撞上多个。
       await tester.tap(
         find.descendant(
           of: find.ancestor(
