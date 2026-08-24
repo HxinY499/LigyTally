@@ -123,7 +123,8 @@ class StatsExclusionAction extends StatelessWidget {
   }
 }
 
-/// 多选支出分类。取消返回 null；确定返回新的 id 集合（可空 = 清除）。
+/// 多选要排除的分类，收支两侧都在里面。
+/// 取消返回 null；确定返回新的 id 集合（可空 = 清除）。
 Future<Set<String>?> showStatsExclusionSheet(
   BuildContext context, {
   required List<CategoryEntry> categories,
@@ -155,6 +156,19 @@ class _ExclusionSheet extends StatefulWidget {
 
 class _ExclusionSheetState extends State<_ExclusionSheet> {
   late Set<String> _selected = {...widget.initialIds};
+
+  /// 按收支切成两段。某一侧一个分类都没有时不出小标题，免得留一个空段。
+  List<({String label, List<CategoryEntry> categories})> get _sections {
+    final sections = <({String label, List<CategoryEntry> categories})>[];
+    for (final (kind, label) in const [(0, '支出'), (1, '收入')]) {
+      final items = widget.categories
+          .where((item) => item.kind == kind)
+          .toList();
+      if (items.isEmpty) continue;
+      sections.add((label: label, categories: items));
+    }
+    return sections;
+  }
 
   void _toggle(String id) {
     HapticFeedback.selectionClick();
@@ -254,18 +268,49 @@ class _ExclusionSheetState extends State<_ExclusionSheet> {
                           child: const Text('清除全部'),
                         ),
                       ),
-                    CategoryPicker(
-                      categories: widget.categories,
-                      selectedIds: _selected,
-                      accent: colors.primary,
-                      layout: CategoryPickerLayout.grid,
-                      onSelected: _toggle,
-                    ),
+                    // 收支两侧摆在同一条滚动轴上，不做分段切换：排除的是
+                    // 分类，用户心里想的是「把这几类拿掉」，不是「先决定
+                    // 看哪一侧」。小标题只用来说明滑到哪儿了。
+                    for (final section in _sections) ...[
+                      _SectionLabel(text: section.label),
+                      CategoryPicker(
+                        categories: section.categories,
+                        selectedIds: _selected,
+                        accent: colors.primary,
+                        layout: CategoryPickerLayout.grid,
+                        onSelected: _toggle,
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 浮层里的分段小标题：`支出` / `收入`。
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 2),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: context.colors.muted,
+          ),
         ),
       ),
     );

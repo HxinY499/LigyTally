@@ -1,7 +1,5 @@
-import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,13 +17,13 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/image_backdrop.dart';
 import '../../../shared/widgets/summary_band.dart';
 import '../application/providers.dart';
-import 'month_calendar_dialog.dart';
+import 'month_picker.dart';
 import 'transaction_editor.dart';
 
 class LedgerScreen extends ConsumerStatefulWidget {
   const LedgerScreen({super.key, this.active = true});
 
-  /// 当前是否停在记账 tab。底栏用 PageView，三页都挂在树上，
+  /// 当前是否停在记账 tab。底栏用 PageView，四页都挂在树上，
   /// 返回键只在本页可见且处于多选时拦截。
   final bool active;
 
@@ -48,20 +46,6 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   /// 全选、删除、勾选清理都只对这份集合生效，不跨月、不碰被关键词滤掉的行。
   List<LedgerItem> _visibleItems = const [];
 
-  /// 本次构建实际渲染出的按天分组，顺序与列表一致。
-  ///
-  /// 在 build 里记录：分组是「月度流 + 搜索关键词」的产物，只有渲染时才成型。
-  /// 月历回调发生在渲染之后，读到的必然是最新一份。
-  List<_DayGroup> _dayGroups = const [];
-
-  /// 日期 key → 该天卡片的 GlobalKey，用于滚动对位。
-  final Map<String, GlobalKey> _dayCardKeys = {};
-
-  /// 正在高亮的日期 key。从月历跳过来时短暂点亮目标卡片，
-  /// 否则滚动停下后用户还得自己找「刚才点的是哪张」。
-  String? _highlightedDay;
-  Timer? _highlightTimer;
-
   @override
   void initState() {
     super.initState();
@@ -71,7 +55,6 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
 
   @override
   void dispose() {
-    _highlightTimer?.cancel();
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -93,93 +76,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
 
   Future<void> _pickMonth() async {
     final picked = await showMonthPicker(context, initial: _month);
-    if (picked != null && mounted) {
-      setState(() {
-        _month = picked;
-        _dayCardKeys.clear();
-        _highlightedDay = null;
-      });
-    }
-  }
-
-  /// 打开当月月历，并处理点选结果：
-  /// 有记录的天滚动定位过去，没记录的天直接进「记一笔」。
-  Future<void> _openCalendar() async {
-    final day = await showMonthCalendar(context, month: _month);
-    if (day == null || !mounted) return;
-    // 搜索态下列表是过滤后的子集，而月历读的是全量数据：不先清掉关键词，
-    // 一个「月历里有金额、列表里被过滤掉」的日子会被误判成没有记录。
-    if (_query.isNotEmpty) {
-      setState(() {
-        _query = '';
-        _searchController.clear();
-      });
-      // 过滤是同步的，一帧之后 _dayGroups 就是全量分组。
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted) return;
-    }
-    final key = dateKey(day);
-    final index = _dayGroups.indexWhere((group) => group.dayKey == key);
-    if (index < 0) {
-      await _addTransactionForDay(day);
-      return;
-    }
-    setState(() => _highlightedDay = key);
-    await _scrollToGroup(index);
-    if (!mounted) return;
-    _highlightTimer?.cancel();
-    _highlightTimer = Timer(const Duration(milliseconds: 1600), () {
-      if (mounted) setState(() => _highlightedDay = null);
-    });
-  }
-
-  /// 把第 [index] 个日卡滚进视口。
-  ///
-  /// 明细是虚拟列表，目标卡不在视口附近时压根没被构建，拿不到 RenderObject，
-  /// [Scrollable.ensureVisible] 也就无从下手。所以先按估高跳到目标附近让它
-  /// 进入构建范围，再用 ensureVisible 精确对位——估高只决定「跳得准不准」，
-  /// 不决定最终位置，因此不必精确。
-  Future<void> _scrollToGroup(int index) async {
-    // 页头与月份条都是 pinned sliver，它们盖住的那段视口不算「可见」，
-    // 而 ensureVisible 的 alignment 只认视口比例、不认这些遮挡，
-    // 所以要自己把遮挡高度折成比例让出来。
-    final topInset =
-        MediaQuery.paddingOf(context).top +
-        kAppHeaderHeight +
-        _kMonthBarHeight +
-        _kRevealGap;
-    for (var attempt = 0; attempt < 3; attempt++) {
-      if (!_scrollController.hasClients) return;
-      final target = _dayCardKeys[_dayGroups[index].dayKey]?.currentContext;
-      // mounted 要问目标卡自己：上一轮 jumpTo 之后它可能已经被虚拟列表回收，
-      // 此时它的 Element 还在 map 里挂着，但已经不在树上了。
-      if (target != null && target.mounted) {
-        await Scrollable.ensureVisible(
-          target,
-          alignment: topInset / _scrollController.position.viewportDimension,
-          duration: const Duration(milliseconds: 320),
-          curve: Curves.easeOutCubic,
-        );
-        return;
-      }
-      // 粗定位的 offset：目标卡在内容里的位置减去遮挡高度。
-      // 状态栏留白与月份条在这两项里各出现一次，相减抵消，不必参与计算；
-      // 剩下的就是页头折叠量 + 摘要卡区 + 列表上边距 + 前面所有日卡。
-      var offset =
-          kAppHeaderExpandedHeight -
-          kAppHeaderHeight +
-          _kSummaryBlockEstimate +
-          _kListTopPadding -
-          _kRevealGap;
-      for (var i = 0; i < index; i++) {
-        offset += _estimatedCardHeight(_dayGroups[i].rowCount);
-      }
-      _scrollController.jumpTo(
-        offset.clamp(0, _scrollController.position.maxScrollExtent),
-      );
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted) return;
-    }
+    if (picked != null && mounted) setState(() => _month = picked);
   }
 
   void _toggleSearch() {
@@ -302,33 +199,18 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   Widget build(BuildContext context) {
     final database = ref.watch(databaseProvider);
     final range = monthRange(_month);
-    // 摘要流挪到页头外层：页头现在是 pinned sliver，必须和内容同处一个
-    // CustomScrollView（内容要能滚到它背后去，毛玻璃才有东西可模糊），
-    // 于是它不能再把内容当 child 包进来。折叠进度由 sliver 的 shrinkOffset
-    // 提供，不再是会被重建冲掉的 State，摘要每次到达都重建页头也无副作用。
     return PopScope(
       canPop: !(_selecting && widget.active),
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _exitSelect();
       },
-      child: StreamBuilder<LedgerSummary>(
-        stream: database.watchSummary(range),
-        builder: (context, summarySnapshot) {
-          final summary =
-              summarySnapshot.data ??
-              const LedgerSummary(
-                incomeCents: 0,
-                expenseCents: 0,
-                entryCount: 0,
-                activeDayCount: 0,
-              );
-          return Stack(
-            children: [
-              AppPageHeader(
-                // 非搜索/多选态走 title，享受大标题折叠；搜索和多选都改用
-                // content，页头固定为紧凑高度（输入框和三栏操作条都不该被缩放）。
-                title: _selecting || _searching ? null : '记账',
-                content: _selecting
+      child: Stack(
+        children: [
+          AppPageHeader(
+            // 非搜索/多选态走 title，享受大标题折叠；搜索和多选都改用
+            // content，页头固定为紧凑高度（输入框和三栏操作条都不该被缩放）。
+            title: _selecting || _searching ? null : '记账',
+            content: _selecting
                     ? _SelectModeBar(
                         selectedCount: _selected.length,
                         allSelected:
@@ -363,23 +245,27 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                       ],
                 controller: _scrollController,
                 slivers: [
-                  // 金色摘要卡（可跟随滚动上移）
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
-                      child: SummaryBand(
-                        summary: summary,
-                        onOpenCalendar: _openCalendar,
+                      child: StreamBuilder<LedgerSummary>(
+                        stream: database.watchSummary(range),
+                        builder: (context, snapshot) {
+                          final summary =
+                              snapshot.data ??
+                              const LedgerSummary(
+                                incomeCents: 0,
+                                expenseCents: 0,
+                                entryCount: 0,
+                                activeDayCount: 0,
+                              );
+                          return SummaryBand(
+                            summary: summary,
+                            month: _month,
+                            onPickMonth: _pickMonth,
+                          );
+                        },
                       ),
-                    ),
-                  ),
-                  // 吸顶月份/收支条：紧贴页头，粘在顶部。
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _MonthStickyBarDelegate(
-                      month: _month,
-                      summary: summary,
-                      onPick: _pickMonth,
                     ),
                   ),
                   // 列表。图片路径单独订阅一条流：它变得远比账单本身少，
@@ -455,14 +341,6 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                                 .add(item);
                           }
                           final entries = groups.entries.toList();
-                          // 记下这一版分组，供月历跳转时定位（见 [_openCalendar]）。
-                          _dayGroups = [
-                            for (final entry in entries)
-                              _DayGroup(
-                                dayKey: entry.key,
-                                rowCount: entry.value.length,
-                              ),
-                          ];
                           return SliverPadding(
                             // 84 是避开居中悬浮的「记一笔」FAB（56 直径 + 16 浮起
                             // 边距 + 余量）。再加上 MediaQuery 的底部留白：贴底档下
@@ -479,18 +357,11 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                               itemBuilder: (context, index) {
                                 final group = entries[index];
                                 return Padding(
-                                  // GlobalKey 挂在最外层：滚动对位时要连卡片下方的
-                                  // 间距一起算，否则目标卡会紧贴上一张的底边。
-                                  key: _dayCardKeys.putIfAbsent(
-                                    group.key,
-                                    GlobalKey.new,
-                                  ),
                                   padding: const EdgeInsets.only(bottom: 14),
                                   child: _DayCard(
                                     day: dateFromKey(group.key),
                                     items: group.value,
                                     imagePaths: imagePaths,
-                                    highlighted: _highlightedDay == group.key,
                                     selecting: _selecting,
                                     selectedIds: _selected,
                                     onTapHeader: _selecting
@@ -531,45 +402,10 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                   ),
                 ),
             ],
-          );
-        },
-      ),
+          ),
     );
   }
 }
-
-/// 列表里的一天：日期 key + 当天条目数。
-///
-/// 只留滚动定位需要的两样东西，不持有 [LedgerItem]——那会让这份缓存
-/// 跟着账单数据一起变成第二份真相源。
-class _DayGroup {
-  const _DayGroup({required this.dayKey, required this.rowCount});
-
-  final String dayKey;
-  final int rowCount;
-}
-
-/// 吸顶月份条高度。滚动定位要减掉它盖住的那段视口，所以提到文件级，
-/// 由 [_MonthStickyBarDelegate] 与 [_LedgerScreenState] 共用一个值。
-const double _kMonthBarHeight = 44;
-
-// ── 滚动定位用的估高 ──────────────────────────────────────
-//
-// 这几个值只用来「跳到目标附近，让虚拟列表把目标卡建出来」，
-// 最终对位由 [Scrollable.ensureVisible] 完成，所以不必精确，
-// 布局改动后也不需要跟着同步——差一点只是多跳一次。
-
-/// 摘要卡区（含上下外边距）估高。
-const double _kSummaryBlockEstimate = 201;
-
-/// 明细列表的上边距，与 [SliverPadding] 保持一致。
-const double _kListTopPadding = 12;
-
-/// 定位后目标卡与遮挡下沿之间的呼吸距离。
-const double _kRevealGap = 8;
-
-/// 一张日卡的估高：卡头 + n 行 + 行间发丝线 + 卡片下外边距。
-double _estimatedCardHeight(int rowCount) => 40 + 65 * rowCount + 14;
 
 /// 搜索输入框：点击顶栏搜索图标展开，再次点击关闭并清空关键词。
 class _SearchField extends StatelessWidget {
@@ -802,7 +638,6 @@ class _DayCard extends ConsumerWidget {
     required this.day,
     required this.items,
     required this.imagePaths,
-    required this.highlighted,
     required this.selecting,
     required this.selectedIds,
     required this.onTapHeader,
@@ -815,9 +650,6 @@ class _DayCard extends ConsumerWidget {
 
   /// 账单 id → 首图缩略图相对路径，没有图的账单不在表里。
   final Map<String, String> imagePaths;
-
-  /// 刚从月历跳过来的那一天：短暂描边，让用户认出滚动停在了哪张卡。
-  final bool highlighted;
 
   final bool selecting;
   final Set<String> selectedIds;
@@ -847,23 +679,12 @@ class _DayCard extends ConsumerWidget {
       suffix = formatWeekday(day);
     }
     final radii = context.radii;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
+    return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: radii.cardAll,
         // 与统计页图表卡同一组阴影：两屏的卡片浮起高度必须一致，
         // 否则在底部导航来回切换时会觉得「其中一屏是平的」。
         boxShadow: colors.shadowCard,
-      ),
-      // 高亮描边画在前景，不进上面的 decoration：decoration 的 border 会把
-      // 卡片内容向内挤 1.6px，于是「刚被定位到的那张卡」比其它卡窄一圈。
-      foregroundDecoration: BoxDecoration(
-        borderRadius: radii.cardAll,
-        border: Border.all(
-          color: highlighted ? colors.primary : Colors.transparent,
-          width: 1.6,
-        ),
       ),
       // 白底必须由 Material 提供，不能用 Container(color:)。
       //
@@ -1130,353 +951,6 @@ class _MessageState extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// 吸顶月份/收支条：与页头共用 [AppChromeGlass]。
-///
-/// pinned 状态下贴在页头下沿。滚动前它作为常规项占位，内容还没穿过，
-/// 底板保持不透明；[shrinkOffset] 随自身滚出涨到条高，才挂上和页头
-/// 同一套毛玻璃。左侧「年月⌄」可点，唤起月份选择器；右侧显示本月
-/// 「支 xx / 收 xx」（跟随 `moneyGroupedProvider` 显示千分位）。
-class _MonthStickyBarDelegate extends SliverPersistentHeaderDelegate {
-  _MonthStickyBarDelegate({
-    required this.month,
-    required this.summary,
-    required this.onPick,
-  });
-
-  final DateTime month;
-  final LedgerSummary summary;
-  final VoidCallback onPick;
-
-  static const double _height = _kMonthBarHeight;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    final colors = context.colors;
-    return Consumer(
-      builder: (context, ref, _) {
-        final grouped = ref.watch(moneyGroupedProvider);
-        return AppChromeGlass(
-          translucency: (shrinkOffset / _height).clamp(0.0, 1.0),
-          child: Material(
-            // 水波画在毛玻璃这一层。底色交给 [AppChromeGlass]，
-            // 这里再铺一层 canvas 会把背后刚模糊出来的内容盖死。
-            type: MaterialType.transparency,
-            child: SizedBox(
-              height: _height,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    InkWell(
-                      onTap: onPick,
-                      borderRadius: context.radii.chipAll,
-                      highlightColor: colors.pressed,
-                      splashColor: colors.ripple,
-                      hoverColor: colors.ripple,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 4,
-                        ),
-                        child: Row(
-                          children: [
-                            Text(
-                              formatMonth(month),
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: colors.ink,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              FLucideIcons.chevronDown,
-                              size: 16,
-                              color: colors.ink,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '支 ${formatMoney(summary.expenseCents, grouped: grouped)}',
-                      style: TextStyle(fontSize: 13, color: colors.muted),
-                    ),
-                    const SizedBox(width: 14),
-                    Text(
-                      '收 ${formatMoney(summary.incomeCents, grouped: grouped)}',
-                      style: TextStyle(fontSize: 13, color: colors.muted),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  double get maxExtent => _height;
-
-  @override
-  double get minExtent => _height;
-
-  @override
-  bool shouldRebuild(covariant _MonthStickyBarDelegate oldDelegate) {
-    return oldDelegate.month != month ||
-        oldDelegate.summary.expenseCents != summary.expenseCents ||
-        oldDelegate.summary.incomeCents != summary.incomeCents;
-  }
-}
-
-/// 从下方弹出的月份选择器：两列滚轮（年/月），iOS 风。
-///
-/// 用`showGeneralDialog` + 从下往上的 slide 动画，返回选中的 [DateTime]。
-/// 参考图里样式：居中白卡、超大标题「YYYY 年 M 月」、下方两列滚轮
-/// （当前项加粗黑、周边渐弱），底部蓝色描边胶囊「确定」+ 无边框「取消」。
-Future<DateTime?> showMonthPicker(
-  BuildContext context, {
-  required DateTime initial,
-}) {
-  return showGeneralDialog<DateTime>(
-    context: context,
-    barrierDismissible: true,
-    barrierLabel: '关闭',
-    barrierColor: context.colors.barrier,
-    transitionDuration: const Duration(milliseconds: 220),
-    pageBuilder: (_, a, b) => _MonthPickerDialog(initial: initial),
-    transitionBuilder: (context, animation, _, child) {
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-      );
-      return FadeTransition(
-        opacity: curved,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
-          child: child,
-        ),
-      );
-    },
-  );
-}
-
-class _MonthPickerDialog extends StatefulWidget {
-  const _MonthPickerDialog({required this.initial});
-
-  final DateTime initial;
-
-  @override
-  State<_MonthPickerDialog> createState() => _MonthPickerDialogState();
-}
-
-class _MonthPickerDialogState extends State<_MonthPickerDialog> {
-  /// 年份范围以「今年 ± 20」为窗口，够用又不至于滚太久。
-  static const _yearsBack = 20;
-  static const _yearsForward = 20;
-
-  late final List<int> _years;
-  late int _year;
-  late int _month;
-  late final FixedExtentScrollController _yearController;
-  late final FixedExtentScrollController _monthController;
-
-  @override
-  void initState() {
-    super.initState();
-    final now = DateTime.now();
-    _years = [
-      for (var y = now.year - _yearsBack; y <= now.year + _yearsForward; y++) y,
-    ];
-    _year = widget.initial.year;
-    _month = widget.initial.month;
-    final yearIndex = _years.indexOf(_year).clamp(0, _years.length - 1);
-    _yearController = FixedExtentScrollController(initialItem: yearIndex);
-    _monthController = FixedExtentScrollController(initialItem: _month - 1);
-  }
-
-  @override
-  void dispose() {
-    _yearController.dispose();
-    _monthController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 340),
-        child: Material(
-          color: colors.surface,
-          borderRadius: context.radii.sheetAll,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 26, 24, 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '$_year 年 $_month 月',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: colors.ink,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  height: 190,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _WheelColumn(
-                          controller: _yearController,
-                          itemCount: _years.length,
-                          onChanged: (index) =>
-                              setState(() => _year = _years[index]),
-                          labelBuilder: (index) => '${_years[index]}年',
-                        ),
-                      ),
-                      Expanded(
-                        child: _WheelColumn(
-                          controller: _monthController,
-                          itemCount: 12,
-                          onChanged: (index) =>
-                              setState(() => _month = index + 1),
-                          labelBuilder: (index) =>
-                              '${(index + 1).toString().padLeft(2, '0')}月',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop(DateTime(_year, _month)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: colors.primary,
-                      side: BorderSide(color: colors.primary, width: 1.5),
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: context.radii.sheetAll,
-                      ),
-                    ),
-                    child: const Text(
-                      '确定',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // 与「确定」同宽同高：一长一短会看着像没对齐，
-                // 也和 showAppConfirmDialog 的按钮区保持一致。
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: TextButton.styleFrom(
-                      foregroundColor: colors.ink,
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: context.radii.sheetAll,
-                      ),
-                    ),
-                    child: const Text(
-                      '取消',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 单列滚轮：iOS `CupertinoPicker` 风格。选中项加粗黑，周边项灰色渐弱。
-class _WheelColumn extends StatefulWidget {
-  const _WheelColumn({
-    required this.controller,
-    required this.itemCount,
-    required this.onChanged,
-    required this.labelBuilder,
-  });
-
-  final FixedExtentScrollController controller;
-  final int itemCount;
-  final ValueChanged<int> onChanged;
-  final String Function(int index) labelBuilder;
-
-  @override
-  State<_WheelColumn> createState() => _WheelColumnState();
-}
-
-class _WheelColumnState extends State<_WheelColumn> {
-  late int _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = widget.controller.initialItem;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return CupertinoPicker.builder(
-      scrollController: widget.controller,
-      itemExtent: 38,
-      onSelectedItemChanged: (index) {
-        setState(() => _selected = index);
-        widget.onChanged(index);
-      },
-      childCount: widget.itemCount,
-      selectionOverlay: const SizedBox.shrink(),
-      itemBuilder: (context, index) {
-        final offset = (index - _selected).abs();
-        final selected = offset == 0;
-        final alpha = selected
-            ? 1.0
-            : offset == 1
-            ? 0.55
-            : offset == 2
-            ? 0.28
-            : 0.14;
-        return Center(
-          child: Text(
-            widget.labelBuilder(index),
-            style: TextStyle(
-              fontSize: selected ? 22 : 17,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-              color: colors.ink.withValues(alpha: alpha),
-            ),
-          ),
-        );
-      },
     );
   }
 }

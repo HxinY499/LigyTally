@@ -25,7 +25,7 @@ import 'statistics_window.dart';
 /// 加载/空/异常态在 stats_states.dart。
 ///
 /// 排除分类是整页同一套口径：概览、趋势、构成、环比、周期对比都吃同一份
-/// 支出分类黑名单（一级或二级）。首页的本月支出不读这份名单。
+/// 分类黑名单（一级或二级，收支两侧都能进）。首页的本月支出不读这份名单。
 class StatisticsScreen extends ConsumerStatefulWidget {
   const StatisticsScreen({super.key});
 
@@ -99,7 +99,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
         SizedBox.square(
           dimension: kAppHeaderActionSize,
           child: StreamBuilder<List<CategoryEntry>>(
-            stream: database.watchCategories(0, activeOnly: false),
+            stream: database.watchAllCategories(activeOnly: false),
             builder: (context, snapshot) {
               return StatsExclusionAction(
                 categories: snapshot.data ?? const <CategoryEntry>[],
@@ -152,8 +152,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       StatsSectionHeader(
                         title: _window.trendTitle,
                         caption: _window.trendCaption,
-                        trailing: _KindToggle(
+                        trailing: StatsPillToggle(
                           key: const ValueKey('trend-kind-toggle'),
+                          labels: const ['支出', '收入'],
                           selected: _trendKind,
                           onChanged: (value) =>
                               setState(() => _trendKind = value),
@@ -168,7 +169,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                             () => database.watchTrend(
                               range,
                               groupByMonth: _window.groupByMonth,
-                              excludedExpenseCategoryIds: excludedIds,
+                              excludedCategoryIds: excludedIds,
                             ),
                           ),
                           loading: const StatsChartSkeleton(height: 176),
@@ -210,7 +211,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       StatsSectionHeader(
                         title: '分类构成',
                         caption: '点扇区看占比，点排行看明细',
-                        trailing: _KindToggle(
+                        trailing: StatsPillToggle(
+                          labels: const ['支出', '收入'],
                           selected: _categoryKind,
                           onChanged: (value) =>
                               setState(() => _categoryKind = value),
@@ -223,7 +225,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                           () => database.watchCategoryTotals(
                             range,
                             _categoryKind,
-                            excludedExpenseCategoryIds: excludedIds,
+                            excludedCategoryIds: excludedIds,
                           ),
                         ),
                         loading: const Padding(
@@ -277,7 +279,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                             current: range,
                             comparison: _window.comparisonRange,
                             kind: _categoryKind,
-                            excludedExpenseCategoryIds: excludedIds,
+                            excludedCategoryIds: excludedIds,
                           ),
                         ),
                         loading: const StatsDeltaSkeleton(),
@@ -286,6 +288,12 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                           deltas: deltas,
                           kind: _categoryKind,
                           grouped: grouped,
+                          range: range,
+                          rangeLabel: _window.rangeLabel,
+                          comparisonRange: _window.comparisonRange,
+                          comparisonRangeLabel: _window.comparisonRangeLabel,
+                          trendSpans: _window.comparisonSpans,
+                          trendCaption: _window.comparisonCaption,
                         ),
                       ),
                     ],
@@ -302,7 +310,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       StatsSectionHeader(
                         title: _window.comparisonTitle(_comparisonKind),
                         caption: _window.comparisonCaption,
-                        trailing: _KindToggle(
+                        trailing: StatsPillToggle(
+                          labels: const ['支出', '收入'],
                           selected: _comparisonKind,
                           onChanged: (value) =>
                               setState(() => _comparisonKind = value),
@@ -316,7 +325,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                             ready,
                             () => database.watchPeriodBars(
                               _window.comparisonSpans,
-                              excludedExpenseCategoryIds: excludedIds,
+                              excludedCategoryIds: excludedIds,
                             ),
                           ),
                           loading: const StatsChartSkeleton(
@@ -401,7 +410,8 @@ class _OverviewSlot extends ConsumerWidget {
     final database = ref.watch(databaseProvider);
     final exclusion = ref.watch(statsExclusionProvider);
     return StreamBuilder<List<CategoryEntry>>(
-      stream: database.watchCategories(0, activeOnly: false),
+      // 取两侧：名单里可以有收入分类，只查支出的话「不含工资」会解析不出名字。
+      stream: database.watchAllCategories(activeOnly: false),
       builder: (context, catSnap) {
         final categories = catSnap.data ?? const <CategoryEntry>[];
         final caption = statsExclusionCaption(
@@ -421,7 +431,7 @@ class _OverviewSlot extends ConsumerWidget {
         return StreamBuilder<LedgerSummary>(
           stream: database.watchSummary(
             window.range,
-            excludedExpenseCategoryIds: exclusion.ids,
+            excludedCategoryIds: exclusion.ids,
           ),
           builder: (context, currentSnap) {
             return StreamBuilder<LedgerSummary>(
@@ -429,7 +439,7 @@ class _OverviewSlot extends ConsumerWidget {
               // 直接比会让徽章长期误报。口径见 [StatisticsWindow.comparisonRange]。
               stream: database.watchSummary(
                 window.comparisonRange,
-                excludedExpenseCategoryIds: exclusion.ids,
+                excludedCategoryIds: exclusion.ids,
               ),
               builder: (context, prevSnap) {
                 return StatsOverviewCard(
@@ -446,117 +456,6 @@ class _OverviewSlot extends ConsumerWidget {
           },
         );
       },
-    );
-  }
-}
-
-/// 支出 / 收入切换：小号分段器，放在卡片标题右侧。
-///
-/// 圆角走 [StatsTokens.radiusInner]，和上面的年月日轨道同一档。
-///
-/// 单独实现而不复用 [AppSegmentedControl]：后者是 44px 高的表单级按钮，
-/// 放进卡片标题行会把标题挤下去。这里需要 28px 的紧凑版。
-class _KindToggle extends StatelessWidget {
-  const _KindToggle({super.key, required this.selected, required this.onChanged});
-
-  final int selected;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final stats = StatsTokens.of(context);
-    final trackRadius = stats.radiusInner;
-    return Container(
-      height: 28,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: stats.fillMuted,
-        borderRadius: BorderRadius.circular(trackRadius),
-      ),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: AnimatedAlign(
-                duration: StatsTokens.durTap,
-                curve: StatsTokens.curveEnter,
-                alignment: selected == 0
-                    ? Alignment.centerLeft
-                    : Alignment.centerRight,
-                child: FractionallySizedBox(
-                  widthFactor: 0.5,
-                  heightFactor: 1,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: stats.surface,
-                      borderRadius: BorderRadius.circular(
-                        (trackRadius - 3).clamp(0.0, trackRadius),
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x14101828),
-                          offset: Offset(0, 1),
-                          blurRadius: 3,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              _KindChip(
-                label: '支出',
-                active: selected == 0,
-                onTap: () => onChanged(0),
-              ),
-              _KindChip(
-                label: '收入',
-                active: selected == 1,
-                onTap: () => onChanged(1),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _KindChip extends StatelessWidget {
-  const _KindChip({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final stats = StatsTokens.of(context);
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Center(
-          child: AnimatedDefaultTextStyle(
-            duration: StatsTokens.durTap,
-            curve: StatsTokens.curveEnter,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-              color: active ? stats.primary : stats.textMuted,
-            ),
-            child: Text(label),
-          ),
-        ),
-      ),
     );
   }
 }

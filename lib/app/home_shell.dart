@@ -8,18 +8,18 @@ import '../core/preferences/quick_tally_mode.dart';
 import '../core/theme/app_motion.dart';
 import '../core/theme/app_theme.dart';
 import '../features/ledger/application/providers.dart';
+import '../features/ledger/presentation/calendar_screen.dart';
 import '../features/ledger/presentation/ledger_screen.dart';
 import '../features/ledger/presentation/transaction_editor.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/statistics/presentation/statistics_screen.dart';
 
-/// 三个主页面 + 贴底固定导航栏。
+/// 四个主页面 + 贴底固定导航栏。
 ///
 /// 换 IndexedStack 为 PageView：左右滑动即可切页，与底部导航双向同步。
-/// 导航栏贴底铺满（不再是悬浮胶囊），三个 tab 均分宽度，选中态是一颗随
-/// index 平滑滑动的高亮胶囊——胶囊内缩留呼吸，不撑满格子。
 /// 「记一笔」是居中悬浮的主按钮（FAB），落在导航栏上方：
-/// 居中比右下角更适合单手（尤其左手）拇指够到。
+/// 居中比右下角更适合单手（尤其左手）拇指够到。只在明细出现，
+/// 日历 / 统计 / 设置都不该被它挡住。
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -28,6 +28,9 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
+  static const _tabLedger = 0;
+  static const _tabSettings = 3;
+
   final PageController _controller = PageController();
   int _index = 0;
 
@@ -76,16 +79,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       onPageChanged: (value) => setState(() => _index = value),
       physics: const ClampingScrollPhysics(),
       children: [
-        LedgerScreen(active: _index == 0),
+        LedgerScreen(active: _index == _tabLedger),
         const StatisticsScreen(),
-        SettingsScreen(active: _index == 2),
+        CalendarScreen(),
+        SettingsScreen(active: _index == _tabSettings),
       ],
     );
     return Scaffold(
       // 悬浮档要的是内容真的从胶囊底下穿过去，而不是给它留一条空带子——
       // 留白的方案看起来就是「一条底栏，只是形状改成了胶囊」。
       extendBody: floating,
-      // 内容穿过去之后，三个一级页必须知道底部有多少高度被盖住了，否则
+      // 内容穿过去之后，四个一级页必须知道底部有多少高度被盖住了，否则
       // 最后一张卡会压在胶囊下面。
       //
       // 走 MediaQuery 的 padding 而不是从这里往下传一个数：贴底档下 Scaffold
@@ -108,16 +112,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               },
             )
           : pages,
-      // 记一笔：居中悬浮在导航栏上方，只在首页（明细）出现，
-      // 避免遮挡统计/设置页内容。居中比右下角更好按，左右手都够得到。
+      // 记一笔：居中悬浮在导航栏上方，只在明细出现。
+      // 日历有自己的「空白天记一笔」，统计和设置更不该被挡住。
       // 用 centerFloat 而非 centerDocked：docked 会让 FAB 半嵌进栏里，
-      // 正好压住中间的「统计」tab。
+      // 四个 tab 时正好压在统计和日历的交界上，嵌进去两边都难受。
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: AnimatedSwitcher(
         duration: context.motion(const Duration(milliseconds: 200)),
         transitionBuilder: (child, animation) =>
             ScaleTransition(scale: animation, child: child),
-        child: _index == 0 && !selecting
+        child: _index == _tabLedger && !selecting
             ? FloatingActionButton(
                 key: const ValueKey('add'),
                 onPressed: _addTransaction,
@@ -143,10 +147,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 }
 
-/// 底部导航栏：三个 tab 均分宽度。
+/// 底部导航栏：四个 tab 均分宽度。
 ///
-/// 选中态不做底色块——只靠图标/文字变品牌蓝 + 图标弹入来表达，
-/// 是三个 tab 场景下最干净的处理。
+/// 选中态不做底色块——只靠图标/文字变品牌蓝 + 图标弹入来表达。
 ///
 /// 两种形态（见 [NavBarStyle]）共用同一个 [Row]，区别只在外壳：
 /// - 贴底：铺满 + 一道极淡顶线，安全区留白吃在栏内；
@@ -170,6 +173,7 @@ class _BottomNavBar extends StatelessWidget {
   static const _items = [
     (icon: FLucideIcons.receiptText, label: '明细'),
     (icon: FLucideIcons.chartPie, label: '统计'),
+    (icon: FLucideIcons.calendarDays, label: '日历'),
     (icon: FLucideIcons.settings2, label: '设置'),
   ];
 

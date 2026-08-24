@@ -212,18 +212,29 @@ class StatisticsWindow {
   };
 
   /// 区间切换器中间显示的文案。
-  String get rangeLabel {
-    final current = range;
+  String get rangeLabel => _labelOf(range);
+
+  /// [comparisonRange] 的文案，给下钻面板的期段切换用。
+  ///
+  /// 当期没走完时对照的是上一周期的**等长前缀**，不能按周期形状写成「7 月」——
+  /// 那会让人以为看的是整个七月。这种情况直接给出起止日期。
+  String get comparisonRangeLabel {
+    if (!isPartial) return _labelOf(previousRange);
+    final current = comparisonRange;
     final lastDay = current.endExclusive.subtract(const Duration(days: 1));
+    return '${dateKey(current.start)} - ${dateKey(lastDay)}';
+  }
+
+  String _labelOf(LedgerDateRange value) {
+    final lastDay = value.endExclusive.subtract(const Duration(days: 1));
     return switch (period) {
       StatisticsPeriod.day =>
-        '${current.start.year} 年 ${current.start.month} 月 ${current.start.day} 日',
+        '${value.start.year} 年 ${value.start.month} 月 ${value.start.day} 日',
       StatisticsPeriod.week =>
-        '${current.start.month}/${current.start.day} - ${lastDay.month}/${lastDay.day}',
-      StatisticsPeriod.month => formatMonth(current.start),
-      StatisticsPeriod.year => '${current.start.year} 年',
-      StatisticsPeriod.custom =>
-        '${dateKey(current.start)} - ${dateKey(lastDay)}',
+        '${value.start.month}/${value.start.day} - ${lastDay.month}/${lastDay.day}',
+      StatisticsPeriod.month => formatMonth(value.start),
+      StatisticsPeriod.year => '${value.start.year} 年',
+      StatisticsPeriod.custom => '${dateKey(value.start)} - ${dateKey(lastDay)}',
     };
   }
 

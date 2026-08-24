@@ -10,24 +10,54 @@ import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
 import '../../ledger/presentation/transaction_editor.dart';
+import 'stats_card.dart';
 import 'stats_charts.dart';
 import 'stats_design.dart';
 import 'stats_states.dart';
 
-/// 从底部弹出某个一级分类在当前统计区间内的账单明细。
+/// 下钻面板里可看的一段时间。
+///
+/// 面板支持一段或两段。一段就是普通的「这个分类在本期有哪几笔」；两段用于
+/// 从分类变化下钻——那张卡上的每一行本来就是两个数的对比，只给其中一边等于
+/// 让人再回去翻月份。
+class StatsSheetPeriod {
+  const StatsSheetPeriod({
+    required this.range,
+    required this.rangeLabel,
+    this.tabLabel = '',
+    this.placeholderTotalCents,
+  });
+
+  final LedgerDateRange range;
+
+  /// 面板头上那行时间说明，如「2026 年 8 月」。
+  final String rangeLabel;
+
+  /// 两段时切换器上的短标签，如「本期」。只有一段时用不到。
+  final String tabLabel;
+
+  /// 首帧占位金额：来源那一行上已经算好的数，避免金额从空白跳到数字。
+  final int? placeholderTotalCents;
+}
+
+/// 从底部弹出某个一级分类在给定区间内的账单明细。
 ///
 /// 排行行只给出「合计 + 占比」，看到一个异常高的分类时下一步必然是
 /// 「到底哪几笔」。之前点排行只是高亮环形图，等于把用户挡在汇总层。
+///
+/// [periods] 传两段时面板里出现期段切换器，见 [StatsSheetPeriod]。
 Future<void> showCategoryTransactionsSheet(
   BuildContext context, {
-  required CategoryTotal category,
-  required LedgerDateRange range,
-  required String rangeLabel,
+  required String categoryId,
+  required String categoryName,
+  required List<StatsSheetPeriod> periods,
   required int kind,
   required Color color,
   required List<PeriodSpan> trendSpans,
   required String trendCaption,
+  int? placeholderEntryCount,
 }) {
+  assert(periods.isNotEmpty, '至少要有一段时间可看');
   return showModalBottomSheet<void>(
     context: context,
     // 圆角与安全区由内容自己画，外层必须透明，否则圆角外会露出白直角。
@@ -35,36 +65,38 @@ Future<void> showCategoryTransactionsSheet(
     // 明细可能很长，需要自己控制高度上限。
     isScrollControlled: true,
     builder: (_) => _CategoryTransactionsSheet(
-      category: category,
-      range: range,
-      rangeLabel: rangeLabel,
+      categoryId: categoryId,
+      categoryName: categoryName,
+      periods: periods,
       kind: kind,
       color: color,
       trendSpans: trendSpans,
       trendCaption: trendCaption,
+      placeholderEntryCount: placeholderEntryCount,
     ),
   );
 }
 
-class _CategoryTransactionsSheet extends ConsumerWidget {
+class _CategoryTransactionsSheet extends ConsumerStatefulWidget {
   const _CategoryTransactionsSheet({
-    required this.category,
-    required this.range,
-    required this.rangeLabel,
+    required this.categoryId,
+    required this.categoryName,
+    required this.periods,
     required this.kind,
     required this.color,
     required this.trendSpans,
     required this.trendCaption,
+    required this.placeholderEntryCount,
   });
 
-  final CategoryTotal category;
-  final LedgerDateRange range;
-  final String rangeLabel;
+  final String categoryId;
+  final String categoryName;
+  final List<StatsSheetPeriod> periods;
 
   /// 0 = 支出，1 = 收入。
   final int kind;
 
-  /// 与环形图扇区、排行行同一个分类色。
+  /// 与来源那一行同一个色：从环形图排行来就是分类色，从分类变化来就是增减色。
   final Color color;
 
   /// 走势图的周期区间，与统计页「周期对比」用的是同一组。
@@ -73,15 +105,29 @@ class _CategoryTransactionsSheet extends ConsumerWidget {
   /// 走势图的范围说明，如「最近 6 个月」。
   final String trendCaption;
 
+  /// 首帧占位笔数。分类变化那边算不出笔数，传 null 时首帧不显示笔数。
+  final int? placeholderEntryCount;
+
+  @override
+  ConsumerState<_CategoryTransactionsSheet> createState() =>
+      _CategoryTransactionsSheetState();
+}
+
+class _CategoryTransactionsSheetState
+    extends ConsumerState<_CategoryTransactionsSheet> {
+  int _periodIndex = 0;
+
   /// 面板高度上限。留出约三成屏幕看得见背后的统计页，
   /// 明白这是一层浮层而不是新页面。
   static const _maxHeightRatio = 0.72;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final stats = StatsTokens.of(context);
     final database = ref.watch(databaseProvider);
     final grouped = ref.watch(moneyGroupedProvider);
+    final periods = widget.periods;
+    final period = periods[_periodIndex];
 
     return ConstrainedBox(
       constraints: BoxConstraints(
@@ -95,44 +141,52 @@ class _CategoryTransactionsSheet extends ConsumerWidget {
           top: false,
           child: StreamBuilder<List<LedgerItem>>(
             stream: database.watchCategoryTransactions(
-              range,
-              rootCategoryId: category.categoryId,
-              kind: kind,
+              period.range,
+              rootCategoryId: widget.categoryId,
+              kind: widget.kind,
             ),
             builder: (context, snapshot) {
               final items = snapshot.data;
-              // 首帧还没数据时，头部先用排行行上的合计占位，
-              // 避免金额从空白跳到数字。
               final totalCents = items == null
-                  ? category.totalCents
+                  ? period.placeholderTotalCents
                   : items.fold<int>(
                       0,
                       (sum, item) => sum + item.transaction.amountCents,
                     );
-              final entryCount = items?.length ?? category.entryCount;
+              final entryCount = items?.length ?? widget.placeholderEntryCount;
 
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const _Grabber(),
                   _Header(
-                    category: category,
-                    color: color,
-                    kind: kind,
-                    rangeLabel: rangeLabel,
+                    name: widget.categoryName,
+                    color: widget.color,
+                    kind: widget.kind,
+                    rangeLabel: period.rangeLabel,
                     totalCents: totalCents,
                     entryCount: entryCount,
                     grouped: grouped,
                   ),
+                  if (periods.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: StatsPillToggle(
+                        labels: [for (final item in periods) item.tabLabel],
+                        selected: _periodIndex,
+                        onChanged: (value) =>
+                            setState(() => _periodIndex = value),
+                      ),
+                    ),
                   // 走势放在汇总头之后、明细列表之前：看到「本期 1200 元」
                   // 之后要判断的是这个数是常态还是异常，而这个问题在翻明细
                   // 之前就该有答案。
                   _CategoryTrend(
-                    spans: trendSpans,
-                    caption: trendCaption,
-                    rootCategoryId: category.categoryId,
-                    kind: kind,
-                    color: color,
+                    spans: widget.trendSpans,
+                    caption: widget.trendCaption,
+                    rootCategoryId: widget.categoryId,
+                    kind: widget.kind,
+                    color: widget.color,
                   ),
                   Divider(height: 1, thickness: 1, color: stats.divider),
                   Flexible(
@@ -186,7 +240,7 @@ class _Grabber extends StatelessWidget {
 /// 里对应的那一片，又不会和下面的图标列撞形状。
 class _Header extends StatelessWidget {
   const _Header({
-    required this.category,
+    required this.name,
     required this.color,
     required this.kind,
     required this.rangeLabel,
@@ -195,12 +249,15 @@ class _Header extends StatelessWidget {
     required this.grouped,
   });
 
-  final CategoryTotal category;
+  final String name;
   final Color color;
   final int kind;
   final String rangeLabel;
-  final int totalCents;
-  final int entryCount;
+
+  /// null 表示首帧还没有任何数可显示（来源那行也没给占位值）。
+  final int? totalCents;
+  final int? entryCount;
+
   final bool grouped;
 
   @override
@@ -226,7 +283,7 @@ class _Header extends StatelessWidget {
               const SizedBox(width: 7),
               Flexible(
                 child: Text(
-                  category.name,
+                  name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -241,7 +298,7 @@ class _Header extends StatelessWidget {
           ),
           const SizedBox(height: 3),
           Text(
-            '$rangeLabel · 共 $entryCount 笔',
+            entryCount == null ? rangeLabel : '$rangeLabel · 共 $entryCount 笔',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: stats.rowMeta,
@@ -251,7 +308,7 @@ class _Header extends StatelessWidget {
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
-              formatMoney(totalCents, grouped: grouped),
+              formatMoney(totalCents ?? 0, grouped: grouped),
               style: TextStyle(
                 fontSize: 27,
                 height: 1.15,

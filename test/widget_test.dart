@@ -423,8 +423,9 @@ void main() {
           .widgetList<InkWell>(find.byType(InkWell))
           .where((ink) => ink.highlightColor == AppColors.light.pressed)
           .toList();
-      // 至少三处：卡片头、账单行、吸顶月份按钮。
-      expect(inks.length, greaterThanOrEqualTo(3));
+      // 至少两处：日卡头与账单行。摘要卡上的月份键不算——它压在深彩卡面上，
+      // 按下色走 HeroSkin 那套，墨色系的 pressed 在那儿几乎看不见。
+      expect(inks.length, greaterThanOrEqualTo(2));
       for (final ink in inks) {
         // 水波比按下底色更淡——水波是动态扩散的，同色会显得炸开一朵蓝花。
         expect(ink.splashColor, AppColors.light.ripple);

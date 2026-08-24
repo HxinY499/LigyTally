@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 统计页「不计入支出」的分类。
+/// 统计页不计入的分类，支出和收入都能放。
 ///
 /// 只影响统计口径，不改首页的本月支出，也不改账单本身。
 /// id 可以是一级或二级：一级会连同它的二级一起去掉。
@@ -17,6 +17,8 @@ class StatsExclusion {
   final bool ready;
 }
 
+/// 键名里的 `expense` 是历史遗留：这份名单后来收下了收入分类，但改键会让
+/// 老用户已经排掉的那几类静默复活，不值得。
 const _prefsKey = 'stats_excluded_expense_roots';
 
 class StatsExclusionController extends Notifier<StatsExclusion> {

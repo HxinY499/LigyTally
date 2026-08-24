@@ -133,6 +133,134 @@ class StatsRatioBar extends StatelessWidget {
   }
 }
 
+/// 两档胶囊切换器：浅色底槽 + 一块会滑过去的白色滑块。
+///
+/// 统计页卡头的收支切换、下钻面板的期段切换是同一种控件——两选一、就地
+/// 换口径、不离开当前视图。两处各写一份，圆角、字号和动效很快就会漂开。
+///
+/// 只支持两档：滑块按半宽定位，多一档就得改成按下标算宽度，而这个页面上
+/// 三档以上的选择一律走 [AppSegmentedControl]。
+class StatsPillToggle extends StatelessWidget {
+  const StatsPillToggle({
+    super.key,
+    required this.labels,
+    required this.selected,
+    required this.onChanged,
+  }) : assert(labels.length == 2, '滑块按半宽定位，只支持两档');
+
+  final List<String> labels;
+
+  /// 选中项的下标（0 或 1）。
+  final int selected;
+
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
+    final trackRadius = stats.radiusInner;
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: stats.fillMuted,
+        borderRadius: BorderRadius.circular(trackRadius),
+      ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedAlign(
+                duration: StatsTokens.durTap,
+                curve: StatsTokens.curveEnter,
+                alignment: selected == 0
+                    ? Alignment.centerLeft
+                    : Alignment.centerRight,
+                child: FractionallySizedBox(
+                  widthFactor: 0.5,
+                  heightFactor: 1,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: stats.surface,
+                      borderRadius: BorderRadius.circular(
+                        (trackRadius - 3).clamp(0.0, trackRadius),
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x14101828),
+                          offset: Offset(0, 1),
+                          blurRadius: 3,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // 两件事都由 IntrinsicWidth + Expanded 一起解决：
+          //
+          // 1. 轨道收成内容宽度。卡头里这颗控件嵌在 Row 中，拿到的是无界
+          //    宽度，怎么排都按内容；一旦放进宽度有界的 Column（下钻面板），
+          //    裸 Row 会被拉满整行，而滑块仍按半宽定位，两者就错开。
+          // 2. 两档等宽。滑块是半宽，而「本期 / 对照期」字数不同，
+          //    按各自内容排同样会让滑块盖不准文字。
+          IntrinsicWidth(
+            child: Row(
+              children: [
+                for (var i = 0; i < labels.length; i++)
+                  Expanded(
+                    child: _PillChip(
+                      label: labels[i],
+                      active: selected == i,
+                      onTap: () => onChanged(i),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PillChip extends StatelessWidget {
+  const _PillChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = StatsTokens.of(context);
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Center(
+          child: AnimatedDefaultTextStyle(
+            duration: StatsTokens.durTap,
+            curve: StatsTokens.curveEnter,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              color: active ? stats.primary : stats.textMuted,
+            ),
+            child: Text(label),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 卡片内列表底部的「展开 / 收起」按钮：居中的小号文字按钮。
 ///
 /// 分类构成与分类环比都要在列表底部折叠超出项。两处各写一份内联

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import 'category_transactions_sheet.dart';
 import 'stats_card.dart';
 import 'stats_design.dart';
 import 'stats_states.dart';
@@ -18,12 +20,22 @@ import 'stats_states.dart';
 /// 十几个分类的零碎变化全列出来反而盖住真正的信号。但折叠不能是静默的——
 /// 底部始终给出「一共有多少项变化」和展开入口，否则用户无法判断
 /// 自己看到的是全部还是片段。
+///
+/// 行可以点，弹出该分类的账单面板，且**两期都能看**：这张卡上的每一行都是
+/// 「上期 → 本期」两个数，看到差额之后要问的往往是消失的那一边由哪几笔组成，
+/// 只给本期等于把人赶回页顶去翻月份。
 class CategoryDeltaList extends StatefulWidget {
   const CategoryDeltaList({
     super.key,
     required this.deltas,
     required this.kind,
     required this.grouped,
+    required this.range,
+    required this.rangeLabel,
+    required this.comparisonRange,
+    required this.comparisonRangeLabel,
+    required this.trendSpans,
+    required this.trendCaption,
   });
 
   final List<CategoryDelta> deltas;
@@ -32,6 +44,16 @@ class CategoryDeltaList extends StatefulWidget {
   final int kind;
 
   final bool grouped;
+
+  /// 本期与对照期，下钻面板按这两段查账单。
+  final LedgerDateRange range;
+  final String rangeLabel;
+  final LedgerDateRange comparisonRange;
+  final String comparisonRangeLabel;
+
+  /// 下钻面板里那条走势的周期区间，沿用「周期对比」的那一组。
+  final List<PeriodSpan> trendSpans;
+  final String trendCaption;
 
   @override
   State<CategoryDeltaList> createState() => _CategoryDeltaListState();
@@ -45,6 +67,36 @@ class _CategoryDeltaListState extends State<CategoryDeltaList> {
 
   List<CategoryDelta> _visible(List<CategoryDelta> items) =>
       _expanded ? items : items.take(_maxRows).toList();
+
+  /// 下钻到某个分类：本期在前、对照期在后，面板里可以直接切。
+  void _openDetails(CategoryDelta item, Color color) {
+    HapticFeedback.selectionClick();
+    showCategoryTransactionsSheet(
+      context,
+      categoryId: item.categoryId,
+      categoryName: item.name,
+      periods: [
+        StatsSheetPeriod(
+          range: widget.range,
+          rangeLabel: widget.rangeLabel,
+          tabLabel: '本期',
+          placeholderTotalCents: item.currentCents,
+        ),
+        StatsSheetPeriod(
+          range: widget.comparisonRange,
+          rangeLabel: widget.comparisonRangeLabel,
+          tabLabel: '对照期',
+          placeholderTotalCents: item.comparisonCents,
+        ),
+      ],
+      kind: widget.kind,
+      // 沿用行上的增减色，而不是分类调色板：这一行的语义是「涨了还是降了」，
+      // 面板换一个颜色会让人以为点开的是另一个东西。
+      color: color,
+      trendSpans: widget.trendSpans,
+      trendCaption: widget.trendCaption,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,6 +143,7 @@ class _CategoryDeltaListState extends State<CategoryDeltaList> {
             items: _visible(increased),
             kind: kind,
             grouped: grouped,
+            onOpen: _openDetails,
           ),
         if (increased.isNotEmpty && decreased.isNotEmpty)
           Divider(height: 18, color: stats.divider, thickness: 1),
@@ -100,6 +153,7 @@ class _CategoryDeltaListState extends State<CategoryDeltaList> {
             items: _visible(decreased),
             kind: kind,
             grouped: grouped,
+            onOpen: _openDetails,
           ),
         if (overflowing)
           Padding(
@@ -121,12 +175,14 @@ class _Group extends StatelessWidget {
     required this.items,
     required this.kind,
     required this.grouped,
+    required this.onOpen,
   });
 
   final String label;
   final List<CategoryDelta> items;
   final int kind;
   final bool grouped;
+  final void Function(CategoryDelta item, Color color) onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -145,23 +201,33 @@ class _Group extends StatelessWidget {
           ),
         ),
         for (final item in items)
-          _DeltaRow(item: item, kind: kind, grouped: grouped),
+          _DeltaRow(
+            item: item,
+            kind: kind,
+            grouped: grouped,
+            onOpen: onOpen,
+          ),
       ],
     );
   }
 }
 
-/// 单个分类的变化行：图标 → 名称 / 两期金额 → 差额 / 幅度。
+/// 单个分类的变化行：图标 → 名称 / 两期金额 → 差额 / 幅度。整行可点，下钻明细。
+///
+/// 壳与分类构成的排行行一致（透明 [Material] + [InkWell] + 同一档圆角）：
+/// 两张卡上的行长得像、点起来也该一样。
 class _DeltaRow extends StatelessWidget {
   const _DeltaRow({
     required this.item,
     required this.kind,
     required this.grouped,
+    required this.onOpen,
   });
 
   final CategoryDelta item;
   final int kind;
   final bool grouped;
+  final void Function(CategoryDelta item, Color color) onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -171,9 +237,15 @@ class _DeltaRow extends StatelessWidget {
     final adverse = kind == 0 ? up : !up;
     final color = adverse ? stats.expense : stats.income;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
-      child: Row(
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(stats.radiusInner),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => onOpen(item, color),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Row(
         children: [
           Container(
             width: 34,
@@ -239,7 +311,9 @@ class _DeltaRow extends StatelessWidget {
               ),
             ],
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

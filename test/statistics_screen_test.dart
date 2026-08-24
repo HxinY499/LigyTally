@@ -515,7 +515,7 @@ void main() {
       expect(full.activeDayCount, 4);
 
       final filtered = await database
-          .watchSummary(august, excludedExpenseCategoryIds: excluded)
+          .watchSummary(august, excludedCategoryIds: excluded)
           .first;
       expect(filtered.expenseCents, 10000);
       expect(filtered.incomeCents, 80000);
@@ -529,14 +529,14 @@ void main() {
       const excluded = {'expense_housing_rent'};
 
       final filtered = await database
-          .watchSummary(august, excludedExpenseCategoryIds: excluded)
+          .watchSummary(august, excludedCategoryIds: excluded)
           .first;
       expect(filtered.expenseCents, 40000);
       expect(filtered.incomeCents, 80000);
       expect(filtered.entryCount, 3);
 
       final totals = await database
-          .watchCategoryTotals(august, 0, excludedExpenseCategoryIds: excluded)
+          .watchCategoryTotals(august, 0, excludedCategoryIds: excluded)
           .first;
       expect(
         totals.map((item) => (item.categoryId, item.totalCents)),
@@ -581,7 +581,7 @@ void main() {
       const excluded = {'expense_housing'};
 
       final totals = await database
-          .watchCategoryTotals(august, 0, excludedExpenseCategoryIds: excluded)
+          .watchCategoryTotals(august, 0, excludedCategoryIds: excluded)
           .first;
       expect(totals.map((item) => item.categoryId), ['expense_food']);
       expect(totals.single.totalCents, 10000);
@@ -591,19 +591,19 @@ void main() {
             current: august,
             comparison: july,
             kind: 0,
-            excludedExpenseCategoryIds: excluded,
+            excludedCategoryIds: excluded,
           )
           .first;
       expect(deltas.map((item) => item.categoryId), ['expense_food']);
     });
 
-    test('趋势与周期对比只从支出侧扣除，收入柱保持全量', () async {
+    test('趋势与周期对比：排掉的是支出分类时，收入柱不受牵连', () async {
       final database = await seedAugust();
       final august = LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9));
       const excluded = {'expense_housing'};
 
       final trend = await database
-          .watchTrend(august, groupByMonth: false, excludedExpenseCategoryIds: excluded)
+          .watchTrend(august, groupByMonth: false, excludedCategoryIds: excluded)
           .first;
       expect(
         trend.map((point) => (point.bucket, point.expenseCents, point.incomeCents)),
@@ -621,10 +621,39 @@ void main() {
         PeriodSpan(range: august, label: '8月'),
       ];
       final bars = await database
-          .watchPeriodBars(spans, excludedExpenseCategoryIds: excluded)
+          .watchPeriodBars(spans, excludedCategoryIds: excluded)
           .first;
       expect(bars.map((bar) => bar.expenseCents), [0, 10000]);
       expect(bars.map((bar) => bar.incomeCents), [0, 80000]);
+    });
+
+    test('收入分类也能排：工资进名单后，收入与笔数一起减', () async {
+      final database = await seedAugust();
+      final august = LedgerDateRange(DateTime(2026, 8), DateTime(2026, 9));
+      const excluded = {'income_salary'};
+
+      final filtered = await database
+          .watchSummary(august, excludedCategoryIds: excluded)
+          .first;
+      // 支出侧一分没动，收入整个清空——排除的是分类，不是某一侧。
+      expect(filtered.expenseCents, 60000);
+      expect(filtered.incomeCents, 0);
+      expect(filtered.entryCount, 3);
+      expect(filtered.activeDayCount, 3);
+
+      final trend = await database
+          .watchTrend(august, groupByMonth: false, excludedCategoryIds: excluded)
+          .first;
+      expect(trend.map((point) => point.bucket), [
+        '2026-08-05',
+        '2026-08-06',
+        '2026-08-07',
+      ]);
+
+      final totals = await database
+          .watchCategoryTotals(august, 1, excludedCategoryIds: excluded)
+          .first;
+      expect(totals, isEmpty);
     });
 
     test('排除名单写入 prefs 后，新的容器能读回来', () async {
@@ -867,6 +896,62 @@ void main() {
       await teardownTree(tester);
     });
 
+    testWidgets('排除浮层一次列出收支两组，收入分类也能排掉', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final now = DateTime.now();
+      final today = dateKey(now);
+      Future<void> add(String id, int kind, String categoryId, int cents) {
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: id,
+            kind: kind,
+            amountCents: cents,
+            categoryId: categoryId,
+            accountingDate: today,
+            occurredAt: now.millisecondsSinceEpoch,
+            createdAt: now.millisecondsSinceEpoch,
+            updatedAt: now.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      await add('food-1', 0, 'expense_food', 10000);
+      await add('salary-1', 1, 'income_salary', 80000);
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+      await tester.tap(find.byKey(const ValueKey('stats-exclusion-action')));
+      await settle(tester);
+
+      // 两侧同在一份列表里。收入那组在下面，要滑才看得见，但 Column 会把
+      // 它一起建出来，所以这里不滚也能断言它在树上。
+      expect(
+        find.byKey(const ValueKey('category-expense_food')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('category-income_salary')),
+        findsOneWidget,
+      );
+
+      final salary = find.byKey(const ValueKey('category-income_salary'));
+      await tester.ensureVisible(salary);
+      await tester.pump();
+      await tester.tap(salary);
+      await tester.pump();
+      await tester.tap(find.text('确定'));
+      await settle(tester);
+
+      expect(find.text('不含工资'), findsWidgets);
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
     testWidgets('点排行行弹出明细面板：二级分类的账单归在一级分类下', (tester) async {
       useTallViewport(tester);
       final database = AppDatabase.forTesting(NativeDatabase.memory());
@@ -1064,6 +1149,83 @@ void main() {
       // 所以「150%」应当同时出现在 Hero 徽章和这一行上——
       // 两处对不上就说明两张卡用了不同的对照区间。
       expect(find.text('150%'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+      await teardownTree(tester);
+    });
+
+    testWidgets('分类变化行下钻：本期与对照期都能在面板里看', (tester) async {
+      useTallViewport(tester);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final expenseCategory = (await database.exportCategories()).firstWhere(
+        (item) => item.kind == 0 && item.level == 1,
+      );
+      final now = DateTime.now();
+      final lastMonthFirst = DateTime(now.year, now.month - 1, 1);
+
+      Future<void> add(String id, int cents, DateTime date) {
+        return database.saveTransaction(
+          entry: TransactionsCompanion.insert(
+            id: id,
+            kind: 0,
+            amountCents: cents,
+            categoryId: expenseCategory.id,
+            accountingDate: dateKey(date),
+            occurredAt: date.millisecondsSinceEpoch,
+            createdAt: date.millisecondsSinceEpoch,
+            updatedAt: date.millisecondsSinceEpoch,
+          ),
+          newImages: const [],
+          removedImageIds: const {},
+        );
+      }
+
+      await add('drill-current', 10000, now);
+      await add('drill-previous', 4000, lastMonthFirst);
+
+      await tester.pumpWidget(await host(database));
+      await settle(tester);
+
+      // 点的是变化行，不是上面那张分类构成卡的排行行。
+      await tester.tap(find.text('¥40.00 → ¥100.00'));
+      await settle(tester);
+
+      // 「本期」在页面上不止一处：周期对比柱图的最后一根也这么标。
+      // 断言收进切换器里，锁的是面板上那两档。
+      final periodToggle = find.ancestor(
+        of: find.text('对照期'),
+        matching: find.byType(StatsPillToggle),
+      );
+      expect(periodToggle, findsOneWidget);
+      final current = find.descendant(
+        of: periodToggle,
+        matching: find.text('本期'),
+      );
+      expect(current, findsOneWidget);
+
+      // 轨道按内容收宽，不该被面板拉满整行——滑块是按半宽定位的，
+      // 轨道一旦撑满，白色滑块就会盖出去大半屏。
+      final toggleWidth = tester.getSize(periodToggle).width;
+      final screenWidth = tester.getSize(find.byType(MaterialApp)).width;
+      expect(toggleWidth, lessThan(screenWidth * 0.6));
+      // 两档等宽，滑块才盖得准：字数不同的两个标签不能各按内容排，
+      // 否则两档中心相对轨道中心不对称。
+      final currentCenter = tester.getCenter(current).dx;
+      final comparisonCenter = tester.getCenter(find.text('对照期')).dx;
+      final toggleCenter = tester.getCenter(periodToggle).dx;
+      expect(
+        (toggleCenter - currentCenter).abs(),
+        closeTo((comparisonCenter - toggleCenter).abs(), 0.5),
+      );
+      // 默认停在本期：面板合计是本期那一笔。
+      expect(find.text('¥100.00'), findsWidgets);
+
+      // 切到对照期，不用回页顶换月份就能看到上期那一笔。
+      await tester.tap(find.text('对照期'));
+      await settle(tester);
+      expect(find.text('¥40.00'), findsWidgets);
+
       expect(tester.takeException(), isNull);
       await teardownTree(tester);
     });

@@ -125,11 +125,20 @@ class _CategoryCompositionState extends State<CategoryComposition> {
   /// 才统一取灰色。颜色沿用排行行自身的色，面板与来源在视觉上对得上。
   void _openDetails(int index, StatsTokens stats) {
     HapticFeedback.selectionClick();
+    final total = widget.totals[index];
     showCategoryTransactionsSheet(
       context,
-      category: widget.totals[index],
-      range: widget.range,
-      rangeLabel: widget.rangeLabel,
+      categoryId: total.categoryId,
+      categoryName: total.name,
+      // 只给本期：排行行讲的就是本期占比，这里没有对照期这个问题。
+      periods: [
+        StatsSheetPeriod(
+          range: widget.range,
+          rangeLabel: widget.rangeLabel,
+          placeholderTotalCents: total.totalCents,
+        ),
+      ],
+      placeholderEntryCount: total.entryCount,
       kind: widget.kind,
       color: index < _maxSlices
           ? stats.categoryColor(index)

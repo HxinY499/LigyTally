@@ -27,7 +27,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
   /// 当前是否停在设置 tab。
   ///
-  /// 底栏用 PageView，三页都挂在树上。占用空间若只算一次，记完账再滑过来
+  /// 底栏用 PageView，四页都挂在树上。占用空间若只算一次，记完账再滑过来
   /// 仍是旧数字。切到这一页时重新扫盘。
   final bool active;
 

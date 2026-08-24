@@ -14,7 +14,7 @@ import '../../core/utils/ledger_date.dart';
 /// `colors.ink` 在深色下翻成近白，就是白字压白底。
 const _compactSurface = Color(0xFF17211E);
 
-/// 明细页顶部大卡：本月支出（Hero 大数字）+ 本月收入 + 净收支。
+/// 明细页顶部大卡：当月支出（Hero 大数字）+ 当月收入 + 净收支。
 ///
 /// 视觉参照现代记账App：主题色渐变、大圆角，本月支出用超大白色黑体数字
 /// 撑起视觉重心；底部两组「本月收入 / 净收支」用小字与主数字拉开层级——
@@ -28,19 +28,26 @@ class SummaryBand extends ConsumerWidget {
   const SummaryBand({
     super.key,
     required this.summary,
+    this.month,
     this.compact = false,
-    this.onOpenCalendar,
+    this.onPickMonth,
   });
 
   final LedgerSummary summary;
+
+  /// 这张卡在统计的月份。为空按当前自然月处理。
+  ///
+  /// 存在的理由只有一个：明细页可以翻到别的月，标签写死「本月支出」会在
+  /// 数字已经换成三月的时候仍然说「本月」。
+  final DateTime? month;
+
   final bool compact;
 
-  /// 非空时在卡片右上角显示月历入口。
+  /// 非空时卡片右上角出现「年月 ⌄」，点它换月。
   ///
-  /// 刻意做成一颗独立图标按钮，而不是让整张卡可点：这张卡面积大又待在
-  /// 滚动区顶部，整卡可点会在滑列表时被误触，而且卡面上没有任何线索
-  /// 能告诉用户「这里能点」。
-  final VoidCallback? onOpenCalendar;
+  /// 月份选择器长在这张卡上，而不是页头或卡片下方那条：它换的就是这张卡
+  /// 上的三个数，两者分开摆时得先猜「这个月份管的是谁」。
+  final VoidCallback? onPickMonth;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -61,23 +68,23 @@ class SummaryBand extends ConsumerWidget {
         // 这一层选择在 [HeroSkin] 里已经做完了。
         boxShadow: hero.shadow,
       ),
-      child: Stack(
-        children: [
-          // 月历按钮浮在角上而不是排进标签行：排进去会把 34 的热区撑进
-          // 那一行，整张卡跟着变高，主数字的位置也跟着往下挪。
-          if (onOpenCalendar != null)
-            Positioned(
-              top: 8,
-              right: 8,
-              child: _CalendarButton(hero: hero, onTap: onOpenCalendar!),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
-            child: _bandBody(hero, grouped),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+        child: _bandBody(hero, grouped),
       ),
     );
+  }
+
+  /// 标签的时间前缀：当前自然月说「本月」，同年的别的月说「3 月」，
+  /// 跨年才带上年份——「3 月支出」在翻到去年时会被读成今年三月。
+  String get _periodLabel {
+    final value = month;
+    if (value == null) return '本月';
+    final now = DateTime.now();
+    if (value.year == now.year) {
+      return value.month == now.month ? '本月' : '${value.month} 月';
+    }
+    return '${value.year} 年 ${value.month} 月';
   }
 
   Widget _bandBody(HeroSkin hero, bool grouped) {
@@ -87,7 +94,7 @@ class SummaryBand extends ConsumerWidget {
         Row(
           children: [
             Text(
-              '本月支出',
+              '$_periodLabel支出',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
@@ -100,6 +107,14 @@ class SummaryBand extends ConsumerWidget {
               '(元)',
               style: TextStyle(fontSize: 11, color: hero.foregroundFaint),
             ),
+            if (onPickMonth != null) ...[
+              const Spacer(),
+              _MonthChip(
+                hero: hero,
+                label: formatMonth(month ?? DateTime.now()),
+                onTap: onPickMonth!,
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 6),
@@ -125,7 +140,7 @@ class SummaryBand extends ConsumerWidget {
             Expanded(
               child: _MiniStat(
                 hero: hero,
-                label: '本月收入',
+                label: '$_periodLabel收入',
                 value: _rawMoney(summary.incomeCents, grouped: grouped),
               ),
             ),
@@ -147,42 +162,59 @@ class SummaryBand extends ConsumerWidget {
   }
 }
 
-/// 卡片右上角的月历入口。
+/// 卡片右上角的月份入口：`2026 年 8 月 ⌄`。
 ///
-/// 必须自带一层透明 [Material]：水波是画在最近的 Material 上、且在其子节点
-/// 之下的，而这张卡的卡面是渐变 [Container]，往上找到的最近 Material 是页面
-/// 那层，水波会被卡面整块盖住（与记账页日卡踩过的同一个坑）。
-class _CalendarButton extends StatelessWidget {
-  const _CalendarButton({required this.hero, required this.onTap});
+/// 必须自带一层透明 [Material]：水波画在最近的 Material 上、且在其子节点
+/// **之下**，而这张卡的卡面是渐变 [Container]，往上找到的最近 Material 是
+/// 页面那层，水波会被卡面整块盖住（与明细页日卡踩过的同一个坑）。
+///
+/// 按下色走 [HeroSkin.highlight] 而不是全局 `pressed`：后者是墨色系，
+/// 为白面卡片挑的，压在深彩卡面上几乎看不见。
+class _MonthChip extends StatelessWidget {
+  const _MonthChip({
+    required this.hero,
+    required this.label,
+    required this.onTap,
+  });
 
   final HeroSkin hero;
+  final String label;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      shape: const CircleBorder(),
+      borderRadius: BorderRadius.circular(999),
       clipBehavior: Clip.antiAlias,
       child: Tooltip(
-        message: '月历',
-        child: InkResponse(
+        message: '选择月份',
+        child: InkWell(
           onTap: onTap,
-          radius: 17,
-          containedInkWell: true,
-          customBorder: const CircleBorder(),
-          // 水波色跟着卡面走：彩色档下是半透明白（全局 ripple 是墨色系，
-          // 压在彩色卡面上几乎看不见），描边档下卡面变白，就该换回全局那套。
           highlightColor: hero.highlight,
           splashColor: hero.splash,
-          child: SizedBox.square(
-            dimension: 34,
-            child: Center(
-              child: Icon(
-                FLucideIcons.calendarDays,
-                size: 18,
-                color: hero.foreground,
-              ),
+          hoverColor: hero.splash,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: hero.foreground,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  FLucideIcons.chevronDown,
+                  size: 15,
+                  color: hero.foreground,
+                ),
+              ],
             ),
           ),
         ),
