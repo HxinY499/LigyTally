@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 
 import '../../../core/media/image_storage.dart';
 import '../../../core/storage/storage_usage.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
@@ -77,7 +78,8 @@ class _StorageScreenState extends ConsumerState<StorageScreen> {
       final freed = await ref.read(storageUsageServiceProvider).clearCache();
       return freed == 0 ? '没有可清理的缓存' : '已清理 ${formatStorageBytes(freed)}';
     },
-    confirmMessage: '清理更新安装包，以及导出后留在本机的备份、CSV、表格和分类配置副本。'
+    confirmMessage:
+        '清理更新安装包，以及导出后留在本机的备份、CSV、表格和分类配置副本。'
         '账单、图片和分类都不受影响。',
     destructive: false,
   );
@@ -88,14 +90,13 @@ class _StorageScreenState extends ConsumerState<StorageScreen> {
       final freed = await ref.read(storageUsageServiceProvider).clearOrphans();
       return freed == 0 ? '没有无主文件' : '已清理 ${formatStorageBytes(freed)}';
     },
-    confirmMessage: '删除这些不属于任何账单的图片文件。所有账单和它们的图片都会保留，'
+    confirmMessage:
+        '删除这些不属于任何账单的图片文件。所有账单和它们的图片都会保留，'
         '但被删掉的文件无法恢复。',
   );
 
   Future<void> _compactDatabase() => _run(_StorageTask.vacuum, () async {
-    final freed = await ref
-        .read(storageUsageServiceProvider)
-        .compactDatabase();
+    final freed = await ref.read(storageUsageServiceProvider).compactDatabase();
     return freed == 0 ? '数据库已经是最紧凑的' : '已回收 ${formatStorageBytes(freed)}';
   });
 
@@ -115,7 +116,8 @@ class _StorageScreenState extends ConsumerState<StorageScreen> {
       return '已压缩 ${result.compressedCount} 张，'
           '省下 ${formatStorageBytes(result.freedBytes)}';
     },
-    confirmMessage: '把尺寸偏大的账单图重新压到 $kRecompressMaxSide 像素以内。'
+    confirmMessage:
+        '把尺寸偏大的账单图重新压到 $kRecompressMaxSide 像素以内。'
         '账单和图片都会保留，但画质会下降且无法还原。',
   );
 
@@ -263,18 +265,19 @@ class _UsageOverview extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: colors.surface,
-        borderRadius: context.radii.cardAll,
+        shape: context.radii.cardShape(),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             formatStorageBytes(usage.totalBytes),
-            style: TextStyle(
-              fontSize: 30,
-              fontWeight: FontWeight.w700,
+            // 不是金额，但同样是「一屏里最大的那个数」，字距该跟着字号收紧，
+            // 所以复用同一条规则。
+            style: AppText.money(
+              AppText.moneyLg,
               color: colors.ink,
               height: 1.1,
             ),

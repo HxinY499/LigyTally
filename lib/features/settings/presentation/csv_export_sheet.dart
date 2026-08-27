@@ -9,10 +9,7 @@ enum CsvExportPreset { month, year, all, custom }
 
 /// 导出范围 + 是否把图片嵌进表格。
 class CsvExportChoice {
-  const CsvExportChoice({
-    required this.preset,
-    required this.includeImages,
-  });
+  const CsvExportChoice({required this.preset, required this.includeImages});
 
   final CsvExportPreset preset;
   final bool includeImages;
@@ -56,7 +53,7 @@ class _CsvExportSheetState extends State<_CsvExportSheet> {
     final now = DateTime.now();
     return Material(
       color: colors.surface,
-      borderRadius: context.radii.sheetTop,
+      shape: context.radii.sheetTopShape,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
@@ -185,7 +182,11 @@ class _ImageToggle extends StatelessWidget {
               ),
               alignment: Alignment.center,
               child: value
-                  ? const Icon(FLucideIcons.check, size: 14, color: Colors.white)
+                  ? const Icon(
+                      FLucideIcons.check,
+                      size: 14,
+                      color: Colors.white,
+                    )
                   : null,
             ),
           ],

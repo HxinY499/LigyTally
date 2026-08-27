@@ -56,7 +56,13 @@ void main() {
     });
 
     test('认不出前缀就整串作废，回落默认值', () {
-      for (final raw in [null, '', 'hello', 'LT2~dark', '{"themeMode":"dark"}']) {
+      for (final raw in [
+        null,
+        '',
+        'hello',
+        'LT2~dark',
+        '{"themeMode":"dark"}',
+      ]) {
         expect(
           AppearanceConfig.decode(raw),
           AppearanceConfig.initial,
@@ -104,7 +110,6 @@ void main() {
       expect(raw.wallpaper.opacity, kWallpaperOpacityMax);
       expect(raw.wallpaper.blur, kWallpaperBlurMax);
     });
-
   });
 
   group('外观令牌接进主题', () {
@@ -117,7 +122,10 @@ void main() {
         reduced(const Duration(milliseconds: 200)),
         const Duration(milliseconds: 110),
       );
-      expect(const AppMotion()(const Duration(seconds: 1)), const Duration(seconds: 1));
+      expect(
+        const AppMotion()(const Duration(seconds: 1)),
+        const Duration(seconds: 1),
+      );
     });
 
     test('三档动效都挂进 Material 主题，关闭档还换掉页面转场', () {
@@ -184,7 +192,7 @@ void main() {
         ).hero;
         if (style == HeroCardStyle.outline) {
           expect(hero.gradient, isNull);
-          expect(hero.border, isNotNull);
+          expect(hero.side, isNot(BorderSide.none));
           expect(hero.foreground, AppColors.light.ink);
         } else {
           expect(hero.foreground, Colors.white);

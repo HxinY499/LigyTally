@@ -53,10 +53,7 @@ class _UpdateAvailableSheetState extends ConsumerState<_UpdateAvailableSheet> {
     final sizeLabel = widget.info.apkSize > 0
         ? '${(widget.info.apkSize / 1024 / 1024).toStringAsFixed(0)}MB'
         : null;
-    final subtitle = [
-      'v${widget.info.version}',
-      ?sizeLabel,
-    ].join(' · ');
+    final subtitle = ['v${widget.info.version}', ?sizeLabel].join(' · ');
 
     final updateState = ref.watch(updateControllerProvider);
     final busy = updateState.isBusy;
@@ -71,7 +68,7 @@ class _UpdateAvailableSheetState extends ConsumerState<_UpdateAvailableSheet> {
 
     return Material(
       color: colors.surface,
-      borderRadius: context.radii.sheetTop,
+      shape: context.radii.sheetTopShape,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
@@ -239,21 +236,13 @@ class _NoteLine extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                 )
-              : Icon(
-                  _iconFor(kind),
-                  size: 15,
-                  color: colors.primary,
-                ),
+              : Icon(_iconFor(kind), size: 15, color: colors.primary),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
             item.text,
-            style: TextStyle(
-              fontSize: 14,
-              height: 1.45,
-              color: colors.ink,
-            ),
+            style: TextStyle(fontSize: 14, height: 1.45, color: colors.ink),
           ),
         ),
       ],

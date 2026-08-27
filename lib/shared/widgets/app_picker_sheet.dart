@@ -314,7 +314,7 @@ class _SheetShell extends StatelessWidget {
     // 而壳内用了 InkWell，所以这里必须自己铺一层 Material。
     return Material(
       color: colors.surface,
-      borderRadius: context.radii.sheetTop,
+      shape: context.radii.sheetTopShape,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,

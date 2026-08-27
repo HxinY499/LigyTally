@@ -11,6 +11,8 @@ import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/shared/widgets/summary_band.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'surface_probe.dart';
+
 /// WCAG 2.1 相对亮度。
 double _luminance(Color color) {
   double channel(double value) => value <= 0.03928
@@ -236,8 +238,13 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        // 大数字是「¥ + 数字」的富文本，字色挂在最外层 style 上，
+        // 所以从 RichText 的 text.style 取（`¥` 那一段自己覆盖成更淡的白）。
+        final amount = tester.widget<RichText>(
+          find.text('¥35.75', findRichText: true),
+        );
         expect(
-          tester.widget<Text>(find.text('35.75')).style!.color,
+          amount.text.style!.color,
           Colors.white,
           reason: '$accent / $brightness 下大数字不是白字',
         );
@@ -245,10 +252,9 @@ void main() {
         final face = tester
             .widgetList<Container>(find.byType(Container))
             .map((container) => container.decoration)
-            .whereType<BoxDecoration>()
-            .firstWhere((decoration) => decoration.gradient != null);
+            .firstWhere((decoration) => surfaceGradient(decoration) != null);
         expect(
-          face.gradient,
+          surfaceGradient(face),
           AppColors.resolve(brightness, config).heroGradient,
           reason: '$accent / $brightness 下摘要卡没走共用的 Hero 渐变',
         );

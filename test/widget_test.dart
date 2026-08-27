@@ -19,6 +19,8 @@ import 'package:ligy_tally/features/ledger/presentation/ledger_screen.dart';
 import 'package:ligy_tally/features/statistics/presentation/stats_design.dart';
 import 'package:ligy_tally/shared/widgets/summary_band.dart';
 
+import 'surface_probe.dart';
+
 void main() {
   test('month range uses a left-closed right-open boundary', () {
     final range = monthRange(DateTime(2026, 2, 18));
@@ -176,10 +178,11 @@ void main() {
       ),
     );
 
-    // Hero 大数字不带 ¥ 前缀，收入/净收支才带
-    expect(find.text('35.75'), findsOneWidget);
-    expect(find.text('100.00'), findsOneWidget);
-    expect(find.text('+64.25'), findsOneWidget);
+    // 三个数字都是「符号 + ¥ + 数字」的富文本（`¥` 单独一段是为了压小字号，
+    // 见 SummaryBand 里的 _HeroMoney），所以要开 findRichText 才找得到。
+    expect(find.text('¥35.75', findRichText: true), findsOneWidget);
+    expect(find.text('¥100.00', findRichText: true), findsOneWidget);
+    expect(find.text('+¥64.25', findRichText: true), findsOneWidget);
   });
 
   group('卡片阴影全应用统一', () {
@@ -289,20 +292,19 @@ void main() {
       final dayCards = tester
           .widgetList<DecoratedBox>(find.byType(DecoratedBox))
           .map((box) => box.decoration)
-          .whereType<BoxDecoration>()
           .where(
             (decoration) =>
-                decoration.borderRadius ==
+                surfaceRadius(decoration) ==
                     const BorderRadius.all(Radius.circular(18)) &&
-                decoration.boxShadow != null &&
+                surfaceShadows(decoration) != null &&
                 // 摘要 Hero 卡自从跟着圆角阶梯走之后也是 18 圆角，只能靠
                 // 「卡面是不是渐变」把它排除——它用的是主色阴影，不该进这条断言。
-                decoration.gradient == null,
+                surfaceGradient(decoration) == null,
           )
           .toList();
       expect(dayCards, isNotEmpty);
       for (final card in dayCards) {
-        expect(card.boxShadow, AppColors.light.shadowCard);
+        expect(surfaceShadows(card), AppColors.light.shadowCard);
       }
 
       // drift 取消订阅时会排一个 0ms 的清理定时器，测试结束前要放掉它。
@@ -330,14 +332,16 @@ void main() {
       );
 
       // 摘要卡是主题色渐变，配中性灰阴影会发浊，必须用带主色相的那组。
+      //
+      // 只看 Container：卡面之上还叠着一层同样带渐变（径向高光）的
+      // DecoratedBox，那一层不该有阴影，也不参与这条断言。
       final band = tester
           .widgetList<Container>(find.byType(Container))
           .map((container) => container.decoration)
-          .whereType<BoxDecoration>()
-          .where((decoration) => decoration.gradient != null)
+          .where((decoration) => surfaceGradient(decoration) != null)
           .toList();
       expect(band, hasLength(1));
-      expect(band.single.boxShadow, AppColors.light.shadowHeroPrimary);
+      expect(surfaceShadows(band.single), AppColors.light.shadowHeroPrimary);
     });
   });
 
@@ -401,7 +405,7 @@ void main() {
           .where(
             (material) =>
                 material.color == AppColors.light.surface &&
-                material.borderRadius ==
+                materialRadius(material) ==
                     const BorderRadius.all(Radius.circular(18)),
           )
           .toList();

@@ -12,6 +12,8 @@ import 'package:ligy_tally/features/settings/presentation/appearance_screen.dart
 import 'package:ligy_tally/features/settings/presentation/settings_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'surface_probe.dart';
+
 /// 外观二级页测试。
 ///
 /// 重点不是「页面能打开」，而是两件事：
@@ -55,7 +57,10 @@ void main() {
       containerOf(tester).read(appearanceProvider);
 
   /// 样张里那张 Hero 卡的装饰。
-  BoxDecoration heroDecoration(WidgetTester tester) {
+  ///
+  /// 是 [ShapeDecoration]（超椭圆卡面只能画在这个类里），所以圆角要从
+  /// `shape` 里取，见 surface_probe.dart。
+  Decoration heroDecoration(WidgetTester tester) {
     final box = tester.widget<AnimatedContainer>(
       find
           .ancestor(
@@ -64,11 +69,11 @@ void main() {
           )
           .first,
     );
-    return box.decoration! as BoxDecoration;
+    return box.decoration!;
   }
 
   double heroRadius(WidgetTester tester) =>
-      (heroDecoration(tester).borderRadius! as BorderRadius).topLeft.x;
+      surfaceRadius(heroDecoration(tester))!.topLeft.x;
 
   testWidgets('各组外观设置都在这一屏上，不再散落在设置首页', (tester) async {
     await pumpPage(tester);
@@ -178,14 +183,16 @@ void main() {
 
   testWidgets('换主题色，顶部共享样张的 Hero 渐变跟着变', (tester) async {
     await pumpPage(tester);
-    final before = (heroDecoration(tester).gradient! as LinearGradient).colors;
+    final before =
+        (surfaceGradient(heroDecoration(tester))! as LinearGradient).colors;
 
     containerOf(tester)
         .read(appearanceProvider.notifier)
         .setAccent(const AccentChoice.preset(AppAccent.purple));
     await tester.pumpAndSettle();
 
-    final after = (heroDecoration(tester).gradient! as LinearGradient).colors;
+    final after =
+        (surfaceGradient(heroDecoration(tester))! as LinearGradient).colors;
     expect(after, isNot(before));
   });
 
@@ -193,16 +200,28 @@ void main() {
     // 这条锁的是「卡面和前景成套发放」：只换背景不换字色，描边档下
     // 卡上的数字会直接消失在白面里。
     await pumpPage(tester);
-    expect(heroDecoration(tester).gradient, isNotNull);
+    // 渐变档的卡面是一条**真**渐变，也就是没有退化成单色。
+    expect(
+      flatGradientColor(surfaceGradient(heroDecoration(tester))),
+      isNull,
+      reason: '渐变档的卡面退化成实色了',
+    );
 
-    containerOf(tester)
-        .read(appearanceProvider.notifier)
-        .setHeroStyle(HeroCardStyle.outline);
+    containerOf(
+      tester,
+    ).read(appearanceProvider.notifier).setHeroStyle(HeroCardStyle.outline);
     await tester.pumpAndSettle();
 
-    final decoration = heroDecoration(tester);
-    expect(decoration.gradient, isNull);
-    expect(decoration.border, isNotNull);
+    final decoration = heroDecoration(tester) as ShapeDecoration;
+    // 描边档：卡面翻成白实底 + 主色描边。
+    //
+    // 实底是表达成首尾同色的退化渐变、而不是 `color` 字段的——那是为了让
+    // 三档之间能被 AnimatedContainer 平滑插值，见 HeroSkin.decoration。
+    // 所以这里验「渐变已退化成 surface 这个实色」，不是验 gradient 为 null。
+    expect(flatGradientColor(decoration.gradient), AppColors.light.surface);
+    // 描边在 shape 的 side 上：ShapeDecoration 没有 BoxDecoration 那个
+    // border 字段。
+    expect((decoration.shape as OutlinedBorder).side, isNot(BorderSide.none));
     expect(
       tester.widget<Text>(find.text('1,280.00')).style!.color,
       isNot(Colors.white),
@@ -213,9 +232,7 @@ void main() {
   testWidgets('按一下风格预设，同时换掉深浅、主题色、圆角、密度和底栏', (tester) async {
     await pumpPage(tester);
     // 「纯黑」这套预设改动最多，拿它验「一按换一整套」。
-    final preset = kAppearancePresets.firstWhere(
-      (item) => item.label == '纯黑',
-    );
+    final preset = kAppearancePresets.firstWhere((item) => item.label == '纯黑');
 
     await tester.tap(find.text(preset.label));
     await tester.pumpAndSettle();
@@ -236,9 +253,9 @@ void main() {
     // 是最容易挤爆的地方。
     await pumpPage(tester);
     await tester.binding.setSurfaceSize(const Size(320, 2600));
-    containerOf(tester)
-        .read(appearanceProvider.notifier)
-        .setDensity(AppDensityLevel.relaxed);
+    containerOf(
+      tester,
+    ).read(appearanceProvider.notifier).setDensity(AppDensityLevel.relaxed);
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull, reason: '外观页在窄屏宽松档下溢出了');

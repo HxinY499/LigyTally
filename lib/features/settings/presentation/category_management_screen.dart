@@ -467,13 +467,13 @@ class _CategoryCard extends StatelessWidget {
     final radii = context.radii;
     final active = parent.isActive;
     return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: radii.cardAll,
-        boxShadow: colors.shadowCard,
+      decoration: ShapeDecoration(
+        shape: radii.cardShape(),
+        shadows: colors.shadowCard,
       ),
       child: Material(
         color: colors.surface,
-        borderRadius: radii.cardAll,
+        shape: radii.cardShape(),
         clipBehavior: Clip.antiAlias,
         child: Column(
           children: [

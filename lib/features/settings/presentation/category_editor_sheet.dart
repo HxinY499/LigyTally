@@ -338,7 +338,7 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
       padding: EdgeInsets.only(bottom: keyboard),
       child: Material(
         color: colors.surface,
-        borderRadius: context.radii.sheetTop,
+        shape: context.radii.sheetTopShape,
         clipBehavior: Clip.antiAlias,
         child: SafeArea(
           top: false,

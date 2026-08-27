@@ -167,7 +167,10 @@ class _Swatch extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: hero.gradient,
               color: hero.color,
-              border: hero.border,
+              // 这块样张只有 24 高、圆角折算后不到 5px，超椭圆在这个尺度上
+              // 肉眼分不出，所以不走 HeroSkin.decoration 那条超椭圆卡面，
+              // 继续用 BoxDecoration + 由 side 转出的 Border。
+              border: Border.fromBorderSide(hero.side),
               // 小样张里的块只有 24 高，直接套 card 档会被圆角吃成药丸，
               // 按高度折算（与圆角档位示意块同一条换算）。
               borderRadius: BorderRadius.circular(

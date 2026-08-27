@@ -201,12 +201,7 @@ class _Group extends StatelessWidget {
           ),
         ),
         for (final item in items)
-          _DeltaRow(
-            item: item,
-            kind: kind,
-            grouped: grouped,
-            onOpen: onOpen,
-          ),
+          _DeltaRow(item: item, kind: kind, grouped: grouped, onOpen: onOpen),
       ],
     );
   }
@@ -246,71 +241,68 @@ class _DeltaRow extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(stats.radiusChip),
-            ),
-            child: CategoryIconView(
-              iconKey: item.iconKey,
-              size: 17,
-              imageSize: 34,
-              color: color,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  item.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: stats.rowTitle,
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${formatMoney(item.comparisonCents, grouped: grouped)}'
-                  ' → ${formatMoney(item.currentCents, grouped: grouped)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: stats.rowMeta,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                formatMoney(item.deltaCents, signed: true, grouped: grouped),
-                style: stats.rowAmount.copyWith(color: color),
+              // 底座跟着全应用统一成圆片（原来这一处是圆角方形）。底色只能
+              // 从图表调色板现算——那套色没有对应的 `*Soft` 令牌。
+              CategoryIconBadge(
+                iconKey: item.iconKey,
+                color: color,
+                background: color.withValues(alpha: 0.12),
               ),
-              const SizedBox(height: 3),
-              Row(
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      item.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: stats.rowTitle,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${formatMoney(item.comparisonCents, grouped: grouped)}'
+                      ' → ${formatMoney(item.currentCents, grouped: grouped)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: stats.rowMeta,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    up ? FLucideIcons.arrowUp : FLucideIcons.arrowDown,
-                    size: 10,
-                    color: color,
-                  ),
-                  const SizedBox(width: 2),
                   Text(
-                    _magnitude(item),
-                    style: stats.rowMeta.copyWith(color: color),
+                    formatMoney(
+                      item.deltaCents,
+                      signed: true,
+                      grouped: grouped,
+                    ),
+                    style: stats.rowAmount.copyWith(color: color),
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        up ? FLucideIcons.arrowUp : FLucideIcons.arrowDown,
+                        size: 10,
+                        color: color,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        _magnitude(item),
+                        style: stats.rowMeta.copyWith(color: color),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
             ],
           ),
         ),

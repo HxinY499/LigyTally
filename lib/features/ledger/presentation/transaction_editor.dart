@@ -14,6 +14,7 @@ import '../../../core/location/place_fix.dart';
 import '../../../core/media/image_storage.dart';
 import '../../../core/preferences/auto_location.dart';
 import '../../../core/preferences/last_category.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -340,7 +341,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: colors.surface,
-      shape: RoundedRectangleBorder(borderRadius: context.radii.sheetTop),
+      shape: context.radii.sheetTopShape,
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setSheetState) {
           final visibleExisting = [
@@ -814,6 +815,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                               categories: categories,
                               selectedIds: {?_categoryId},
                               accent: accent,
+                              accentSoft: _kind == 0
+                                  ? colors.expenseSoft
+                                  : colors.incomeSoft,
+                              // 这个网格直接铺在页面底色上，未选中的底座得用
+                              // 卡片白才拉得开对比（`fill` 和页底只差三个色阶）。
+                              idleBackground: colors.surface,
                               layout: ref.watch(categoryPickerLayoutProvider),
                               onSelected: _onCategorySelected,
                             );
@@ -1430,15 +1437,23 @@ class _ScrollingAmount extends StatelessWidget {
         borderRadius: BorderRadius.circular(1),
       ),
     );
+    final base = Theme.of(context).textTheme.headlineMedium;
+    // Material3 的 headlineMedium 是 28，兜底值跟它对齐——只有主题里漏配
+    // 这一档时才会用到。
+    final numberSize = base?.fontSize ?? 28;
     final number = Text(
       isEmpty ? placeholder : text,
       maxLines: 1,
       softWrap: false,
-      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+      style: base?.copyWith(
         color: color,
         fontWeight: FontWeight.w800,
-        // 等宽数字 + 零字距：位数变化时数字不左右抖，也不显松散。
-        letterSpacing: 0,
+        // 字距按字号推导（见 AppText.tracking），不再写死 0。
+        //
+        // 原先写 0 的理由是「位数变化时数字不左右抖」，但防抖靠的是下一行的
+        // 等宽数字特性：字距是给**每个**字符统一加的，加多少都不影响同位数
+        // 字符的对齐。零字距在这个字号上只是让数字显松散。
+        letterSpacing: AppText.tracking(numberSize),
         fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );

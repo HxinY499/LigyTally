@@ -164,6 +164,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       SizedBox(
                         height: 176,
                         child: StatsStreamBuilder<List<TrendPoint>>(
+                          // 换支出/收入时整条折线换的是另一份数据，
+                          // 让它淡入淡出而不是硬切。
+                          dataKey: _trendKind,
                           stream: _whenReady(
                             ready,
                             () => database.watchTrend(
@@ -181,8 +184,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                             );
                             if (!hasData) {
                               return StatsEmpty(
-                                title:
-                                    '本期还没有${_trendKind == 0 ? '支出' : '收入'}',
+                                title: '本期还没有${_trendKind == 0 ? '支出' : '收入'}',
                                 body:
                                     '记一笔${_trendKind == 0 ? '支出' : '收入'}后，'
                                     '这里会显示金额随时间的变化趋势',
@@ -220,6 +222,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       ),
                       const SizedBox(height: 14),
                       StatsStreamBuilder<List<CategoryTotal>>(
+                        dataKey: _categoryKind,
                         stream: _whenReady(
                           ready,
                           () => database.watchCategoryTotals(
@@ -271,6 +274,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       ),
                       const SizedBox(height: 14),
                       StatsStreamBuilder<List<CategoryDelta>>(
+                        dataKey: _categoryKind,
                         // 跟随分类构成卡的支出/收入切换：两张卡讲的是同一批分类，
                         // 各带一个切换开关会让「哪张卡现在是收入」变得要猜。
                         stream: _whenReady(
@@ -322,6 +326,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       SizedBox(
                         height: 196,
                         child: StatsStreamBuilder<List<PeriodBar>>(
+                          dataKey: _comparisonKind,
                           stream: _whenReady(
                             ready,
                             () => database.watchPeriodBars(

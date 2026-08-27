@@ -13,9 +13,9 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 /**
- * 应用内更新所需的原生能力。
+ * 应用内更新与系统跳转。
  *
- * 只做三件事：报告当前版本、检查是否允许安装未知应用、拉起系统安装器。
+ * 报告当前版本、检查是否允许安装未知应用、拉起系统安装器、打开 https 页面。
  * 下载与校验都在 Dart 侧完成，这里不碰网络。
  */
 class MainActivity : FlutterActivity() {
@@ -56,6 +56,14 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGS", "缺少 APK 路径", null)
                     } else {
                         installApk(path, result)
+                    }
+                }
+                "openUrl" -> {
+                    val url = call.argument<String>("url")
+                    if (url.isNullOrBlank()) {
+                        result.error("INVALID_ARGS", "缺少网址", null)
+                    } else {
+                        openUrl(url, result)
                     }
                 }
                 else -> result.notImplemented()
@@ -123,6 +131,23 @@ class MainActivity : FlutterActivity() {
                 Intent(Settings.ACTION_SECURITY_SETTINGS)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
+        }
+    }
+
+    /** 打开备案查询、隐私政策等 https 页面。 */
+    private fun openUrl(url: String, result: MethodChannel.Result) {
+        val uri = Uri.parse(url)
+        if (uri.scheme != "https") {
+            result.error("INVALID_ARGS", "只打开 https 链接", null)
+            return
+        }
+        try {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("OPEN_URL_FAILED", e.message ?: "无法打开网页", null)
         }
     }
 

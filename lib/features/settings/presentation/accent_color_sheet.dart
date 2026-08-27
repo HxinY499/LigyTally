@@ -36,7 +36,7 @@ class _AccentColorSheet extends ConsumerWidget {
     final selected = ref.watch(appAccentProvider);
     return Material(
       color: colors.surface,
-      borderRadius: context.radii.sheetTop,
+      shape: context.radii.sheetTopShape,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,

@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
+import '../../../shared/widgets/hero_surface.dart';
 import 'stats_design.dart';
 import 'statistics_window.dart';
 
@@ -143,153 +145,140 @@ class StatsOverviewCard extends StatelessWidget {
     final canGoForward = !window.includesToday;
     final elapsed = window.elapsedDayCount;
 
-    final hero = stats.hero;
-
-    return Container(
-      decoration: BoxDecoration(
-        // gradient 与 color 总有一个是 null，同时传给 BoxDecoration 合法。
-        gradient: hero.gradient,
-        color: hero.color,
-        border: hero.border,
-        borderRadius: BorderRadius.circular(stats.radiusCard),
-        boxShadow: hero.shadow,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _RangeSwitcher(
-              label: window.rangeLabel,
-              canGoForward: canGoForward,
-              onShift: onShift,
-              onPickRange: onPickRange,
-              isCustom: window.period == StatisticsPeriod.custom,
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Text('本期支出', style: stats.heroLabel),
-                if (exclusionCaption.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      exclusionCaption,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: stats.heroLabel.copyWith(
-                        color: stats.onHeroTertiary,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 6),
-            // 大数字：加载中给骨架条，避免先渲染 ¥0.00 再跳到真实值
-            //（那一下跳变看着像数据出错）。
-            if (summary == null)
-              const _HeroBar(width: 168, height: 38)
-            else
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _heroMoney(summary.expenseCents, grouped: grouped),
-                        maxLines: 1,
-                        style: stats.heroAmount,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: _DeltaBadge(
-                      window: window,
-                      grouped: grouped,
-                      currentCents: summary.expenseCents,
-                      previousCents: previous?.expenseCents,
-                    ),
-                  ),
-                ],
-              ),
-            const SizedBox(height: 16),
-            Container(height: 1, color: stats.onHeroDivider),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: _HeroMiniStat(
-                    label: '本期收入',
-                    value: summary == null
-                        ? null
-                        : _heroMoney(summary.incomeCents, grouped: grouped),
-                  ),
-                ),
-                const _HeroMiniDivider(),
-                Expanded(
-                  child: _HeroMiniStat(
-                    label: '净收支',
-                    value: summary == null
-                        ? null
-                        : _heroMoney(
-                            summary.netCents,
-                            grouped: grouped,
-                            signed: true,
-                          ),
-                  ),
-                ),
-                const _HeroMiniDivider(),
-                Expanded(
-                  child: _HeroMiniStat(
-                    label: '日均支出',
-                    // 除数是「已经走完的天数」而不是区间总长：8 月 13 日看月视图
-                    // 时除以 31 会把日均系统性压低六成，而这个数字正是用来
-                    // 和上个月的日均横向比较的。
-                    value: summary == null
-                        ? null
-                        : elapsed == 0
-                        ? '—'
-                        : _heroMoney(
-                            summary.expenseCents ~/ elapsed,
-                            grouped: grouped,
-                          ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  FLucideIcons.receipt,
-                  size: 13,
-                  color: stats.onHeroTertiary,
-                ),
-                const SizedBox(width: 5),
-                // 这行是三段拼起来的，笔数和天数都没有位数上限
-                //（年视图 + 上千笔），窄屏上必须能让它省略而不是溢出。
-                Expanded(
+    // 卡面与明细页月度摘要卡共用 HeroSurface：两屏的 Hero 卡是同一个视觉元素，
+    // 各拼一份 decoration 会在以后调卡面时漂移。
+    return HeroSurface(
+      borderRadius: BorderRadius.circular(stats.radiusCard),
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _RangeSwitcher(
+            label: window.rangeLabel,
+            canGoForward: canGoForward,
+            onShift: onShift,
+            onPickRange: onPickRange,
+            isCustom: window.period == StatisticsPeriod.custom,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Text('本期支出', style: stats.heroLabel),
+              if (exclusionCaption.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Flexible(
                   child: Text(
-                    summary == null
-                        ? '统计中…'
-                        : _footnote(summary, elapsed, window.isPartial),
+                    exclusionCaption,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: stats.heroLabel.copyWith(
-                      fontSize: 11,
                       color: stats.onHeroTertiary,
                     ),
                   ),
                 ),
               ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          // 大数字：加载中给骨架条，避免先渲染 ¥0.00 再跳到真实值
+          //（那一下跳变看着像数据出错）。
+          if (summary == null)
+            const _HeroBar(width: 168, height: AppText.moneyXl)
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _heroMoney(summary.expenseCents, grouped: grouped),
+                      maxLines: 1,
+                      style: stats.heroAmount,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: _DeltaBadge(
+                    window: window,
+                    grouped: grouped,
+                    currentCents: summary.expenseCents,
+                    previousCents: previous?.expenseCents,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          const SizedBox(height: 16),
+          Container(height: 1, color: stats.onHeroDivider),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _HeroMiniStat(
+                  label: '本期收入',
+                  value: summary == null
+                      ? null
+                      : _heroMoney(summary.incomeCents, grouped: grouped),
+                ),
+              ),
+              const _HeroMiniDivider(),
+              Expanded(
+                child: _HeroMiniStat(
+                  label: '净收支',
+                  value: summary == null
+                      ? null
+                      : _heroMoney(
+                          summary.netCents,
+                          grouped: grouped,
+                          signed: true,
+                        ),
+                ),
+              ),
+              const _HeroMiniDivider(),
+              Expanded(
+                child: _HeroMiniStat(
+                  label: '日均支出',
+                  // 除数是「已经走完的天数」而不是区间总长：8 月 13 日看月视图
+                  // 时除以 31 会把日均系统性压低六成，而这个数字正是用来
+                  // 和上个月的日均横向比较的。
+                  value: summary == null
+                      ? null
+                      : elapsed == 0
+                      ? '—'
+                      : _heroMoney(
+                          summary.expenseCents ~/ elapsed,
+                          grouped: grouped,
+                        ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(FLucideIcons.receipt, size: 13, color: stats.onHeroTertiary),
+              const SizedBox(width: 5),
+              // 这行是三段拼起来的，笔数和天数都没有位数上限
+              //（年视图 + 上千笔），窄屏上必须能让它省略而不是溢出。
+              Expanded(
+                child: Text(
+                  summary == null
+                      ? '统计中…'
+                      : _footnote(summary, elapsed, window.isPartial),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: stats.heroLabel.copyWith(
+                    fontSize: 11,
+                    color: stats.onHeroTertiary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -602,11 +591,7 @@ class _ExplainLine extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.35,
-              color: colors.muted,
-            ),
+            style: TextStyle(fontSize: 12, height: 1.35, color: colors.muted),
           ),
         ),
         const SizedBox(width: 8),

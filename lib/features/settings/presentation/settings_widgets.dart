@@ -45,9 +45,9 @@ class SettingsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: colors.surface,
-        borderRadius: context.radii.cardAll,
+        shape: context.radii.cardShape(),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -280,10 +280,7 @@ class SettingsToggleTrack extends StatelessWidget {
               ),
             ),
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: children,
-          ),
+          Row(mainAxisSize: MainAxisSize.min, children: children),
         ],
       ),
     );

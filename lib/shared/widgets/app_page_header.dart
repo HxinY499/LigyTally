@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
+import '../../core/theme/app_text.dart';
 import '../../core/theme/app_theme.dart';
 
 /// ── 页头设计令牌（唯一真相源）──────────────────────────────
@@ -125,12 +126,14 @@ const double _kChromeScrimOpacity = 0.55;
 /// 页头标题统一样式（折叠态基准）。
 ///
 /// - w700：比 w800 更透气，大字重在中文黑体上容易糊成一坨
-/// - letterSpacing -0.2：中文标题收紧一点更精致（现代 App 的通用手法）
+/// - 字距走 [AppText.tracking]：中文标题收紧一点更精致（现代 App 的通用手法）。
+///   这里曾是写死的 -0.2 / -0.6 两个人工值，那条曲线正是按它们锚定的，
+///   所以换成统一规则后本页头观感不变——但全应用其余大字号从此和它一致。
 TextStyle kAppHeaderTitleStyle(AppColors colors) => TextStyle(
   fontSize: _kTitleSizeCollapsed,
   fontWeight: FontWeight.w700,
   height: _kTitleHeight,
-  letterSpacing: -0.2,
+  letterSpacing: AppText.tracking(_kTitleSizeCollapsed),
   color: colors.ink,
 );
 
@@ -389,7 +392,10 @@ class _HeaderContent extends StatelessWidget {
             style: kAppHeaderTitleStyle(colors).copyWith(
               fontSize: _lerp(_kTitleSizeExpanded, _kTitleSizeCollapsed),
               // 字号越大字距越要收紧，否则大字显松散。
-              letterSpacing: _lerp(-0.6, -0.2),
+              letterSpacing: _lerp(
+                AppText.tracking(_kTitleSizeExpanded),
+                AppText.tracking(_kTitleSizeCollapsed),
+              ),
             ),
           ),
         ),

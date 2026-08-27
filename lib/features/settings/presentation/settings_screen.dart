@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/appearance/appearance.dart';
+import '../../../core/branding/app_brand.dart';
 import '../../../core/location/location_platform.dart';
 import '../../../core/location/location_service.dart';
 import '../../../core/preferences/auto_location.dart';
@@ -17,6 +18,7 @@ import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
 import 'appearance_screen.dart';
+import 'privacy_screen.dart';
 import 'category_management_screen.dart';
 import 'csv_export_sheet.dart';
 import 'settings_widgets.dart';
@@ -393,6 +395,12 @@ class _AboutCardState extends ConsumerState<_AboutCard> {
     showAppToast(context, message: message);
   }
 
+  void _openPrivacy() {
+    Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => const PrivacyScreen()));
+  }
+
   @override
   Widget build(BuildContext context) {
     final updateState = ref.watch(updateControllerProvider);
@@ -437,13 +445,19 @@ class _AboutCardState extends ConsumerState<_AboutCard> {
     return SettingsCard(
       children: [
         _BrandRow(version: _version, hasUpdate: offeringUpdate),
+        // 政策正文和备案号都收进二级页：合规信息必须能看到，但不该和
+        // 「检查更新」抢同一层——那是用户真会点的那行。
+        SettingsItem(
+          icon: FLucideIcons.shieldCheck,
+          title: '隐私与备案',
+          showChevron: true,
+          onTap: _openPrivacy,
+        ),
         SettingsItem(
           icon: offeringUpdate
               ? FLucideIcons.cloudDownload
               : FLucideIcons.refreshCw,
-          title: offeringUpdate
-              ? '更新到 v${updateInfo.version}'
-              : '检查更新',
+          title: offeringUpdate ? '更新到 v${updateInfo.version}' : '检查更新',
           subtitle: busySubtitle,
           accent: offeringUpdate,
           trailing: trailing,
@@ -503,7 +517,7 @@ class _BrandRow extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Ligy 记账',
+                    kAppDisplayName,
                     style: TextStyle(
                       fontSize: 15.5,
                       fontWeight: FontWeight.w700,

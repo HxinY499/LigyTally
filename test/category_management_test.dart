@@ -10,6 +10,8 @@ import 'package:ligy_tally/core/utils/category_icons.dart';
 import 'package:ligy_tally/features/ledger/application/providers.dart';
 import 'package:ligy_tally/features/settings/presentation/category_management_screen.dart';
 
+import 'surface_probe.dart';
+
 void main() {
   group('分类的数据层约束', () {
     test('同层级重名会被拦住，不同层级 / 不同收支侧互不影响', () async {
@@ -344,7 +346,7 @@ void main() {
           .where(
             (material) =>
                 material.color == AppColors.light.surface &&
-                material.borderRadius ==
+                materialRadius(material) ==
                     const BorderRadius.all(Radius.circular(18)),
           )
           .toList();
@@ -356,17 +358,16 @@ void main() {
       final shadowed = tester
           .widgetList<DecoratedBox>(find.byType(DecoratedBox))
           .map((box) => box.decoration)
-          .whereType<BoxDecoration>()
           .where(
             (decoration) =>
-                decoration.borderRadius ==
+                surfaceRadius(decoration) ==
                     const BorderRadius.all(Radius.circular(18)) &&
-                decoration.boxShadow != null,
+                surfaceShadows(decoration) != null,
           )
           .toList();
       expect(shadowed, isNotEmpty);
       for (final card in shadowed) {
-        expect(card.boxShadow, AppColors.light.shadowCard);
+        expect(surfaceShadows(card), AppColors.light.shadowCard);
       }
 
       await teardown(tester);

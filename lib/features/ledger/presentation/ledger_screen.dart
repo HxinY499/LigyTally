@@ -11,6 +11,7 @@ import '../../../core/location/place_fix.dart';
 import '../../../core/media/image_storage.dart';
 import '../../../core/theme/app_density.dart';
 import '../../../core/theme/app_motion.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -211,198 +212,192 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             // content，页头固定为紧凑高度（输入框和三栏操作条都不该被缩放）。
             title: _selecting || _searching ? null : '记账',
             content: _selecting
-                    ? _SelectModeBar(
-                        selectedCount: _selected.length,
-                        allSelected:
-                            _visibleItems.isNotEmpty &&
-                            _selected.length == _visibleItems.length,
-                        busy: _busy,
-                        onCancel: _exitSelect,
-                        onToggleAll: _toggleAllVisible,
-                      )
-                    : _searching
-                    ? _SearchField(
-                        controller: _searchController,
-                        onChanged: (value) =>
-                            setState(() => _query = value.trim()),
-                      )
-                    : null,
-                actions: _selecting
-                    ? const []
-                    : [
-                        AppHeaderAction(
-                          icon: _searching
-                              ? FLucideIcons.x
-                              : FLucideIcons.search,
-                          tooltip: _searching ? '关闭搜索' : '搜索',
-                          onTap: _toggleSearch,
-                        ),
-                        AppHeaderAction(
-                          icon: FLucideIcons.squareCheck,
-                          tooltip: '批量选择',
-                          onTap: _enterSelect,
-                        ),
-                      ],
-                controller: _scrollController,
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
-                      child: StreamBuilder<LedgerSummary>(
-                        stream: database.watchSummary(range),
-                        builder: (context, snapshot) {
-                          final summary =
-                              snapshot.data ??
-                              const LedgerSummary(
-                                incomeCents: 0,
-                                expenseCents: 0,
-                                entryCount: 0,
-                                activeDayCount: 0,
-                              );
-                          return SummaryBand(
-                            summary: summary,
-                            month: _month,
-                            onPickMonth: _pickMonth,
-                          );
-                        },
-                      ),
+                ? _SelectModeBar(
+                    selectedCount: _selected.length,
+                    allSelected:
+                        _visibleItems.isNotEmpty &&
+                        _selected.length == _visibleItems.length,
+                    busy: _busy,
+                    onCancel: _exitSelect,
+                    onToggleAll: _toggleAllVisible,
+                  )
+                : _searching
+                ? _SearchField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _query = value.trim()),
+                  )
+                : null,
+            actions: _selecting
+                ? const []
+                : [
+                    AppHeaderAction(
+                      icon: _searching ? FLucideIcons.x : FLucideIcons.search,
+                      tooltip: _searching ? '关闭搜索' : '搜索',
+                      onTap: _toggleSearch,
                     ),
-                  ),
-                  // 列表。图片路径单独订阅一条流：它变得远比账单本身少，
-                  // 塞进 watchTransactions 会让每次记账都多 join 一次图片表。
-                  StreamBuilder<Map<String, String>>(
-                    stream: database.watchFirstImagePaths(range),
-                    builder: (context, imageSnapshot) {
-                      final imagePaths =
-                          imageSnapshot.data ?? const <String, String>{};
-                      return StreamBuilder<List<LedgerItem>>(
-                        stream: database.watchTransactions(range),
-                        builder: (context, snapshot) {
-                          if (snapshot.hasError) {
-                            return SliverToBoxAdapter(
-                              child: _MessageState(
-                                icon: FLucideIcons.circleAlert,
-                                title: '账单加载失败',
-                                detail: '${snapshot.error}',
-                              ),
-                            );
-                          }
-                          final allItems = snapshot.data;
-                          if (allItems == null) {
-                            return SliverToBoxAdapter(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 80,
-                                ),
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    color: context.colors.primary,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }
-                          final keyword = _query.toLowerCase();
-                          final items = keyword.isEmpty
-                              ? allItems
-                              : allItems
-                                    .where(
-                                      (item) =>
-                                          item.transaction.note
-                                              .toLowerCase()
-                                              .contains(keyword) ||
-                                          item.category.name
-                                              .toLowerCase()
-                                              .contains(keyword),
-                                    )
-                                    .toList();
-                          _visibleItems = items;
-                          _pruneSelection(items);
-                          if (items.isEmpty) {
-                            return SliverToBoxAdapter(
-                              child: _MessageState(
-                                icon: keyword.isEmpty
-                                    ? FLucideIcons.receipt
-                                    : FLucideIcons.searchX,
-                                title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
-                                detail: keyword.isEmpty
-                                    ? '点击右下角加号记下第一笔'
-                                    : '换一个关键词再试',
-                              ),
-                            );
-                          }
-                          final groups = <String, List<LedgerItem>>{};
-                          for (final item in items) {
-                            groups
-                                .putIfAbsent(
-                                  item.transaction.accountingDate,
-                                  () => [],
-                                )
-                                .add(item);
-                          }
-                          final entries = groups.entries.toList();
-                          return SliverPadding(
-                            // 84 是避开居中悬浮的「记一笔」FAB（56 直径 + 16 浮起
-                            // 边距 + 余量）。再加上 MediaQuery 的底部留白：贴底档下
-                            // 它是 0（那块留白由底栏自己吃掉），悬浮档下它是
-                            // 「胶囊盖住的高度 + 系统安全区」，见 `home_shell.dart`。
-                            padding: EdgeInsets.fromLTRB(
-                              16,
-                              12,
-                              16,
-                              84 + MediaQuery.paddingOf(context).bottom,
-                            ),
-                            sliver: SliverList.builder(
-                              itemCount: entries.length,
-                              itemBuilder: (context, index) {
-                                final group = entries[index];
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 14),
-                                  child: _DayCard(
-                                    day: dateFromKey(group.key),
-                                    items: group.value,
-                                    imagePaths: imagePaths,
-                                    selecting: _selecting,
-                                    selectedIds: _selected,
-                                    onTapHeader: _selecting
-                                        ? null
-                                        : () => _addTransactionForDay(
-                                            dateFromKey(group.key),
-                                          ),
-                                    onTapItem: _selecting
-                                        ? (item) => _toggleSelected(
-                                            item.transaction.id,
-                                          )
-                                        : _edit,
-                                    onLongPressItem: _selecting
-                                        ? null
-                                        : (item) {
-                                            HapticFeedback.mediumImpact();
-                                            _confirmDelete(item);
-                                          },
-                                  ),
-                                );
-                              },
-                            ),
+                    AppHeaderAction(
+                      icon: FLucideIcons.squareCheck,
+                      tooltip: '批量选择',
+                      onTap: _enterSelect,
+                    ),
+                  ],
+            controller: _scrollController,
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                  child: StreamBuilder<LedgerSummary>(
+                    stream: database.watchSummary(range),
+                    builder: (context, snapshot) {
+                      final summary =
+                          snapshot.data ??
+                          const LedgerSummary(
+                            incomeCents: 0,
+                            expenseCents: 0,
+                            entryCount: 0,
+                            activeDayCount: 0,
                           );
-                        },
+                      return SummaryBand(
+                        summary: summary,
+                        month: _month,
+                        onPickMonth: _pickMonth,
                       );
                     },
                   ),
-                ],
-              ),
-              if (_selecting)
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 16 + MediaQuery.paddingOf(context).bottom,
-                  child: _BatchDeleteBar(
-                    enabled: _selected.isNotEmpty && !_busy,
-                    onDelete: _confirmDeleteSelected,
-                  ),
                 ),
+              ),
+              // 列表。图片路径单独订阅一条流：它变得远比账单本身少，
+              // 塞进 watchTransactions 会让每次记账都多 join 一次图片表。
+              StreamBuilder<Map<String, String>>(
+                stream: database.watchFirstImagePaths(range),
+                builder: (context, imageSnapshot) {
+                  final imagePaths =
+                      imageSnapshot.data ?? const <String, String>{};
+                  return StreamBuilder<List<LedgerItem>>(
+                    stream: database.watchTransactions(range),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return SliverToBoxAdapter(
+                          child: _MessageState(
+                            icon: FLucideIcons.circleAlert,
+                            title: '账单加载失败',
+                            detail: '${snapshot.error}',
+                          ),
+                        );
+                      }
+                      final allItems = snapshot.data;
+                      if (allItems == null) {
+                        return SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 80),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: context.colors.primary,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      final keyword = _query.toLowerCase();
+                      final items = keyword.isEmpty
+                          ? allItems
+                          : allItems
+                                .where(
+                                  (item) =>
+                                      item.transaction.note
+                                          .toLowerCase()
+                                          .contains(keyword) ||
+                                      item.category.name.toLowerCase().contains(
+                                        keyword,
+                                      ),
+                                )
+                                .toList();
+                      _visibleItems = items;
+                      _pruneSelection(items);
+                      if (items.isEmpty) {
+                        return SliverToBoxAdapter(
+                          child: _MessageState(
+                            icon: keyword.isEmpty
+                                ? FLucideIcons.receipt
+                                : FLucideIcons.searchX,
+                            title: keyword.isEmpty ? '这个月还没有记录' : '没有匹配的账单',
+                            detail: keyword.isEmpty
+                                ? '点击右下角加号记下第一笔'
+                                : '换一个关键词再试',
+                          ),
+                        );
+                      }
+                      final groups = <String, List<LedgerItem>>{};
+                      for (final item in items) {
+                        groups
+                            .putIfAbsent(
+                              item.transaction.accountingDate,
+                              () => [],
+                            )
+                            .add(item);
+                      }
+                      final entries = groups.entries.toList();
+                      return SliverPadding(
+                        // 84 是避开居中悬浮的「记一笔」FAB（56 直径 + 16 浮起
+                        // 边距 + 余量）。再加上 MediaQuery 的底部留白：贴底档下
+                        // 它是 0（那块留白由底栏自己吃掉），悬浮档下它是
+                        // 「胶囊盖住的高度 + 系统安全区」，见 `home_shell.dart`。
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          12,
+                          16,
+                          84 + MediaQuery.paddingOf(context).bottom,
+                        ),
+                        sliver: SliverList.builder(
+                          itemCount: entries.length,
+                          itemBuilder: (context, index) {
+                            final group = entries[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: _DayCard(
+                                day: dateFromKey(group.key),
+                                items: group.value,
+                                imagePaths: imagePaths,
+                                selecting: _selecting,
+                                selectedIds: _selected,
+                                onTapHeader: _selecting
+                                    ? null
+                                    : () => _addTransactionForDay(
+                                        dateFromKey(group.key),
+                                      ),
+                                onTapItem: _selecting
+                                    ? (item) =>
+                                          _toggleSelected(item.transaction.id)
+                                    : _edit,
+                                onLongPressItem: _selecting
+                                    ? null
+                                    : (item) {
+                                        HapticFeedback.mediumImpact();
+                                        _confirmDelete(item);
+                                      },
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ],
           ),
+          if (_selecting)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16 + MediaQuery.paddingOf(context).bottom,
+              child: _BatchDeleteBar(
+                enabled: _selected.isNotEmpty && !_busy,
+                onDelete: _confirmDeleteSelected,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -680,11 +675,13 @@ class _DayCard extends ConsumerWidget {
     }
     final radii = context.radii;
     return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: radii.cardAll,
+      decoration: ShapeDecoration(
+        // 超椭圆而不是普通圆角，见 AppRadius.cardShape。这也是为什么这里是
+        // ShapeDecoration：BoxDecoration 只认 borderRadius，画不出超椭圆。
+        shape: radii.cardShape(),
         // 与统计页图表卡同一组阴影：两屏的卡片浮起高度必须一致，
         // 否则在底部导航来回切换时会觉得「其中一屏是平的」。
-        boxShadow: colors.shadowCard,
+        shadows: colors.shadowCard,
       ),
       // 白底必须由 Material 提供，不能用 Container(color:)。
       //
@@ -697,7 +694,7 @@ class _DayCard extends ConsumerWidget {
       // clipBehavior 让水波贴合圆角，不会在四角溢出成方块。
       child: Material(
         color: colors.surface,
-        borderRadius: radii.cardAll,
+        shape: radii.cardShape(),
         clipBehavior: Clip.antiAlias,
         child: Column(
           children: [
@@ -821,18 +818,11 @@ class _LedgerRow extends StatelessWidget {
         child: Row(
           children: [
             _SelectCheckSlot(selecting: selecting, selected: selected),
-            Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: soft, shape: BoxShape.circle),
-              child: CategoryIconView(
-                iconKey: item.category.iconKey,
-                color: color,
-                size: 21,
-                // 外层是 40 的圆底，图片铺满它。
-                imageSize: 40,
-              ),
+            CategoryIconBadge(
+              iconKey: item.category.iconKey,
+              color: color,
+              background: soft,
+              diameter: CategoryIconBadge.large,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -865,12 +855,7 @@ class _LedgerRow extends StatelessWidget {
             const SizedBox(width: 10),
             Text(
               '${isExpense ? '-' : '+'}${formatMoney(item.transaction.amountCents, grouped: grouped)}',
-              style: TextStyle(
-                fontSize: 16,
-                color: color,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.2,
-              ),
+              style: AppText.money(16, color: color, weight: FontWeight.w800),
             ),
           ],
         ),

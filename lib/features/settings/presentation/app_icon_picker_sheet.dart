@@ -30,7 +30,7 @@ class _AppIconPickerSheet extends StatelessWidget {
     final colors = context.colors;
     return Material(
       color: colors.surface,
-      borderRadius: context.radii.sheetTop,
+      shape: context.radii.sheetTopShape,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,

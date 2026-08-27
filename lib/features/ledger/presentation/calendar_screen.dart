@@ -8,6 +8,7 @@ import '../../../core/appearance/appearance.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/location/place_fix.dart';
 import '../../../core/theme/app_density.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -225,9 +226,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final selected = _selectedDay;
     return AppPageHeader(
       title: '日历',
-      actions: [
-        _TodayAction(onTap: _atToday ? null : _goToday),
-      ],
+      actions: [_TodayAction(onTap: _atToday ? null : _goToday)],
       slivers: [
         SliverPersistentHeader(
           pinned: true,
@@ -681,7 +680,9 @@ class _MonthPage extends ConsumerWidget {
               ),
             ),
             Expanded(
-              child: Center(child: _TotalRow(points: points, metric: metric)),
+              child: Center(
+                child: _TotalRow(points: points, metric: metric),
+              ),
             ),
           ],
         );
@@ -1259,17 +1260,10 @@ class _DetailRow extends ConsumerWidget {
         ),
         child: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: soft, shape: BoxShape.circle),
-              child: CategoryIconView(
-                iconKey: item.category.iconKey,
-                color: color,
-                size: 18,
-                imageSize: 34,
-              ),
+            CategoryIconBadge(
+              iconKey: item.category.iconKey,
+              color: color,
+              background: soft,
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1302,11 +1296,7 @@ class _DetailRow extends ConsumerWidget {
             Text(
               '${isExpense ? '-' : '+'}'
               '${formatMoney(item.transaction.amountCents, grouped: grouped)}',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
+              style: AppText.money(AppText.moneySm, color: color),
             ),
           ],
         ),
@@ -1326,16 +1316,14 @@ class _CalendarCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final shape = context.radii.cardShape();
     return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: context.radii.cardAll,
-        boxShadow: colors.shadowCard,
-      ),
+      decoration: ShapeDecoration(shape: shape, shadows: colors.shadowCard),
       // 白底必须由 Material 提供：水波画在最近的 Material 上，
       // 用 Container(color:) 会把反馈盖住。明细页日卡踩过同一个坑。
       child: Material(
         color: colors.surface,
-        borderRadius: context.radii.cardAll,
+        shape: shape,
         clipBehavior: Clip.antiAlias,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
@@ -1367,10 +1355,8 @@ class _TotalRow extends ConsumerWidget {
       income += point.incomeCents;
     }
     final labelStyle = TextStyle(fontSize: 11, color: colors.muted);
-    final valueStyle = const TextStyle(
-      fontSize: 13,
-      fontWeight: FontWeight.w700,
-    );
+    // 颜色在下面按收支各自覆盖，这里给个占位。
+    final valueStyle = AppText.money(13, color: colors.ink);
 
     List<Widget> cells() {
       switch (metric) {

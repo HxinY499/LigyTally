@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/appearance/appearance_config.dart';
 import '../../core/database/app_database.dart';
 import '../../core/theme/app_theme.dart';
-import 'category_icon_view.dart';
+import 'category_icon_badge.dart';
 
 /// 记账页与统计排除共用的分类选择器。
 ///
@@ -15,6 +15,8 @@ class CategoryPicker extends StatefulWidget {
     required this.categories,
     required this.selectedIds,
     required this.accent,
+    required this.accentSoft,
+    required this.idleBackground,
     required this.layout,
     required this.onSelected,
   });
@@ -26,6 +28,28 @@ class CategoryPicker extends StatefulWidget {
 
   /// 选中态的图标/文字色。
   final Color accent;
+
+  /// 选中态的图标底座色，也就是 [accent] 对应的那支 `*Soft`。
+  ///
+  /// 必须由调用点传，不在这里用 `accent.withValues(alpha:)` 现算：`expenseSoft`
+  /// 这几支淡色是逐个挑过的（浅色下带一点暖、深色下压到近乎无彩），
+  /// 按透明度混出来的那一版在深色皮肤下会发灰。
+  final Color accentSoft;
+
+  /// 未选中态的图标底座色。
+  ///
+  /// ## 为什么这个也要调用点传
+  ///
+  /// 因为它必须和**本组件身后那一层**拉开对比，而组件自己看不到身后是什么。
+  /// 两个调用点的背景恰好相反：记账页把选择器直接铺在页面底色上
+  /// （`canvas`，浅色下 `#F5F5F5`），统计排除浮层则是铺在白色卡面上
+  /// （`surface`）。
+  ///
+  /// 所以没有一个「安全默认值」：写死 `fill`（`#F1F3F2`）在记账页上和页底
+  /// 只差三个色阶，底座等于不存在——那一屏会退回「一片同色的灰图标」，
+  /// 也就是加底座本来要解决的问题。写死 `surface` 则在浮层里是白压白。
+  final Color idleBackground;
+
   final CategoryPickerLayout layout;
   final ValueChanged<String> onSelected;
 
@@ -124,6 +148,8 @@ class _CategoryPickerState extends State<CategoryPicker> {
             expanded: _expandedId == parent.id,
             hasChildren: _childrenOf(parent.id).isNotEmpty,
             accent: widget.accent,
+            accentSoft: widget.accentSoft,
+            idleBackground: widget.idleBackground,
             onTap: () =>
                 _onParentTap(parent, _childrenOf(parent.id).isNotEmpty),
           ),
@@ -134,6 +160,8 @@ class _CategoryPickerState extends State<CategoryPicker> {
             children: _childrenOf(parent.id),
             isSelected: _childSelected,
             accent: widget.accent,
+            accentSoft: widget.accentSoft,
+            idleBackground: widget.idleBackground,
             columns: _columns,
             indent: 16,
             onSelected: widget.onSelected,
@@ -175,6 +203,8 @@ class _CategoryPickerState extends State<CategoryPicker> {
                         expanded: _expandedId == rowParents[i].id,
                         hasChildren: _childrenOf(rowParents[i].id).isNotEmpty,
                         accent: widget.accent,
+                        accentSoft: widget.accentSoft,
+                        idleBackground: widget.idleBackground,
                         onTap: () => _onParentTap(
                           rowParents[i],
                           _childrenOf(rowParents[i].id).isNotEmpty,
@@ -196,6 +226,8 @@ class _CategoryPickerState extends State<CategoryPicker> {
               : _childrenOf(panelOwner.id),
           isSelected: _childSelected,
           accent: widget.accent,
+          accentSoft: widget.accentSoft,
+          idleBackground: widget.idleBackground,
           columns: _columns,
           onSelected: widget.onSelected,
         ),
@@ -213,6 +245,8 @@ class _ParentCategoryTile extends StatelessWidget {
     required this.expanded,
     required this.hasChildren,
     required this.accent,
+    required this.accentSoft,
+    required this.idleBackground,
     required this.onTap,
   });
 
@@ -221,6 +255,8 @@ class _ParentCategoryTile extends StatelessWidget {
   final bool expanded;
   final bool hasChildren;
   final Color accent;
+  final Color accentSoft;
+  final Color idleBackground;
   final VoidCallback onTap;
 
   @override
@@ -231,13 +267,13 @@ class _ParentCategoryTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: context.radii.blockAll,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         child: Row(
           children: [
-            CategoryIconView(
+            CategoryIconBadge(
               iconKey: category.iconKey,
               color: color,
-              size: 24,
+              background: selected ? accentSoft : idleBackground,
               selected: selected,
             ),
             const SizedBox(width: 12),
@@ -270,6 +306,17 @@ class _ParentCategoryTile extends StatelessWidget {
   }
 }
 
+/// 网格模式下的一级分类格子：图标底座 + 名称，有二级分类时带一枚展开角标。
+///
+/// ## 角标为什么挂在底座**外侧**
+///
+/// 它原来是 `Positioned(right: -2, bottom: 0)` 摆在一个 30 高的 Stack 里，
+/// 而图标本身就是 26——也就是说这枚 14px 的实心圆有一半压在图标图形上，
+/// 把「交通」的车轮、「运动」的哑铃各盖掉一角。24 个格子里有子分类的那些
+/// 全是这样，远看像每个图标右下角都长了一颗灰球。
+///
+/// 现在图标外面有了 [CategoryIconBadge] 这层底座，底座边长比字形大一圈，
+/// 角标圆心落在底座的右下角上就只会压到**底座的留白**，碰不到图形。
 class _ParentGridCell extends StatelessWidget {
   const _ParentGridCell({
     super.key,
@@ -278,6 +325,8 @@ class _ParentGridCell extends StatelessWidget {
     required this.expanded,
     required this.hasChildren,
     required this.accent,
+    required this.accentSoft,
+    required this.idleBackground,
     required this.onTap,
   });
 
@@ -286,7 +335,12 @@ class _ParentGridCell extends StatelessWidget {
   final bool expanded;
   final bool hasChildren;
   final Color accent;
+  final Color accentSoft;
+  final Color idleBackground;
   final VoidCallback onTap;
+
+  /// 展开角标的直径。
+  static const _badgeSize = 15.0;
 
   @override
   Widget build(BuildContext context) {
@@ -300,32 +354,53 @@ class _ParentGridCell extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              height: 30,
+            // Stack 按底座尺寸留高，角标溢出的那一点靠 Clip.none 露出来。
+            SizedBox.square(
+              dimension: CategoryIconBadge.large,
               child: Stack(
                 clipBehavior: Clip.none,
                 alignment: Alignment.center,
                 children: [
-                  CategoryIconView(
+                  CategoryIconBadge(
                     iconKey: category.iconKey,
                     color: color,
-                    size: 26,
+                    background: selected ? accentSoft : idleBackground,
+                    diameter: CategoryIconBadge.large,
+                    // 选中态除了换底色再加一圈描边：`expenseSoft` 这类淡底压在
+                    // 白卡上只差几个百分点的亮度，单靠底色在 24 个格子里
+                    // 认不出哪个被选中了。
+                    side: selected
+                        ? BorderSide(color: accent, width: 1.5)
+                        : BorderSide.none,
                     selected: selected,
                   ),
                   if (hasChildren)
                     Positioned(
-                      right: -2,
-                      bottom: 0,
+                      // 负偏移让角标骑在底座边缘上，而不是缩在底座里面——
+                      // 缩在里面就又会压到图形。
+                      right: -3,
+                      bottom: -3,
                       child: AnimatedRotation(
                         turns: expanded ? 0.5 : 0,
                         duration: const Duration(milliseconds: 240),
                         curve: Curves.easeOutCubic,
                         child: Container(
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: selected ? accent : colors.line,
+                          width: _badgeSize,
+                          height: _badgeSize,
+                          alignment: Alignment.center,
+                          decoration: ShapeDecoration(
+                            color: selected ? accent : colors.inactive,
+                            // 外描边取**底座**的颜色，不是卡片色：角标圆心落在
+                            // 底座边缘上，两个圆直接相切会糊成一个葫芦形，
+                            // 这圈描边的作用是把角标从底座上切开。用底座色时，
+                            // 压在底座上的那半圈正好隐形，露在外面的那半圈则
+                            // 成了角标自己的一小块衬底。
+                            shape: CircleBorder(
+                              side: BorderSide(
+                                color: selected ? accentSoft : idleBackground,
+                                width: 2,
+                              ),
+                            ),
                           ),
                           child: const Icon(
                             Icons.expand_more_rounded,
@@ -366,6 +441,8 @@ class _ChildrenPanel extends StatefulWidget {
     required this.children,
     required this.isSelected,
     required this.accent,
+    required this.accentSoft,
+    required this.idleBackground,
     required this.columns,
     required this.onSelected,
     this.indent = 0,
@@ -376,6 +453,8 @@ class _ChildrenPanel extends StatefulWidget {
   final List<CategoryEntry> children;
   final bool Function(CategoryEntry child) isSelected;
   final Color accent;
+  final Color accentSoft;
+  final Color idleBackground;
   final int columns;
   final ValueChanged<String> onSelected;
   final double indent;
@@ -487,8 +566,9 @@ class _ChildrenPanelState extends State<_ChildrenPanel>
                         name: widget.children[i].name,
                         selected: widget.isSelected(widget.children[i]),
                         accent: widget.accent,
-                        onTap: () =>
-                            widget.onSelected(widget.children[i].id),
+                        accentSoft: widget.accentSoft,
+                        idleBackground: widget.idleBackground,
+                        onTap: () => widget.onSelected(widget.children[i].id),
                       )
                     : const SizedBox.shrink(),
               ),
@@ -507,6 +587,8 @@ class _CategoryCell extends StatelessWidget {
     required this.name,
     required this.selected,
     required this.accent,
+    required this.accentSoft,
+    required this.idleBackground,
     required this.onTap,
   });
 
@@ -514,6 +596,8 @@ class _CategoryCell extends StatelessWidget {
   final String name;
   final bool selected;
   final Color accent;
+  final Color accentSoft;
+  final Color idleBackground;
   final VoidCallback onTap;
 
   @override
@@ -528,10 +612,15 @@ class _CategoryCell extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CategoryIconView(
+            // 二级分类的底座比一级小一档：它长在一级格子下方展开的面板里，
+            // 同样大小会让人分不清哪一层是哪一层。
+            CategoryIconBadge(
               iconKey: iconKey,
-              size: 24,
               color: color,
+              background: selected ? accentSoft : idleBackground,
+              side: selected
+                  ? BorderSide(color: accent, width: 1.5)
+                  : BorderSide.none,
               selected: selected,
             ),
             const SizedBox(height: 6),

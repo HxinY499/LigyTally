@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/appearance/appearance.dart';
 import '../../../core/location/place_fix.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -135,7 +136,7 @@ class _CategoryTransactionsSheetState
       ),
       child: Material(
         color: stats.surface,
-        borderRadius: context.radii.sheetTop,
+        shape: context.radii.sheetTopShape,
         clipBehavior: Clip.antiAlias,
         child: SafeArea(
           top: false,
@@ -309,12 +310,10 @@ class _Header extends StatelessWidget {
             fit: BoxFit.scaleDown,
             child: Text(
               formatMoney(totalCents ?? 0, grouped: grouped),
-              style: TextStyle(
-                fontSize: 27,
-                height: 1.15,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.3,
+              style: AppText.money(
+                AppText.moneyLg,
                 color: kind == 0 ? colors.expense : colors.income,
+                weight: FontWeight.w800,
               ),
             ),
           ),
@@ -506,17 +505,10 @@ class _TransactionRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
         child: Row(
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: soft, shape: BoxShape.circle),
-              child: CategoryIconView(
-                iconKey: item.category.iconKey,
-                color: color,
-                size: 19,
-                imageSize: 36,
-              ),
+            CategoryIconBadge(
+              iconKey: item.category.iconKey,
+              color: color,
+              background: soft,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -543,13 +535,7 @@ class _TransactionRow extends StatelessWidget {
             const SizedBox(width: 10),
             Text(
               formatMoney(item.transaction.amountCents, grouped: grouped),
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.2,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.1,
-                color: color,
-              ),
+              style: AppText.money(AppText.moneySm, color: color, height: 1.2),
             ),
           ],
         ),

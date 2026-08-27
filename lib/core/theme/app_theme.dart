@@ -279,6 +279,7 @@ class AppColors extends ThemeExtension<AppColors> {
         return HeroSkin(
           style: heroStyle,
           gradient: heroGradient,
+          sheenGradient: _sheenGradient,
           shadow: shadowHeroPrimary,
           foreground: kOnHeroStrong,
           foregroundSoft: kOnHeroSoft,
@@ -294,6 +295,7 @@ class AppColors extends ThemeExtension<AppColors> {
         return HeroSkin(
           style: heroStyle,
           color: stops[stops.length ~/ 2],
+          sheenGradient: _sheenGradient,
           shadow: shadowHeroPrimary,
           foreground: kOnHeroStrong,
           foregroundSoft: kOnHeroSoft,
@@ -306,7 +308,7 @@ class AppColors extends ThemeExtension<AppColors> {
         return HeroSkin(
           style: heroStyle,
           color: surface,
-          border: Border.all(color: primary, width: 1.5),
+          side: BorderSide(color: primary, width: 1.5),
           // 中性阴影而不是带主色的那套：卡面已经是白的，彩色光晕会在
           // 白卡下面露出一圈脏边。
           shadow: shadowCard,
@@ -319,6 +321,10 @@ class AppColors extends ThemeExtension<AppColors> {
         );
     }
   }
+
+  /// Hero 卡高光层的渐变。深色下强度收到六成，见 [kHeroSheenDark]。
+  RadialGradient get _sheenGradient =>
+      isDark ? kHeroSheenDark : kHeroSheenLight;
 
   /// Hero 卡渐变：统计页概览卡与记账页月度摘要卡共用的那条卡面。
   ///
@@ -590,18 +596,35 @@ const _shadowCardDark = [
 ];
 
 /// Hero 卡的手挑色停（默认蓝）。见 [AppColors.heroGradient]。
+///
+/// ## 三停之间为什么靠得这么近
+///
+/// 色停的**跨度**决定这块面被读成什么：跨度大时人先看到「一条渐变」（一个
+/// 效果），跨度小时才看到「一块有体积的蓝」（一个物体）。要后者，就得把两端
+/// 往中间收——现在首尾停相对中间停各只差约 6% 亮度，肉眼几乎分不出色阶，
+/// 只感觉这块面「有厚度」。
+///
+/// 体积感因此不再靠这条渐变独自承担，而是交给叠在上面的那层径向高光
+/// （见 [HeroSkin.sheen]）：线性渐变负责整块面的基调，径向高光负责光的落点。
+/// 这也是压缩跨度不会让卡片变平的原因。
+///
+/// 顺带把白字最坏情况的对比度抬了一档：最亮那停从 `#6BA3F7` 收到 `#5E95F1`，
+/// 而它正是原先对比度最低（2.56:1）的位置。
+///
+/// 中间停一位都不能动：[AppColors.hero] 的纯色档直接取它铺满卡面，
+/// 改了会让「渐变 → 纯色」两档之间跳色。
 const _heroGradientLight = LinearGradient(
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
-  colors: [Color(0xFF6BA3F7), Color(0xFF4A7FE8), Color(0xFF3B63D6)],
+  colors: [Color(0xFF5E95F1), Color(0xFF4A7FE8), Color(0xFF416EDD)],
   stops: [0.0, 0.55, 1.0],
 );
 
-/// 深色下略压暗：深色页面里高亮卡会刺眼。
+/// 深色下略压暗：深色页面里高亮卡会刺眼。跨度同样收紧，理由见浅色那份。
 const _heroGradientDark = LinearGradient(
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
-  colors: [Color(0xFF4C82DC), Color(0xFF3A65C4), Color(0xFF2C4CA6)],
+  colors: [Color(0xFF4576D2), Color(0xFF3A65C4), Color(0xFF3256B2)],
   stops: [0.0, 0.55, 1.0],
 );
 
@@ -873,8 +896,7 @@ final _foruiPresetCache = <_ForuiKey, FThemeData>{};
 ///
 /// 其余档位（圆角、纯黑、壁纸、收支向）可以安全地进缓存键：它们都是枚举
 /// 或布尔，取值有限，不像色相那样连续。
-final _foruiCustomCache =
-    <Brightness, (AccentChoice, _ForuiKey, FThemeData)>{};
+final _foruiCustomCache = <Brightness, (AccentChoice, _ForuiKey, FThemeData)>{};
 
 /// 缓存好的 forui 主题。
 ///
@@ -1016,7 +1038,9 @@ FToasterStyleDelta _toasterStyle(AppColors colors, AppRadius radius) {
               decoration: DecorationDelta.shapeDelta(
                 color: colors.dangerSoft,
                 shape: RoundedSuperellipseBorder(
-                  side: BorderSide(color: colors.danger.withValues(alpha: 0.28)),
+                  side: BorderSide(
+                    color: colors.danger.withValues(alpha: 0.28),
+                  ),
                   borderRadius: borderRadius,
                 ),
                 shadows: shadow,

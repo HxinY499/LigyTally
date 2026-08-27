@@ -1,12 +1,17 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:forui/forui.dart';
 
 import '../../core/database/app_database.dart';
 import '../../core/appearance/appearance.dart';
+import '../../core/theme/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/hero_skin.dart';
 import '../../core/utils/ledger_date.dart';
+import 'animated_cents.dart';
+import 'hero_surface.dart';
 
 /// 紧凑版摘要条的实底：固定，不随皮肤变。
 ///
@@ -55,23 +60,11 @@ class SummaryBand extends ConsumerWidget {
     final grouped = ref.watch(moneyGroupedProvider);
     if (compact) return _CompactBand(summary: summary, grouped: grouped);
     final hero = colors.hero;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        // gradient 与 color 总有一个是 null，同时传给 BoxDecoration 合法。
-        gradient: hero.gradient,
-        color: hero.color,
-        border: hero.border,
-        borderRadius: context.radii.cardAll,
-        // 彩色档用带主色相的阴影而不是中性灰：灰色压在彩色卡面下会发浊，
-        // 阴影里掺入卡片自身色相才干净。描边档反过来用中性阴影，
-        // 这一层选择在 [HeroSkin] 里已经做完了。
-        boxShadow: hero.shadow,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
-        child: _bandBody(hero, grouped),
-      ),
+    // 卡面（渐变 / 纯色 / 描边三档 + 高光层 + 阴影）全部由 HeroSurface 负责，
+    // 统计页概览卡用的是同一个组件。
+    return HeroSurface(
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+      child: _bandBody(hero, grouped),
     );
   }
 
@@ -102,11 +95,6 @@ class SummaryBand extends ConsumerWidget {
                 letterSpacing: 0.2,
               ),
             ),
-            const SizedBox(width: 4),
-            Text(
-              '(元)',
-              style: TextStyle(fontSize: 11, color: hero.foregroundFaint),
-            ),
             if (onPickMonth != null) ...[
               const Spacer(),
               _MonthChip(
@@ -121,15 +109,16 @@ class SummaryBand extends ConsumerWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          child: Text(
-            _rawMoney(summary.expenseCents, grouped: grouped),
-            maxLines: 1,
-            style: TextStyle(
-              fontSize: 40,
-              height: 1.1,
-              fontWeight: FontWeight.w800,
-              color: hero.foreground,
-              letterSpacing: 0.4,
+          // 这个数字独占一行、左对齐，滚动途中的宽度变化不会推到任何东西，
+          // 见 AnimatedCents 的「什么情况下不要用它」。
+          child: AnimatedCents(
+            cents: summary.expenseCents,
+            builder: (context, value) => _HeroMoney(
+              cents: value,
+              grouped: grouped,
+              size: AppText.moneyXl,
+              weight: FontWeight.w800,
+              hero: hero,
             ),
           ),
         ),
@@ -141,18 +130,17 @@ class SummaryBand extends ConsumerWidget {
               child: _MiniStat(
                 hero: hero,
                 label: '$_periodLabel收入',
-                value: _rawMoney(summary.incomeCents, grouped: grouped),
+                cents: summary.incomeCents,
+                grouped: grouped,
               ),
             ),
             Expanded(
               child: _MiniStat(
                 hero: hero,
                 label: '净收支',
-                value: _rawMoney(
-                  summary.netCents,
-                  grouped: grouped,
-                  signed: true,
-                ),
+                cents: summary.netCents,
+                grouped: grouped,
+                signed: true,
               ),
             ),
           ],
@@ -223,15 +211,93 @@ class _MonthChip extends StatelessWidget {
   }
 }
 
-/// 摘要卡内的裸金额：不带 `¥` 前缀，让大数字更干净；
-/// 卡片外的普通场景仍走 `formatMoney`。
-String _rawMoney(int cents, {required bool grouped, bool signed = false}) {
-  final sign = cents < 0 ? '-' : (signed && cents > 0 ? '+' : '');
-  final absolute = cents.abs();
-  final yuan = absolute ~/ 100;
-  final fraction = absolute % 100;
-  final yuanText = grouped ? _groupInt(yuan) : yuan.toString();
-  return '$sign$yuanText.${fraction.toString().padLeft(2, '0')}';
+/// 摘要卡内的金额：`-` `¥` `1,234.56` 三段，中间那段字号小一档。
+///
+/// ## 为什么货币符号要单独一段
+///
+/// 这张卡上原本是「标签后面跟一个 `(元)`，数字本身不带符号」。那样做的代价是
+/// 单位跑到了离数字最远的地方（标签行的末尾），而括号又把标签切成两截。
+///
+/// 现在把 `¥` 放回数字前面，但**字号压到 0.55 倍、颜色降到 [HeroSkin.foregroundSoft]**：
+/// 单位回到它该在的位置，同时不和数字抢视觉重量——一屏里最该被读到的是
+/// 「2428」这四位数，不是那个所有金额都一样的货币符号。
+///
+/// 三段用 [TextSpan] 而不是 [Row]：同一段富文本里的不同字号会自动按**基线**
+/// 对齐，Row 得手动指定 [CrossAxisAlignment.baseline] 并给 textBaseline，
+/// 且在 [FittedBox] 里缩放时两种写法的表现不一致。
+///
+/// 符号（`-` / `+`）留在货币符号**之前**且用大号字：`¥-1,234` 是错的，
+/// 负号修饰的是整个金额，不是货币单位。
+class _HeroMoney extends StatelessWidget {
+  const _HeroMoney({
+    required this.cents,
+    required this.grouped,
+    required this.size,
+    required this.hero,
+    this.weight = FontWeight.w700,
+    this.signed = false,
+  });
+
+  final int cents;
+  final bool grouped;
+  final double size;
+  final HeroSkin hero;
+  final FontWeight weight;
+
+  /// true 时正数也带 `+`（净收支要区分方向）。
+  final bool signed;
+
+  /// 货币符号相对主数字的字号比例。
+  static const _currencyScale = 0.55;
+
+  /// 货币符号的字号下限。
+  ///
+  /// 纯按比例缩会让次级数字上的 `¥` 掉到 11px（20 × 0.55），比它旁边的标签
+  /// 还小——那时它已经不是「退到后面的单位」，而是一个认不出来的小疙瘩。
+  /// 压小货币符号的收益只在大数字上成立，小数字本来就不存在「符号抢戏」。
+  static const _currencyMinSize = 13.0;
+
+  double get _currencySize =>
+      math.max(size * _currencyScale, math.min(size, _currencyMinSize));
+
+  @override
+  Widget build(BuildContext context) {
+    final base = AppText.money(
+      size,
+      color: hero.foreground,
+      weight: weight,
+      height: 1.1,
+    );
+    return Text.rich(
+      TextSpan(
+        children: [
+          if (_sign.isNotEmpty) TextSpan(text: _sign),
+          TextSpan(
+            text: '¥',
+            style: AppText.money(
+              _currencySize,
+              color: hero.foregroundSoft,
+              weight: FontWeight.w600,
+              height: 1.1,
+            ),
+          ),
+          TextSpan(text: _digits),
+        ],
+      ),
+      maxLines: 1,
+      style: base,
+    );
+  }
+
+  String get _sign => cents < 0 ? '-' : (signed && cents > 0 ? '+' : '');
+
+  String get _digits {
+    final absolute = cents.abs();
+    final yuan = absolute ~/ 100;
+    final fraction = absolute % 100;
+    final yuanText = grouped ? _groupInt(yuan) : yuan.toString();
+    return '$yuanText.${fraction.toString().padLeft(2, '0')}';
+  }
 }
 
 String _groupInt(int value) {
@@ -249,47 +315,46 @@ class _MiniStat extends StatelessWidget {
   const _MiniStat({
     required this.hero,
     required this.label,
-    required this.value,
+    required this.cents,
+    required this.grouped,
+    this.signed = false,
   });
 
   final HeroSkin hero;
   final String label;
-  final String value;
+  final int cents;
+  final bool grouped;
+  final bool signed;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: hero.foregroundSoft,
-                letterSpacing: 0.2,
-              ),
-            ),
-            const SizedBox(width: 3),
-            Text(
-              '(元)',
-              style: TextStyle(fontSize: 10, color: hero.foregroundFaint),
-            ),
-          ],
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: hero.foregroundSoft,
+            letterSpacing: 0.2,
+          ),
         ),
         const SizedBox(height: 4),
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          child: Text(
-            value,
-            maxLines: 1,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: hero.foreground,
-              letterSpacing: 0.2,
+          // 两个次级数字各被一个 Expanded 框住，宽度变化推不动邻居。
+          // 它们必须和主数字一起滚：同一次换月里三个数都变了，只有主数字
+          // 会动的话，另两个会先跳到位、再等主数字追上来。
+          child: AnimatedCents(
+            cents: cents,
+            builder: (context, value) => _HeroMoney(
+              cents: value,
+              grouped: grouped,
+              size: AppText.moneyMd,
+              weight: FontWeight.w800,
+              hero: hero,
+              signed: signed,
             ),
           ),
         ),

@@ -75,7 +75,7 @@ class _OptionSheet<T> extends StatelessWidget {
     final caption = this.caption;
     return Material(
       color: colors.surface,
-      borderRadius: context.radii.sheetTop,
+      shape: context.radii.sheetTopShape,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,

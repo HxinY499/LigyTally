@@ -25,17 +25,18 @@ class StatsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final stats = StatsTokens.of(context);
     final content = Padding(padding: padding, child: child);
+    final shape = stats.cardShape;
     return DecoratedBox(
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: stats.surface,
-        borderRadius: BorderRadius.circular(stats.radiusCard),
-        boxShadow: stats.shadowCard,
+        shape: shape,
+        shadows: stats.shadowCard,
       ),
       child: onTap == null
           ? content
           : Material(
               color: Colors.transparent,
-              borderRadius: BorderRadius.circular(stats.radiusCard),
+              shape: shape,
               clipBehavior: Clip.antiAlias,
               child: InkWell(onTap: onTap, child: content),
             ),

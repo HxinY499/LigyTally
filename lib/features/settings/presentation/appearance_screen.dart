@@ -7,6 +7,7 @@ import '../../../core/preferences/app_icon.dart';
 import '../../../core/theme/app_density.dart';
 import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_radius.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/hero_skin.dart';
 import '../../../core/theme/sign_palette.dart';
@@ -458,13 +459,11 @@ class _AppearancePreview extends StatelessWidget {
             duration: morph,
             curve: _curve,
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-            decoration: BoxDecoration(
-              gradient: hero.gradient,
-              color: hero.color,
-              border: hero.border,
-              borderRadius: radii.cardAll,
-              boxShadow: hero.shadow,
-            ),
+            // 与真卡同一份卡面（含超椭圆圆角），样张才对得上。
+            // 唯独没有那层径向高光：样张只有 60 出头高，高光在这个尺度上
+            // 看不出来，而 AnimatedContainer 只接一个 decoration，
+            // 加高光要再套一层，换不来任何可见收益。
+            decoration: hero.decoration(radii.cardAll),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -480,12 +479,13 @@ class _AppearancePreview extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '1,280.00',
-                  style: TextStyle(
-                    fontSize: 26,
-                    height: 1.1,
-                    fontWeight: FontWeight.w800,
+                  // 26 不是金额字阶里的一档，是为这块 60 高的样张挑的尺寸；
+                  // 字距仍走全局规则，样张的观感才和真卡一致。
+                  style: AppText.money(
+                    26,
                     color: hero.foreground,
-                    letterSpacing: 0.4,
+                    weight: FontWeight.w800,
+                    height: 1.1,
                   ),
                 ),
               ],

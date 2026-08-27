@@ -81,6 +81,46 @@ class AppRadius extends ThemeExtension<AppRadius> {
   BorderRadius get blockAll => BorderRadius.circular(block);
   BorderRadius get chipAll => BorderRadius.circular(chip);
 
+  // ------------------------------------------------------- 超椭圆（连续曲率）
+  //
+  // 以下几个 getter 返回的是**形状**而不是圆角半径，给「一整块面」用：
+  // 卡片、Hero 卡、底部弹层。
+  //
+  // ## 为什么大面要换成超椭圆
+  //
+  // 普通圆角（[BorderRadius] / `RRect`）在直边与圆弧的接点处曲率是**突变**的：
+  // 直线段曲率 0，一进圆弧立刻跳到 1/r。人眼对这个拐点很敏感，半径越大越明显，
+  // 观感就是「四个角像是被剪掉的」。超椭圆让曲率连续过渡，角看起来是「长出来」
+  // 的——这是 iOS 图标与卡片观感更「贵」的一个隐形来源。
+  //
+  // 差别随半径增大而增大，所以只有 [card]（18）和 [sheet]（24）这两档值得换；
+  // [chip]（10）上肉眼已分不出，而它的调用点是日历格子这类一屏几十个的元素，
+  // 换过去只是白付渲染成本（超椭圆比 RRect 贵）。因此**不提供 chipShape**。
+  //
+  // ## 调用点要跟着换 decoration 类型
+  //
+  // [BoxDecoration] 只认 `borderRadius`，画不出超椭圆。用这几个 getter 的地方
+  // 需要改成 [ShapeDecoration]（它有 `shape` / `color` / `gradient` / `shadows`）
+  // 或 `Material(shape: ...)`。`Material` 的 `shape` 与 `borderRadius` 互斥，
+  // 传了前者就要删掉后者。
+
+  /// 内容卡片的形状。[side] 默认无描边——卡片靠阴影收边，见
+  /// [AppColors.shadowCard] 的说明。
+  RoundedSuperellipseBorder cardShape({BorderSide side = BorderSide.none}) =>
+      RoundedSuperellipseBorder(side: side, borderRadius: cardAll);
+
+  /// 卡内小块的形状（输入框、分段轨道、照片）。
+  RoundedSuperellipseBorder blockShape({BorderSide side = BorderSide.none}) =>
+      RoundedSuperellipseBorder(side: side, borderRadius: blockAll);
+
+  /// 底部弹层的形状：只圆上面两角。
+  RoundedSuperellipseBorder get sheetTopShape =>
+      RoundedSuperellipseBorder(borderRadius: sheetTop);
+
+  /// 居中浮层（对话框）的形状：四角都圆。
+  RoundedSuperellipseBorder get sheetShape =>
+      RoundedSuperellipseBorder(borderRadius: sheetAll);
+
   /// forui 组件的圆角令牌。
   ///
   /// 不用 [FBorderRadius.scale]：它会把 `pill` 一起缩放，选「直角」时

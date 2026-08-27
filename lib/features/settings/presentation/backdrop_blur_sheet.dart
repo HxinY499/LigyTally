@@ -31,7 +31,7 @@ class _BackdropBlurSheet extends ConsumerWidget {
     final sigma = ref.watch(backdropBlurProvider);
     return Material(
       color: colors.surface,
-      borderRadius: context.radii.sheetTop,
+      shape: context.radii.sheetTopShape,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,

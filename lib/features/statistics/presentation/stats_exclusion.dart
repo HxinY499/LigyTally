@@ -23,7 +23,10 @@ List<CategoryEntry> resolveExcludedCategories(
   Set<String> ids,
 ) {
   if (ids.isEmpty) return const [];
-  return [for (final item in categories) if (ids.contains(item.id)) item];
+  return [
+    for (final item in categories)
+      if (ids.contains(item.id)) item,
+  ];
 }
 
 /// 点选排除项：一级会清掉它下面已勾的二级；二级会把所属一级从名单里拿掉。
@@ -134,18 +137,13 @@ Future<Set<String>?> showStatsExclusionSheet(
     context: context,
     side: FLayout.btt,
     mainAxisMaxRatio: null,
-    builder: (sheetContext) => _ExclusionSheet(
-      categories: categories,
-      initialIds: selectedIds,
-    ),
+    builder: (sheetContext) =>
+        _ExclusionSheet(categories: categories, initialIds: selectedIds),
   );
 }
 
 class _ExclusionSheet extends StatefulWidget {
-  const _ExclusionSheet({
-    required this.categories,
-    required this.initialIds,
-  });
+  const _ExclusionSheet({required this.categories, required this.initialIds});
 
   final List<CategoryEntry> categories;
   final Set<String> initialIds;
@@ -187,7 +185,7 @@ class _ExclusionSheetState extends State<_ExclusionSheet> {
     final text = Theme.of(context).textTheme;
     return Material(
       color: colors.surface,
-      borderRadius: context.radii.sheetTop,
+      shape: context.radii.sheetTopShape,
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
@@ -277,6 +275,9 @@ class _ExclusionSheetState extends State<_ExclusionSheet> {
                         categories: section.categories,
                         selectedIds: _selected,
                         accent: colors.primary,
+                        accentSoft: colors.primarySoft,
+                        // 浮层的卡面已经是白的，底座只能往下走一档。
+                        idleBackground: colors.fill,
                         layout: CategoryPickerLayout.grid,
                         onSelected: _toggle,
                       ),

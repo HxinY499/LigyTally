@@ -334,22 +334,12 @@ class CategoryRankRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
             child: Row(
               children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(stats.radiusChip),
-                  ),
-                  child: CategoryIconView(
-                    iconKey: item.iconKey,
-                    size: 17,
-                    // 外层是 34 的圆角方块。图片铺满它，圆形裁剪会把
-                    // 底座那一圈圆角一并吃掉——一颗小点看着像加载失败，
-                    // 满格的圆更接近「这是个图标」。
-                    imageSize: 34,
-                    color: color,
-                  ),
+                // 底座跟着全应用统一成圆片（原来这一处是圆角方块）。底色只能
+                // 从图表调色板现算——那套色没有对应的 `*Soft` 令牌。
+                CategoryIconBadge(
+                  iconKey: item.iconKey,
+                  color: color,
+                  background: color.withValues(alpha: 0.12),
                 ),
                 const SizedBox(width: 12),
                 Expanded(

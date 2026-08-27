@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_radius.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/color_shift.dart';
 import '../../../core/theme/hero_skin.dart';
@@ -47,6 +48,10 @@ class StatsTokens {
 
   /// 图表卡圆角。与记账页日卡同一档：两屏的卡片是同一个视觉元素。
   double get radiusCard => _radius.card;
+
+  /// 图表卡形状（超椭圆）。画整块卡面时用它而不是 [radiusCard]——
+  /// 后者只剩「需要一个 double 半径」的场合（Hero 卡的 borderRadius 入参）。
+  RoundedSuperellipseBorder get cardShape => _radius.cardShape();
 
   /// 卡片内小块（分段轨道、排行行、图表 tooltip）圆角。
   double get radiusInner => _radius.block;
@@ -248,21 +253,26 @@ class StatsTokens {
   );
 
   /// Hero 卡主数字。
-  TextStyle get heroAmount => TextStyle(
-    fontSize: 38,
-    height: 1.08,
-    fontWeight: FontWeight.w800,
+  ///
+  /// 字号取 [AppText.moneyXl]，和明细页月度摘要卡**同一档**——两张卡是同一个
+  /// 视觉元素在两屏上的两次出现，此前一处 38 一处 40，切 Tab 时那个数字会
+  /// 悄悄变一档大小。两处都套在 [FittedBox] 里，位数多时各自缩放。
+  TextStyle get heroAmount => AppText.money(
+    AppText.moneyXl,
     color: onHeroPrimary,
-    letterSpacing: 0.4,
+    weight: FontWeight.w800,
+    height: 1.08,
   );
 
   /// Hero 卡次级数字（收入 / 净收支 / 日均）。
-  TextStyle get heroMini => TextStyle(
-    fontSize: 16,
-    height: 1.2,
-    fontWeight: FontWeight.w700,
+  ///
+  /// 16 而不是 [AppText.moneyMd]（20）：这张卡的次级数字是**三列**
+  /// （明细页那张只有两列），20 在窄屏上会把「净收支」挤到换行。
+  TextStyle get heroMini => AppText.money(
+    16,
     color: onHeroPrimary,
-    letterSpacing: 0.2,
+    weight: FontWeight.w700,
+    height: 1.2,
   );
 
   /// Hero 卡标签。
@@ -275,12 +285,11 @@ class StatsTokens {
   );
 
   /// 环形图中心金额。
-  TextStyle get donutCenterAmount => TextStyle(
-    fontSize: 17,
-    height: 1.15,
-    fontWeight: FontWeight.w800,
+  TextStyle get donutCenterAmount => AppText.money(
+    17,
     color: textStrong,
-    letterSpacing: 0.2,
+    weight: FontWeight.w800,
+    height: 1.15,
   );
 
   /// 图表坐标轴刻度。
@@ -316,13 +325,7 @@ class StatsTokens {
   );
 
   /// 排行行：金额。
-  TextStyle get rowAmount => TextStyle(
-    fontSize: 14,
-    height: 1.3,
-    fontWeight: FontWeight.w700,
-    color: textStrong,
-    letterSpacing: 0.1,
-  );
+  TextStyle get rowAmount => AppText.money(14, color: textStrong, height: 1.3);
 
   /// 排行行：占比 / 笔数等元信息。
   TextStyle get rowMeta => TextStyle(
