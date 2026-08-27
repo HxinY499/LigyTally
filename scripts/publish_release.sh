@@ -7,7 +7,19 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUCKET="ligy-tally-releases"
-PUBLIC_BASE="https://ligy-tally-releases.oss-cn-hangzhou.aliyuncs.com"
+
+# 清单和 APK 走**两个不同的域名**，不要合成一个常量。
+#
+# 清单必须留在 OSS 默认域名：应用把这条地址硬编码在 `kUpdateManifestUrl` 里，
+# 换了就等于所有已安装版本都查不到更新。JSON 在这个域名上可以匿名读。
+MANIFEST_BASE="https://ligy-tally-releases.oss-cn-hangzhou.aliyuncs.com"
+
+# APK 只能从自定义域名下。OSS 默认域名对 APK 返回 400（ApkDownloadForbidden），
+# 而且返回的是一段 XML，浏览器里看不出下到的不是包——1.5.11 就是这么翻车的。
+#
+# 这一行以前写的是 MANIFEST_BASE，于是每次发版都要手工把清单里的 apk_url 改成
+# 自定义域名再重传一次。漏掉这一步的后果是「清单正常、用户一点更新就失败」。
+DOWNLOAD_BASE="https://releases.ligezhang.cn"
 
 NOTES="${1:-}"
 if [[ -z "$NOTES" ]]; then
@@ -60,7 +72,7 @@ if [[ ! "$SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
 fi
 
 APK_SIZE="$(stat -f '%z' "$APK_PATH")"
-APK_URL="$PUBLIC_BASE/$APK_NAME"
+APK_URL="$DOWNLOAD_BASE/$APK_NAME"
 
 python3 - "$MANIFEST_PATH" "$VERSION_NAME" "$APK_NAME" "$APK_URL" "$APK_SIZE" "$SHA256" "$NOTES" <<'PY'
 import json
@@ -99,12 +111,12 @@ ossutil cp "$MANIFEST_PATH" "oss://$BUCKET/latest.json" \
   --cache-control "no-cache" \
   --force
 
-REMOTE_TAG="$(curl -fsS "$PUBLIC_BASE/latest.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+REMOTE_TAG="$(curl -fsS "$MANIFEST_BASE/latest.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
 if [[ "$REMOTE_TAG" != "v$VERSION_NAME" ]]; then
   echo "上传后 latest.json 的 tag 是 $REMOTE_TAG，期望 v$VERSION_NAME" >&2
   exit 1
 fi
 
-echo "Manifest: $PUBLIC_BASE/latest.json"
+echo "Manifest: $MANIFEST_BASE/latest.json"
 echo "APK:      $APK_URL"
-echo "Latest:   $PUBLIC_BASE/LigyTally-latest.apk"
+echo "Latest:   $DOWNLOAD_BASE/LigyTally-latest.apk"
