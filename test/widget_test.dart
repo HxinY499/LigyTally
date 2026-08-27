@@ -178,11 +178,12 @@ void main() {
       ),
     );
 
-    // 三个数字都是「符号 + ¥ + 数字」的富文本（`¥` 单独一段是为了压小字号，
-    // 见 SummaryBand 里的 _HeroMoney），所以要开 findRichText 才找得到。
-    expect(find.text('¥35.75', findRichText: true), findsOneWidget);
-    expect(find.text('¥100.00', findRichText: true), findsOneWidget);
-    expect(find.text('+¥64.25', findRichText: true), findsOneWidget);
+    // 数字为了逐位动画被拆成了一格一个 Text（见 AnimatedMoneyText），
+    // 在 widget 树上已经不是一个字符串。整体的语义标签才是完整金额，
+    // 那一层也正是给读屏用的。
+    expect(find.bySemanticsLabel('¥35.75'), findsOneWidget);
+    expect(find.bySemanticsLabel('¥100.00'), findsOneWidget);
+    expect(find.bySemanticsLabel('+¥64.25'), findsOneWidget);
   });
 
   group('卡片阴影全应用统一', () {

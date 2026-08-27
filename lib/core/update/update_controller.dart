@@ -76,6 +76,24 @@ class UpdateState {
   }
 }
 
+/// 手动检查要给用户看的一句话，以及它是不是一次失败。
+///
+/// [failed] 决定 toast 用哪个级别。这个判断必须由控制器给出而不是让 UI 去猜
+/// 文案内容——「更新服务暂时不可用」和「当前已是最新版本」在 UI 眼里都只是
+/// 一个字符串。
+@immutable
+class ManualCheckOutcome {
+  const ManualCheckOutcome._(this.message, {this.failed = false});
+
+  /// 组件已经销毁，不必提示。
+  const ManualCheckOutcome._silent() : message = '', failed = false;
+
+  final String message;
+  final bool failed;
+
+  bool get isSilent => message.isEmpty;
+}
+
 class UpdateController extends StateNotifier<UpdateState> {
   UpdateController(this._service) : super(const UpdateState());
 
@@ -83,7 +101,10 @@ class UpdateController extends StateNotifier<UpdateState> {
   bool _checked = false;
   bool _cancelRequested = false;
 
-  /// 启动时调用一次。失败静默，不打扰用户。
+  /// 启动时调用一次。
+  ///
+  /// **失败静默**：用户此刻在记账，检查不到新版本不该弹任何东西。这条策略只
+  /// 属于启动路径，所以判断写在这里而不是服务层——手动检查要的正好相反。
   Future<void> checkOnLaunch() async {
     if (_checked) return;
     _checked = true;
@@ -91,34 +112,55 @@ class UpdateController extends StateNotifier<UpdateState> {
     // 清掉上次遗留的安装包，避免缓存堆积
     unawaited(_service.cleanupOldApks());
 
-    final info = await _service.checkForUpdate();
-    if (info == null || !mounted) return;
+    final result = await _service.checkForUpdate();
+    if (result is! UpdateAvailable || !mounted) return;
     // 手动检查已经把结果摊在设置页上了，启动检查回来时别再弹一层。
     if (state.phase != UpdatePhase.idle) return;
 
     state = UpdateState(
       phase: UpdatePhase.available,
-      info: info,
+      info: result.info,
       autoPrompt: true,
     );
   }
 
   /// 用户手动触发检查（设置页入口用）。
-  /// 与启动检查不同：要反馈「已是最新」，且不理会「忽略此版本」——
-  /// 忽略只关掉启动弹窗，手动检查仍应能看到这个版本。
-  Future<String> checkManually() async {
+  ///
+  /// 与启动检查有两处不同：
+  /// - 不理会「忽略此版本」。忽略只关掉启动弹窗，手动检查仍应能看到这个版本。
+  /// - **失败要说出来。** 用户点这一下就是在问「有没有新版本」，
+  ///   把查不到答成「已是最新」是给假答案，见 [UpdateCheckResult]。
+  Future<ManualCheckOutcome> checkManually() async {
     // 手动查过就不必再跑启动检查；两边同时在飞时，启动检查结束会看到
     // phase 已经不是 idle，也不会再弹全局提示。
     _checked = true;
-    final current = await _service.currentVersion();
-    final info = await _service.checkForUpdate(respectIgnore: false);
-    if (!mounted) return '';
-    if (info == null) {
-      final label = current == null ? '' : ' (v$current)';
-      return '当前已是最新版本$label';
+    final result = await _service.checkForUpdate(respectIgnore: false);
+    if (!mounted) return const ManualCheckOutcome._silent();
+
+    switch (result) {
+      case UpdateAvailable(:final info):
+        state = UpdateState(phase: UpdatePhase.available, info: info);
+        return ManualCheckOutcome._('发现新版本 v${info.version}');
+      case UpdateUpToDate(:final current):
+        return ManualCheckOutcome._('当前已是最新版本 (v$current)');
+      case UpdateCheckFailed(:final reason):
+        return ManualCheckOutcome._(_failureMessage(reason), failed: true);
     }
-    state = UpdateState(phase: UpdatePhase.available, info: info);
-    return '发现新版本 v${info.version}';
+  }
+
+  /// 失败提示的措辞。
+  ///
+  /// 三种原因分开说，因为用户能做的事不同：网络问题自己能重试，
+  /// 其余两种只能等修，全都说成「请稍后重试」会让人白重试很多次。
+  ///
+  /// 一律**不带**本机版本号。带上就又成了「已是最新版本 (v1.6.1)」那种会被读成
+  /// 结论的句子——而失败的时候恰恰没有结论，这正是原来那个 bug 的样子。
+  String _failureMessage(UpdateFailure reason) {
+    return switch (reason) {
+      UpdateFailure.network => '检查更新失败，请确认网络后重试',
+      UpdateFailure.manifest => '更新服务暂时不可用，请稍后再试',
+      UpdateFailure.localVersion => '读不到当前版本号，无法检查更新',
+    };
   }
 
   /// 用户点了「忽略此版本」。

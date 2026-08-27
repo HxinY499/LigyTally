@@ -386,13 +386,19 @@ class _AboutCardState extends ConsumerState<_AboutCard> {
 
   Future<void> _checkUpdate() async {
     setState(() => _checking = true);
-    final message = await ref
+    final outcome = await ref
         .read(updateControllerProvider.notifier)
         .checkManually();
     if (!mounted) return;
     setState(() => _checking = false);
-    if (message.isEmpty) return;
-    showAppToast(context, message: message);
+    if (outcome.isSilent) return;
+    // 检查失败走 error 级别：查不到和「已是最新」是两回事，
+    // 图标和配色也得跟着分开，否则用户仍会把失败读成结论。
+    showAppToast(
+      context,
+      message: outcome.message,
+      level: outcome.failed ? AppToastLevel.error : AppToastLevel.info,
+    );
   }
 
   void _openPrivacy() {

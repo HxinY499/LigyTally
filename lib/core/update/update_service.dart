@@ -40,6 +40,74 @@ class UpdateInfo {
   final String? releaseNotes;
 }
 
+/// 一次更新检查的结论。
+///
+/// ## 为什么不是 `UpdateInfo?`
+///
+/// 这个方法原来返回可空的 [UpdateInfo]，`null` 同时表示四件事：已是最新、
+/// 网络失败、清单格式不认识、读不到本机版本号。
+///
+/// 对**启动自动检查**来说这四种确实等价（都不该打扰正在记账的人），
+/// 所以那样写了很久也没出问题。但**手动检查**的语义正好相反：用户点那一下就是
+/// 在问「有没有新版本」，把「我没查到」答成「没有新版本」是给了一个假答案，
+/// 而且提示里还带着旧版本号——「当前已是最新版本 (v1.6.1)」在 1.7.0 已发布时
+/// 自相矛盾，用户看不出这其实是一次失败。
+///
+/// 所以「要不要打扰用户」这个判断从服务层挪到了调用点：这里只报事实。
+sealed class UpdateCheckResult {
+  const UpdateCheckResult();
+}
+
+/// 线上有更新，且没有被用户忽略。
+final class UpdateAvailable extends UpdateCheckResult {
+  const UpdateAvailable(this.info);
+
+  final UpdateInfo info;
+}
+
+/// 确实比较过了，本机就是最新。
+///
+/// 也涵盖「线上有新版本但被用户忽略了」这一支：对启动检查来说两者后果相同
+/// （都不弹），而手动检查传 `respectIgnore: false`，永远走不到那里。
+final class UpdateUpToDate extends UpdateCheckResult {
+  const UpdateUpToDate(this.current);
+
+  final AppVersion current;
+}
+
+/// 没查出结论。**不等于**没有新版本。
+///
+/// 刻意不带本机版本号：一旦提示里出现版本号，那句话就会被读成一个结论，
+/// 而失败的时候恰恰没有结论。
+final class UpdateCheckFailed extends UpdateCheckResult {
+  const UpdateCheckFailed(this.reason);
+
+  final UpdateFailure reason;
+}
+
+/// 检查失败的原因。分这三档是因为用户能做的事不同：网络问题自己能重试，
+/// 其余两种只能等作者修。
+enum UpdateFailure {
+  /// 请求发不出去、连不上或超时。
+  network,
+
+  /// 服务器答了，但状态码不是 200，或清单内容不认识。
+  manifest,
+
+  /// 读不到本机版本号，没法比较。
+  localVersion,
+}
+
+/// 清单本身有问题（非 200、或格式不认识），区别于连不上服务器。
+class _ManifestException implements Exception {
+  const _ManifestException(this.detail);
+
+  final String detail;
+
+  @override
+  String toString() => '清单不可用：$detail';
+}
+
 /// 下载阶段。
 enum DownloadStage { downloading, verifying, done }
 
@@ -150,45 +218,60 @@ class UpdateService {
 
   /// 查询是否有比当前安装更新的版本。
   ///
-  /// 返回 null 表示「没有可用更新」，涵盖：已是最新、网络失败、
-  /// 接口限流、响应格式不认识。
+  /// 结果是 [UpdateCheckResult] 而不是可空的 [UpdateInfo]——「没查到」和
+  /// 「没有新版本」必须能被调用点分开，理由见 [UpdateCheckResult] 的文档。
+  ///
+  /// 本方法**不抛异常**：网络与解析失败都收敛成 [UpdateCheckFailed]。
+  /// 检查更新不该让调用点承担 try/catch。
   ///
   /// [respectIgnore] 只给启动自动检查用。用户点「忽略」的意思是
   /// 「这个版本别再弹启动提示」，不是「这个版本不存在」——
   /// 设置页手动检查必须传 false，否则忽略后会误报已是最新。
-  Future<UpdateInfo?> checkForUpdate({bool respectIgnore = true}) async {
+  Future<UpdateCheckResult> checkForUpdate({bool respectIgnore = true}) async {
     final current = await currentVersion();
-    if (current == null) return null;
+    if (current == null) {
+      return const UpdateCheckFailed(UpdateFailure.localVersion);
+    }
 
-    final UpdateInfo? latest;
+    final UpdateInfo latest;
     try {
       latest = await _fetchLatestRelease();
+    } on _ManifestException {
+      return const UpdateCheckFailed(UpdateFailure.manifest);
     } catch (_) {
-      // 静默失败：更新检查不该影响正常使用
-      return null;
+      // 连不上、DNS 失败、超时、TLS 出错，对用户是同一件事：网络没通。
+      return const UpdateCheckFailed(UpdateFailure.network);
     }
-    if (latest == null) return null;
 
-    if (!latest.version.isNewerThan(current)) return null;
+    if (!latest.version.isNewerThan(current)) return UpdateUpToDate(current);
 
     if (respectIgnore) {
       final prefs = await SharedPreferences.getInstance();
       final ignored = prefs.getString(_prefsIgnoredVersion);
       if (ignored != null && ignored == latest.version.toString()) {
-        return null;
+        return UpdateUpToDate(current);
       }
     }
 
-    return latest;
+    return UpdateAvailable(latest);
   }
 
-  Future<UpdateInfo?> _fetchLatestRelease() async {
+  /// 抓取并解析清单。
+  ///
+  /// 网络层的异常原样往上抛（由调用点归到 [UpdateFailure.network]）；
+  /// 「服务器答了但答的不对」单独抛 [_ManifestException]——那两种情况用户能做
+  /// 的事不一样，混成一个 `return null` 就分不出来了。
+  Future<UpdateInfo> _fetchLatestRelease() async {
     final response = await _client
         .get(Uri.parse(kUpdateManifestUrl))
         .timeout(const Duration(seconds: 12));
 
-    if (response.statusCode != 200) return null;
-    return parseUpdateManifest(utf8.decode(response.bodyBytes));
+    if (response.statusCode != 200) {
+      throw _ManifestException('HTTP ${response.statusCode}');
+    }
+    final info = parseUpdateManifest(utf8.decode(response.bodyBytes));
+    if (info == null) throw const _ManifestException('内容不是认识的清单格式');
+    return info;
   }
 
   /// 记住用户忽略的版本。只影响启动自动提示，不影响手动检查。

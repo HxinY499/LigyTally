@@ -238,16 +238,25 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // 大数字是「¥ + 数字」的富文本，字色挂在最外层 style 上，
-        // 所以从 RichText 的 text.style 取（`¥` 那一段自己覆盖成更淡的白）。
-        final amount = tester.widget<RichText>(
-          find.text('¥35.75', findRichText: true),
-        );
-        expect(
-          amount.text.style!.color,
-          Colors.white,
-          reason: '$accent / $brightness 下大数字不是白字',
-        );
+        // 大数字为了逐位动画被拆成一格一个 Text，所以逐格验色，而不是去读
+        // 一个 RichText 的顶层 style。`¥` 那一格刻意更淡，不参与这条断言。
+        final digits = tester
+            .widgetList<Text>(
+              find.descendant(
+                of: find.bySemanticsLabel('¥35.75'),
+                matching: find.byType(Text),
+              ),
+            )
+            .where((text) => text.data != '¥')
+            .toList();
+        expect(digits, isNotEmpty, reason: '$accent / $brightness 下找不到大数字');
+        for (final digit in digits) {
+          expect(
+            digit.style!.color,
+            Colors.white,
+            reason: '$accent / $brightness 下大数字「${digit.data}」不是白字',
+          );
+        }
 
         final face = tester
             .widgetList<Container>(find.byType(Container))

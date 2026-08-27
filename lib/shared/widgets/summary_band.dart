@@ -10,7 +10,7 @@ import '../../core/theme/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/hero_skin.dart';
 import '../../core/utils/ledger_date.dart';
-import 'animated_cents.dart';
+import 'animated_money.dart';
 import 'hero_surface.dart';
 
 /// 紧凑版摘要条的实底：固定，不随皮肤变。
@@ -109,17 +109,12 @@ class SummaryBand extends ConsumerWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          // 这个数字独占一行、左对齐，滚动途中的宽度变化不会推到任何东西，
-          // 见 AnimatedCents 的「什么情况下不要用它」。
-          child: AnimatedCents(
+          child: _HeroMoney(
             cents: summary.expenseCents,
-            builder: (context, value) => _HeroMoney(
-              cents: value,
-              grouped: grouped,
-              size: AppText.moneyXl,
-              weight: FontWeight.w800,
-              hero: hero,
-            ),
+            grouped: grouped,
+            size: AppText.moneyXl,
+            weight: FontWeight.w800,
+            hero: hero,
           ),
         ),
         const SizedBox(height: 20),
@@ -222,12 +217,12 @@ class _MonthChip extends StatelessWidget {
 /// 单位回到它该在的位置，同时不和数字抢视觉重量——一屏里最该被读到的是
 /// 「2428」这四位数，不是那个所有金额都一样的货币符号。
 ///
-/// 三段用 [TextSpan] 而不是 [Row]：同一段富文本里的不同字号会自动按**基线**
-/// 对齐，Row 得手动指定 [CrossAxisAlignment.baseline] 并给 textBaseline，
-/// 且在 [FittedBox] 里缩放时两种写法的表现不一致。
-///
 /// 符号（`-` / `+`）留在货币符号**之前**且用大号字：`¥-1,234` 是错的，
 /// 负号修饰的是整个金额，不是货币单位。
+///
+/// 数字那一段交给 [AnimatedMoneyText] 逐位翻到新值。这也是这里从
+/// [Text.rich] 换成分段的原因——富文本能自动按基线对齐不同字号，但它没法让
+/// 单个字符各自动画。基线对齐改由 [AnimatedMoneyText] 里的 Row 显式处理。
 class _HeroMoney extends StatelessWidget {
   const _HeroMoney({
     required this.cents,
@@ -268,24 +263,21 @@ class _HeroMoney extends StatelessWidget {
       weight: weight,
       height: 1.1,
     );
-    return Text.rich(
-      TextSpan(
-        children: [
-          if (_sign.isNotEmpty) TextSpan(text: _sign),
-          TextSpan(
-            text: '¥',
-            style: AppText.money(
-              _currencySize,
-              color: hero.foregroundSoft,
-              weight: FontWeight.w600,
-              height: 1.1,
-            ),
+    return AnimatedMoneyText(
+      segments: [
+        // 正负号不逐位翻：它不是一个「位」，翻转反而会让人以为数值在变。
+        MoneySegment(_sign, style: base),
+        MoneySegment(
+          '¥',
+          style: AppText.money(
+            _currencySize,
+            color: hero.foregroundSoft,
+            weight: FontWeight.w600,
+            height: 1.1,
           ),
-          TextSpan(text: _digits),
-        ],
-      ),
-      maxLines: 1,
-      style: base,
+        ),
+        MoneySegment(_digits, style: base, animate: true),
+      ],
     );
   }
 
@@ -343,19 +335,13 @@ class _MiniStat extends StatelessWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          // 两个次级数字各被一个 Expanded 框住，宽度变化推不动邻居。
-          // 它们必须和主数字一起滚：同一次换月里三个数都变了，只有主数字
-          // 会动的话，另两个会先跳到位、再等主数字追上来。
-          child: AnimatedCents(
+          child: _HeroMoney(
             cents: cents,
-            builder: (context, value) => _HeroMoney(
-              cents: value,
-              grouped: grouped,
-              size: AppText.moneyMd,
-              weight: FontWeight.w800,
-              hero: hero,
-              signed: signed,
-            ),
+            grouped: grouped,
+            size: AppText.moneyMd,
+            weight: FontWeight.w800,
+            hero: hero,
+            signed: signed,
           ),
         ),
       ],
