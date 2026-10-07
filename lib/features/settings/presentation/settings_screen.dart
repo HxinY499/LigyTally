@@ -262,7 +262,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     icon: FLucideIcons.zap,
                     title: '快速记账模式',
                     subtitle: '打开应用后直接进入记账页',
-                    trailing: TrailingSwitch(
+                    trailing: AppSwitch(
                       value: ref.watch(quickTallyModeProvider),
                       onChange: (value) => ref
                           .read(quickTallyModeProvider.notifier)
@@ -275,7 +275,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     subtitle: '仅新建今天的账单时获取，可随时关掉',
                     trailing: _locationBusy
                         ? const RowSpinner()
-                        : TrailingSwitch(
+                        : AppSwitch(
                             value: ref.watch(autoLocationProvider),
                             onChange: (value) {
                               unawaited(_setAutoLocation(value));

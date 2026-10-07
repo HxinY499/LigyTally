@@ -88,7 +88,7 @@ class AppearanceScreen extends ConsumerWidget {
                       icon: FLucideIcons.contrast,
                       title: '纯黑深色',
                       subtitle: 'OLED 屏更省电，页底压到纯黑',
-                      trailing: TrailingSwitch(
+                      trailing: AppSwitch(
                         value: config.trueBlack,
                         onChange: notifier.setTrueBlack,
                       ),
@@ -129,7 +129,7 @@ class AppearanceScreen extends ConsumerWidget {
                     icon: FLucideIcons.hash,
                     title: '金额千分位',
                     subtitle: '19,042.60',
-                    trailing: TrailingSwitch(
+                    trailing: AppSwitch(
                       value: config.moneyGrouped,
                       onChange: notifier.setMoneyGrouped,
                     ),
@@ -138,7 +138,7 @@ class AppearanceScreen extends ConsumerWidget {
                     icon: FLucideIcons.alignJustify,
                     title: '数字等宽',
                     subtitle: '金额列的小数点逐行对齐',
-                    trailing: TrailingSwitch(
+                    trailing: AppSwitch(
                       value: config.tabularFigures,
                       onChange: notifier.setTabularFigures,
                     ),

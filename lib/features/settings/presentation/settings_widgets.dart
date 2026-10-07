@@ -184,29 +184,6 @@ class SettingsItem extends StatelessWidget {
   }
 }
 
-/// 行尾开关：把 forui 开关的隐形留白补掉，让轨道右边缘和 chevron 对齐。
-///
-/// [AppSwitch] 内部 FLabel 左右各留 8，CupertinoSwitch 的 59×39 画布相对
-/// 51×31 的轨道又各多出 4 —— 右侧共空 12px，不修正就会比其它行内缩。
-class TrailingSwitch extends StatelessWidget {
-  const TrailingSwitch({
-    super.key,
-    required this.value,
-    required this.onChange,
-  });
-
-  final bool value;
-  final ValueChanged<bool> onChange;
-
-  @override
-  Widget build(BuildContext context) {
-    return Transform.translate(
-      offset: const Offset(12, 0),
-      child: AppSwitch(value: value, onChange: onChange),
-    );
-  }
-}
-
 /// 行内小转圈：与 chevron 同宽，替换时不会让右侧跳动。
 class RowSpinner extends StatelessWidget {
   const RowSpinner({super.key});

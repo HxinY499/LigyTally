@@ -922,11 +922,7 @@ class _ActiveRow extends StatelessWidget {
               ],
             ),
           ),
-          // AppSwitch 内部左右各有 8 的隐形留白，右移把轨道右缘拉回 20 那条线。
-          Transform.translate(
-            offset: const Offset(12, 0),
-            child: AppSwitch(value: value, onChange: onChanged),
-          ),
+          AppSwitch(value: value, onChange: onChanged),
         ],
       ),
     );
