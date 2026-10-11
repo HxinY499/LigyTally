@@ -216,11 +216,11 @@ void main() {
     expect(find.text('日历'), findsOneWidget);
     expect(find.text('统计'), findsOneWidget);
     expect(find.text('设置'), findsOneWidget);
-    expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.text('记一笔'), findsOneWidget);
 
     await tester.tap(find.text('日历'));
     await settle(tester);
-    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.text('记一笔'), findsNothing);
 
     await tester.tap(find.byTooltip('上个月'));
     await settle(tester);
@@ -230,7 +230,7 @@ void main() {
     await settle(tester);
     expect(find.text(formatMonth(thisMonth)), findsOneWidget);
     expect(find.text(formatMonth(lastMonth)), findsNothing);
-    expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.text('记一笔'), findsOneWidget);
 
     await teardownTree(tester);
   });

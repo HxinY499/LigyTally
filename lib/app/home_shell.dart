@@ -139,11 +139,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 }
 
-/// 记账主按钮：一枚主色胶囊，左段「模板」、右段「+」，中间一道细分隔。
+/// 记账主按钮：一枚主色胶囊，左边「+ 记一笔」是主操作，右端嵌一颗浅色圆钮进模板。
 ///
-/// 两个入口做的是同一件事（记账），所以长成同一个按钮的两半，而不是两颗
-/// 风格各异的按钮挨着摆。右段保持原 FAB 的 56 圆，胶囊右端的半圆正好就是它，
-/// 「+」的手感和位置感不变。
+/// 两个入口做的是同一件事（记账），所以长成同一个按钮的两部分，而不是两颗
+/// 风格各异的按钮挨着摆。主次靠面积和填色分：常规记账占满胶囊主体，
+/// 模板只是嵌在里面的一颗小圆钮，压一层半透明前景色，一看就是「附属的那个」。
 class _AddDock extends StatelessWidget {
   const _AddDock({super.key, required this.onAdd, required this.onTemplates});
 
@@ -152,6 +152,11 @@ class _AddDock extends StatelessWidget {
 
   static const double _height = 56;
 
+  /// 模板圆钮的直径与它离胶囊边缘的距离：内外留白相等，圆钮和胶囊右端的
+  /// 半圆是同心圆，嵌得才像一体。
+  static const double _inset = 6;
+  static const double _knob = _height - _inset * 2;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -159,6 +164,8 @@ class _AddDock extends StatelessWidget {
     // canvasBase 而不是 canvas：这是压在主色按钮上的**前景色**，
     // 壁纸模式下拿到透明的话图标会直接消失。
     final foreground = colors.isDark ? colors.canvasBase : Colors.white;
+    final splash = foreground.withValues(alpha: 0.16);
+    final highlight = foreground.withValues(alpha: 0.08);
     return Material(
       color: colors.primary,
       shape: const StadiumBorder(),
@@ -171,26 +178,23 @@ class _AddDock extends StatelessWidget {
           children: [
             Semantics(
               button: true,
-              label: '模板记账',
+              label: '记一笔',
+              excludeSemantics: true,
               child: InkWell(
-                onTap: onTemplates,
-                splashColor: foreground.withValues(alpha: 0.16),
-                highlightColor: foreground.withValues(alpha: 0.08),
+                onTap: onAdd,
+                splashColor: splash,
+                highlightColor: highlight,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 14, 0),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 16, 0),
                   child: Row(
                     children: [
-                      Icon(
-                        FLucideIcons.layoutTemplate,
-                        size: 18,
-                        color: foreground,
-                      ),
+                      Icon(FLucideIcons.plus, size: 22, color: foreground),
                       const SizedBox(width: 6),
                       Text(
-                        '模板',
+                        '记一笔',
                         style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
                           color: foreground,
                         ),
                       ),
@@ -199,25 +203,29 @@ class _AddDock extends StatelessWidget {
                 ),
               ),
             ),
-            Container(
-              width: 1,
-              height: 22,
-              color: foreground.withValues(alpha: 0.35),
-            ),
-            // 仍用 FloatingActionButton：保住它的语义和无障碍行为。
-            // 阴影交给外层胶囊，这里全部归零，否则右段会单独浮起一块。
-            FloatingActionButton(
-              onPressed: onAdd,
-              tooltip: '记一笔',
-              backgroundColor: colors.primary,
-              foregroundColor: foreground,
-              elevation: 0,
-              focusElevation: 0,
-              hoverElevation: 0,
-              highlightElevation: 0,
-              splashColor: foreground.withValues(alpha: 0.16),
-              shape: const CircleBorder(),
-              child: const Icon(FLucideIcons.plus, size: 26),
+            Padding(
+              padding: const EdgeInsets.only(right: _inset),
+              child: Tooltip(
+                message: '模板记账',
+                child: Material(
+                  color: foreground.withValues(alpha: 0.2),
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: onTemplates,
+                    splashColor: splash,
+                    highlightColor: highlight,
+                    child: SizedBox.square(
+                      dimension: _knob,
+                      child: Icon(
+                        FLucideIcons.layoutTemplate,
+                        size: 19,
+                        color: foreground,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
