@@ -117,38 +117,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // 日历有自己的「空白天记一笔」，统计和设置更不该被挡住。
       // 用 centerFloat 而非 centerDocked：docked 会让 FAB 半嵌进栏里，
       // 四个 tab 时正好压在统计和日历的交界上，嵌进去两边都难受。
-      //
-      // 「模板」挨在 FAB 左边：同是记账入口，放在同一个拇指热区里；
-      // 右边垫一块等宽空白，FAB 仍然落在正中。空白不接点击，不挡列表。
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: AnimatedSwitcher(
         duration: context.motion(const Duration(milliseconds: 200)),
         transitionBuilder: (child, animation) =>
             ScaleTransition(scale: animation, child: child),
         child: _index == _tabLedger && !selecting
-            ? Row(
+            ? _AddDock(
                 key: const ValueKey('add'),
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _TemplateButton(onTap: () => showTemplateSheet(context)),
-                  const SizedBox(width: _TemplateButton.gap),
-                  FloatingActionButton(
-                    onPressed: _addTransaction,
-                    backgroundColor: context.colors.primary,
-                    // 深色下品牌蓝被提亮，白字对比不够；与 forui primaryForeground 同一条规则。
-                    // canvasBase 而不是 canvas：这是压在主色圆按钮上的**前景色**，
-                    // 壁纸模式下拿到透明的话加号会直接消失。
-                    foregroundColor: context.colors.isDark
-                        ? context.colors.canvasBase
-                        : Colors.white,
-                    elevation: 3,
-                    shape: const CircleBorder(),
-                    child: const Icon(FLucideIcons.plus, size: 26),
-                  ),
-                  const SizedBox(
-                    width: _TemplateButton.gap + _TemplateButton.width,
-                  ),
-                ],
+                onAdd: _addTransaction,
+                onTemplates: () => showTemplateSheet(context),
               )
             : const SizedBox.shrink(key: ValueKey('none')),
       ),
@@ -161,64 +139,87 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 }
 
-/// FAB 左侧的「模板」胶囊：点开模板记账面板。
+/// 记账主按钮：一枚主色胶囊，左段「模板」、右段「+」，中间一道细分隔。
 ///
-/// 带字而不是只放图标：它和 FAB 挨着，光一个图标很难猜出和「+」有什么区别。
-/// 比 FAB 小一圈、白底，主次一眼可分。
-class _TemplateButton extends StatelessWidget {
-  const _TemplateButton({required this.onTap});
+/// 两个入口做的是同一件事（记账），所以长成同一个按钮的两半，而不是两颗
+/// 风格各异的按钮挨着摆。右段保持原 FAB 的 56 圆，胶囊右端的半圆正好就是它，
+/// 「+」的手感和位置感不变。
+class _AddDock extends StatelessWidget {
+  const _AddDock({super.key, required this.onAdd, required this.onTemplates});
 
-  final VoidCallback onTap;
+  final VoidCallback onAdd;
+  final VoidCallback onTemplates;
 
-  /// 宽度写死：右侧要垫一块等宽空白让 FAB 居中。
-  static const double width = 72;
-  static const double height = 40;
-  static const double gap = 14;
+  static const double _height = 56;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    const shape = StadiumBorder();
-    return Semantics(
-      button: true,
-      label: '模板记账',
+    // 深色下品牌蓝被提亮，白字对比不够；与 forui primaryForeground 同一条规则。
+    // canvasBase 而不是 canvas：这是压在主色按钮上的**前景色**，
+    // 壁纸模式下拿到透明的话图标会直接消失。
+    final foreground = colors.isDark ? colors.canvasBase : Colors.white;
+    return Material(
+      color: colors.primary,
+      shape: const StadiumBorder(),
+      elevation: 3,
+      clipBehavior: Clip.antiAlias,
       child: SizedBox(
-        width: width,
-        height: height,
-        child: Material(
-          color: colors.surface,
-          shape: shape.copyWith(side: BorderSide(color: colors.lineSoft)),
-          elevation: 2,
-          shadowColor: Colors.black.withValues(alpha: 0.2),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            customBorder: shape,
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      FLucideIcons.layoutTemplate,
-                      size: 16,
-                      color: colors.primary,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '模板',
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                        color: colors.ink,
+        height: _height,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Semantics(
+              button: true,
+              label: '模板记账',
+              child: InkWell(
+                onTap: onTemplates,
+                splashColor: foreground.withValues(alpha: 0.16),
+                highlightColor: foreground.withValues(alpha: 0.08),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 14, 0),
+                  child: Row(
+                    children: [
+                      Icon(
+                        FLucideIcons.layoutTemplate,
+                        size: 18,
+                        color: foreground,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      Text(
+                        '模板',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: foreground,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
+            Container(
+              width: 1,
+              height: 22,
+              color: foreground.withValues(alpha: 0.35),
+            ),
+            // 仍用 FloatingActionButton：保住它的语义和无障碍行为。
+            // 阴影交给外层胶囊，这里全部归零，否则右段会单独浮起一块。
+            FloatingActionButton(
+              onPressed: onAdd,
+              tooltip: '记一笔',
+              backgroundColor: colors.primary,
+              foregroundColor: foreground,
+              elevation: 0,
+              focusElevation: 0,
+              hoverElevation: 0,
+              highlightElevation: 0,
+              splashColor: foreground.withValues(alpha: 0.16),
+              shape: const CircleBorder(),
+              child: const Icon(FLucideIcons.plus, size: 26),
+            ),
+          ],
         ),
       ),
     );
