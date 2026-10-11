@@ -10,6 +10,7 @@ import '../core/theme/app_theme.dart';
 import '../features/ledger/application/providers.dart';
 import '../features/ledger/presentation/calendar_screen.dart';
 import '../features/ledger/presentation/ledger_screen.dart';
+import '../features/ledger/presentation/template_sheet.dart';
 import '../features/ledger/presentation/transaction_editor.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/statistics/presentation/statistics_screen.dart';
@@ -116,25 +117,38 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // 日历有自己的「空白天记一笔」，统计和设置更不该被挡住。
       // 用 centerFloat 而非 centerDocked：docked 会让 FAB 半嵌进栏里，
       // 四个 tab 时正好压在统计和日历的交界上，嵌进去两边都难受。
+      //
+      // 「模板」挨在 FAB 左边：同是记账入口，放在同一个拇指热区里；
+      // 右边垫一块等宽空白，FAB 仍然落在正中。空白不接点击，不挡列表。
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: AnimatedSwitcher(
         duration: context.motion(const Duration(milliseconds: 200)),
         transitionBuilder: (child, animation) =>
             ScaleTransition(scale: animation, child: child),
         child: _index == _tabLedger && !selecting
-            ? FloatingActionButton(
+            ? Row(
                 key: const ValueKey('add'),
-                onPressed: _addTransaction,
-                backgroundColor: context.colors.primary,
-                // 深色下品牌蓝被提亮，白字对比不够；与 forui primaryForeground 同一条规则。
-                // canvasBase 而不是 canvas：这是压在主色圆按钮上的**前景色**，
-                // 壁纸模式下拿到透明的话加号会直接消失。
-                foregroundColor: context.colors.isDark
-                    ? context.colors.canvasBase
-                    : Colors.white,
-                elevation: 3,
-                shape: const CircleBorder(),
-                child: const Icon(FLucideIcons.plus, size: 26),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _TemplateButton(onTap: () => showTemplateSheet(context)),
+                  const SizedBox(width: _TemplateButton.gap),
+                  FloatingActionButton(
+                    onPressed: _addTransaction,
+                    backgroundColor: context.colors.primary,
+                    // 深色下品牌蓝被提亮，白字对比不够；与 forui primaryForeground 同一条规则。
+                    // canvasBase 而不是 canvas：这是压在主色圆按钮上的**前景色**，
+                    // 壁纸模式下拿到透明的话加号会直接消失。
+                    foregroundColor: context.colors.isDark
+                        ? context.colors.canvasBase
+                        : Colors.white,
+                    elevation: 3,
+                    shape: const CircleBorder(),
+                    child: const Icon(FLucideIcons.plus, size: 26),
+                  ),
+                  const SizedBox(
+                    width: _TemplateButton.gap + _TemplateButton.width,
+                  ),
+                ],
               )
             : const SizedBox.shrink(key: ValueKey('none')),
       ),
@@ -142,6 +156,70 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         index: _index,
         onChange: _jumpTo,
         floating: floating,
+      ),
+    );
+  }
+}
+
+/// FAB 左侧的「模板」胶囊：点开模板记账面板。
+///
+/// 带字而不是只放图标：它和 FAB 挨着，光一个图标很难猜出和「+」有什么区别。
+/// 比 FAB 小一圈、白底，主次一眼可分。
+class _TemplateButton extends StatelessWidget {
+  const _TemplateButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  /// 宽度写死：右侧要垫一块等宽空白让 FAB 居中。
+  static const double width = 72;
+  static const double height = 40;
+  static const double gap = 14;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    const shape = StadiumBorder();
+    return Semantics(
+      button: true,
+      label: '模板记账',
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Material(
+          color: colors.surface,
+          shape: shape.copyWith(side: BorderSide(color: colors.lineSoft)),
+          elevation: 2,
+          shadowColor: Colors.black.withValues(alpha: 0.2),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: shape,
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      FLucideIcons.layoutTemplate,
+                      size: 16,
+                      color: colors.primary,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      '模板',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: colors.ink,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

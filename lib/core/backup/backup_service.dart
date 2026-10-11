@@ -29,10 +29,11 @@ class BackupService {
   /// - v4 → v5：多带了整套外观配置（一个字符串）和壁纸图片。老包缺这两样，
   ///   恢复时保持当前外观不动即可——那正是「这个包里没有外观信息」的正确
   ///   处理，也不需要兼容分支。
-  static const formatVersion = 5;
+  /// - v5 → v6：多带了记账模板。老包没有 `templates`，按「没有模板」恢复。
+  static const formatVersion = 6;
 
   /// 仍可恢复的历史版本。
-  static const _supportedVersions = {3, 4, formatVersion};
+  static const _supportedVersions = {3, 4, 5, formatVersion};
 
   static const _format = 'ligy-tally-backup';
 
@@ -66,6 +67,7 @@ class BackupService {
     final categories = await database.exportCategories();
     final transactions = await database.exportTransactions();
     final images = await database.exportImages();
+    final templates = await database.exportTemplates();
     final iconPaths = _categoryIconPaths(categories);
     final manifest = <String, Object>{
       'format': _format,
@@ -75,12 +77,14 @@ class BackupService {
       'transactionCount': transactions.length,
       'imageCount': images.length,
       'categoryIconCount': iconPaths.length,
+      'templateCount': templates.length,
       'hasAppearance': appearance != null,
     };
     final data = <String, Object>{
       'categories': categories.map((row) => row.toJson()).toList(),
       'transactions': transactions.map((row) => row.toJson()).toList(),
       'images': images.map((row) => row.toJson()).toList(),
+      'templates': templates.map((row) => row.toJson()).toList(),
       // 整套外观就是一个字符串（见 [AppearanceConfig.encode]），所以往备份里
       // 加它只需要这一行。加进来的理由：用户花时间调出来的一套外观，
       // 换机恢复后账单全在、外观全丢，这件事对「这是我的 app」的伤害
@@ -179,6 +183,8 @@ class BackupService {
       imageCount: manifest['imageCount'] as int,
       // v3 的包没这个字段，缺省当 0。
       categoryIconCount: manifest['categoryIconCount'] as int? ?? 0,
+      // v5 及以前没有模板。
+      templateCount: manifest['templateCount'] as int? ?? 0,
     );
   }
 
@@ -219,9 +225,16 @@ class BackupService {
           ),
         )
         .toList();
+    final templateRows = ((data['templates'] as List<Object?>?) ?? const [])
+        .map(
+          (item) =>
+              TemplateEntry.fromJson((item as Map).cast<String, Object?>()),
+        )
+        .toList();
 
     if (transactionRows.length != manifest['transactionCount'] ||
-        imageRows.length != manifest['imageCount']) {
+        imageRows.length != manifest['imageCount'] ||
+        templateRows.length != (manifest['templateCount'] as int? ?? 0)) {
       throw const FormatException('备份记录数量不一致');
     }
 
@@ -261,10 +274,12 @@ class BackupService {
       final oldCategories = await database.exportCategories();
       final oldTransactions = await database.exportTransactions();
       final oldImages = await database.exportImages();
+      final oldTemplates = await database.exportTemplates();
       await database.replaceAllData(
         categoryRows: categoryRows,
         transactionRows: transactionRows,
         imageRows: imageRows,
+        templateRows: templateRows,
       );
       try {
         final currentMedia = Directory(p.join(support, 'media'));
@@ -291,6 +306,7 @@ class BackupService {
           categoryRows: oldCategories,
           transactionRows: oldTransactions,
           imageRows: oldImages,
+          templateRows: oldTemplates,
         );
         rethrow;
       }
@@ -362,6 +378,7 @@ class BackupPreview {
     required this.transactionCount,
     required this.imageCount,
     required this.categoryIconCount,
+    required this.templateCount,
   });
 
   final DateTime createdAt;
@@ -370,6 +387,9 @@ class BackupPreview {
 
   /// 包里带的分类自定义图标数量。v3 的老包恒为 0。
   final int categoryIconCount;
+
+  /// 包里带的记账模板数量。v5 及以前恒为 0。
+  final int templateCount;
 }
 
 /// 在后台 isolate 里把 JSON 和文件打成 zip。只收可发送的字符串和字节。

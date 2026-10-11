@@ -17,6 +17,7 @@ import '../../../core/update/update_progress.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../ledger/application/providers.dart';
+import '../../ledger/presentation/template_screen.dart';
 import 'appearance_screen.dart';
 import 'privacy_screen.dart';
 import 'category_management_screen.dart';
@@ -124,7 +125,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         message:
             '备份包含 ${preview.transactionCount} 笔账单和 '
             '${preview.imageCount} 张图片'
-            '${preview.categoryIconCount > 0 ? '、${preview.categoryIconCount} 个自定义分类图标' : ''}。'
+            '${preview.categoryIconCount > 0 ? '、${preview.categoryIconCount} 个自定义分类图标' : ''}'
+            '${preview.templateCount > 0 ? '、${preview.templateCount} 个记账模板' : ''}。'
             '恢复后当前数据将被替换。',
         confirmLabel: '恢复',
       );
@@ -314,6 +316,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       MaterialPageRoute(
                         builder: (_) => const CategoryManagementScreen(),
                       ),
+                    ),
+                  ),
+                  SettingsItem(
+                    icon: FLucideIcons.layoutTemplate,
+                    title: '记账模板',
+                    showChevron: true,
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(builder: (_) => const TemplateScreen()),
                     ),
                   ),
                   SettingsItem(

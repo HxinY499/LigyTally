@@ -146,6 +146,7 @@ void main() {
         ],
         transactionRows: await database.exportTransactions(),
         imageRows: await database.exportImages(),
+        templateRows: await database.exportTemplates(),
       );
       await writeFile(support, categoryIconRelativePath(iconId), bytes);
     }

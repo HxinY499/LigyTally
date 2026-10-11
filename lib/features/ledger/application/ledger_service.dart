@@ -94,6 +94,55 @@ class LedgerService {
     }
   }
 
+  Future<void> saveTemplate({
+    TemplateItem? existing,
+    required int kind,
+    required int amountCents,
+    required String categoryId,
+    required String note,
+  }) {
+    return database.saveTemplate(
+      existingId: existing?.template.id,
+      newId: _uuid.v4(),
+      kind: kind,
+      amountCents: amountCents,
+      categoryId: categoryId,
+      note: note.trim(),
+    );
+  }
+
+  Future<void> deleteTemplate(TemplateItem item) =>
+      database.deleteTemplate(item.template.id);
+
+  /// 按模板记一笔：日期取今天、时刻取此刻，不带位置和图片。返回新账单 id，
+  /// 供「撤销」删回去。
+  Future<String> recordTemplate(TemplateItem item, {DateTime? at}) async {
+    final moment = at ?? DateTime.now();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final id = _uuid.v4();
+    final template = item.template;
+    await database.saveTransaction(
+      entry: TransactionsCompanion.insert(
+        id: id,
+        kind: template.kind,
+        amountCents: template.amountCents,
+        categoryId: template.categoryId,
+        accountingDate: dateKey(moment),
+        occurredAt: moment.millisecondsSinceEpoch,
+        note: Value(template.note),
+        createdAt: now,
+        updatedAt: now,
+      ),
+      newImages: const [],
+      removedImageIds: const {},
+    );
+    return id;
+  }
+
+  /// 撤销 [recordTemplate] 记下的那笔。模板记的账没有图片，直接删行即可。
+  Future<void> undoTemplateRecord(String transactionId) =>
+      database.deleteTransaction(transactionId);
+
   Future<void> delete(LedgerItem item) => deleteAll([item]);
 
   /// 先改库再删文件目录：库失败时账单还在，图也还在。

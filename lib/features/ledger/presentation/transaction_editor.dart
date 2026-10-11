@@ -26,7 +26,22 @@ import '../application/providers.dart';
 import 'location_name_dialog.dart';
 
 class TransactionEditor extends ConsumerStatefulWidget {
-  const TransactionEditor({super.key, this.existing, this.initialDate});
+  const TransactionEditor({super.key, this.existing, this.initialDate})
+    : isTemplate = false,
+      existingTemplate = null;
+
+  /// 编辑记账模板：和记一笔同一套金额 / 分类 / 备注输入，存进模板表。
+  ///
+  /// 日期、时刻、位置、图片属于某一次记账，模板里没有，整条收起。
+  const TransactionEditor.template({super.key, this.existingTemplate})
+    : isTemplate = true,
+      existing = null,
+      initialDate = null;
+
+  final bool isTemplate;
+
+  /// 正在编辑的模板。[isTemplate] 为 true 且为 null 时是新建。
+  final TemplateItem? existingTemplate;
 
   final LedgerItem? existing;
 
@@ -67,7 +82,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   bool _locationFetching = false;
   int _captureGen = 0;
 
-  bool get _isEditing => widget.existing != null;
+  bool get _isEditing =>
+      widget.existing != null || widget.existingTemplate != null;
 
   double get _amountValue => AmountExpression.evaluate(_amountExpr);
 
@@ -77,8 +93,15 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   void initState() {
     super.initState();
     final transaction = widget.existing?.transaction;
-    _kind = transaction?.kind ?? 0;
-    _categoryId = transaction?.categoryId;
+    final template = widget.existingTemplate?.template;
+    _kind = transaction?.kind ?? template?.kind ?? 0;
+    // 模板的分类停用后不在选择器里，留着它等于带着一个看不见的分类保存。
+    // 清空，逼用户重新选一个。
+    _categoryId =
+        transaction?.categoryId ??
+        (widget.existingTemplate?.category.isActive ?? false
+            ? template?.categoryId
+            : null);
     _date = transaction == null
         ? dateOnly(widget.initialDate ?? DateTime.now())
         : dateFromKey(transaction.accountingDate);
@@ -86,10 +109,13 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         ? DateTime.now()
         : DateTime.fromMillisecondsSinceEpoch(transaction.occurredAt);
     _time = TimeOfDay.fromDateTime(occurred);
-    _amountExpr = transaction == null
+    final amountCents = transaction?.amountCents ?? template?.amountCents;
+    _amountExpr = amountCents == null
         ? ''
-        : (transaction.amountCents / 100).toStringAsFixed(2);
-    _noteController = TextEditingController(text: transaction?.note ?? '');
+        : (amountCents / 100).toStringAsFixed(2);
+    _noteController = TextEditingController(
+      text: transaction?.note ?? template?.note ?? '',
+    );
     _place = transaction == null ? null : PlaceFix.tryFrom(transaction);
     _noteFocus.addListener(() {
       if (mounted) setState(() {});
@@ -106,7 +132,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           });
         }
       });
-    } else {
+    } else if (!widget.isTemplate) {
       _scheduleAutoCapture();
     }
   }
@@ -488,15 +514,23 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   /// 找不到再退出去，最后以为这个应用不能删。列表长按保留，作为熟手的快捷方式。
   Future<void> _deleteTransaction() async {
     final existing = widget.existing;
-    if (existing == null) return;
+    final template = widget.existingTemplate;
+    if (existing == null && template == null) return;
     final confirmed = await showAppConfirmDialog(
       context,
-      message: '确定要删除该条账单吗？删除后不可恢复',
+      message: template != null
+          ? '确定删除这个模板吗？用它记过的账单不受影响'
+          : '确定要删除该条账单吗？删除后不可恢复',
     );
     if (!confirmed || !mounted) return;
     setState(() => _saving = true);
     try {
-      await ref.read(ledgerServiceProvider).delete(existing);
+      final service = ref.read(ledgerServiceProvider);
+      if (template != null) {
+        await service.deleteTemplate(template);
+      } else {
+        await service.delete(existing!);
+      }
       if (mounted) Navigator.pop(context);
     } catch (error) {
       if (mounted) {
@@ -542,7 +576,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   }
 
   void _maybeAutoCapture() {
-    if (_isEditing || _place != null || _locationFetching) return;
+    if (widget.isTemplate ||
+        _isEditing ||
+        _place != null ||
+        _locationFetching) {
+      return;
+    }
     if (!ref.read(autoLocationProvider)) return;
     if (!_isTodayDate) return;
     _captureLocation(silent: true);
@@ -608,6 +647,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       _showError('请选择分类');
       return;
     }
+    if (widget.isTemplate) {
+      await _saveTemplate(continueAfter: continueAfter);
+      return;
+    }
     setState(() => _saving = true);
     try {
       await ref
@@ -657,6 +700,42 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           level: AppToastLevel.success,
         );
         if (!keepPlace) _maybeAutoCapture();
+      } else {
+        Navigator.pop(context);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _saving = false);
+        _showError('保存失败：$error');
+      }
+    }
+  }
+
+  Future<void> _saveTemplate({required bool continueAfter}) async {
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(ledgerServiceProvider)
+          .saveTemplate(
+            existing: widget.existingTemplate,
+            kind: _kind,
+            amountCents: (_amountValue * 100).round(),
+            categoryId: _categoryId!,
+            note: _noteController.text,
+          );
+      if (!mounted) return;
+      if (continueAfter) {
+        HapticFeedback.mediumImpact();
+        setState(() {
+          _saving = false;
+          _amountExpr = '';
+          _noteController.clear();
+        });
+        showAppToast(
+          context,
+          message: '模板已保存，继续新建下一个',
+          level: AppToastLevel.success,
+        );
       } else {
         Navigator.pop(context);
       }
@@ -746,7 +825,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                   MediaQuery.paddingOf(context).bottom;
               return AppTopBar(
                 backgroundColor: Colors.transparent,
-                title: _isEditing ? '编辑账单' : '记一笔',
+                title: widget.isTemplate
+                    ? (_isEditing ? '编辑模板' : '新建模板')
+                    : (_isEditing ? '编辑账单' : '记一笔'),
                 controller: _scrollController,
                 // 只有编辑既有账单时才有得删；新建态放一颗永远灰着的垃圾桶
                 // 只会让人猜它什么时候能点。
@@ -754,7 +835,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                     ? [
                         AppHeaderAction(
                           icon: FLucideIcons.trash2,
-                          tooltip: '删除账单',
+                          tooltip: widget.isTemplate ? '删除模板' : '删除账单',
                           onTap: _saving ? null : _deleteTransaction,
                         ),
                       ]
@@ -835,6 +916,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                 bottom: SafeArea(
                   top: false,
                   child: _NumericKeypad(
+                    templateMode: widget.isTemplate,
                     showKeys:
                         !_noteFocus.hasFocus &&
                         panelHeight >= _NumericKeypad.heightWithKeys,
@@ -1778,10 +1860,15 @@ class _SheetAddTile extends StatelessWidget {
 /// 且这是收起系统键盘、让数字键盘和保存键回来的主出口。次出口是点金额显示条。
 /// 没有出口的话，用户打完备注得先在面板外找地方点一下才能保存。
 class _NoteField extends StatelessWidget {
-  const _NoteField({required this.controller, required this.focusNode});
+  const _NoteField({
+    required this.controller,
+    required this.focusNode,
+    required this.hintText,
+  });
 
   final TextEditingController controller;
   final FocusNode focusNode;
+  final String hintText;
 
   @override
   Widget build(BuildContext context) {
@@ -1799,7 +1886,7 @@ class _NoteField extends StatelessWidget {
       maxLines: 1,
       style: TextStyle(fontSize: 14, color: colors.ink),
       decoration: InputDecoration(
-        hintText: '点击填写备注',
+        hintText: hintText,
         hintStyle: TextStyle(fontSize: 14, color: colors.muted),
         filled: true,
         fillColor: colors.surface,
@@ -1913,6 +2000,7 @@ class _ImageEntry extends StatelessWidget {
 /// 还没撤」的帧。也因此收起过程不能加高度动画——动画的中间高度同样会撞上限。
 class _NumericKeypad extends StatelessWidget {
   const _NumericKeypad({
+    required this.templateMode,
     required this.showKeys,
     required this.noteFocus,
     required this.expression,
@@ -1939,6 +2027,9 @@ class _NumericKeypad extends StatelessWidget {
     required this.onSave,
     required this.onSaveContinue,
   });
+
+  /// 模板编辑：收起日期/时刻/位置条和图片入口，备注同时充当模板名。
+  final bool templateMode;
 
   /// 是否渲染数字键盘区。见类文档里的两个把关条件。
   final bool showKeys;
@@ -2025,36 +2116,40 @@ class _NumericKeypad extends StatelessWidget {
             ),
           ),
           // 日期 / 时刻：放在备注上方，与输入区同层，随手可改。
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-            child: _DateTimeBar(
-              date: date,
-              time: time,
-              onPickDate: onPickDate,
-              onPickTime: onPickTime,
-              place: place,
-              locationFetching: locationFetching,
-              onLocationTap: onLocationTap,
-              onLocationClear: onLocationClear,
+          if (!templateMode)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: _DateTimeBar(
+                date: date,
+                time: time,
+                onPickDate: onPickDate,
+                onPickTime: onPickTime,
+                place: place,
+                locationFetching: locationFetching,
+                onLocationTap: onLocationTap,
+                onLocationClear: onLocationClear,
+              ),
             ),
-          ),
           // 备注输入 + 图片入口。
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            padding: EdgeInsets.fromLTRB(12, templateMode ? 10 : 8, 12, 8),
             child: Row(
               children: [
                 Expanded(
                   child: _NoteField(
                     controller: noteController,
                     focusNode: noteFocus,
+                    hintText: templateMode ? '填写备注，作为模板名称' : '点击填写备注',
                   ),
                 ),
-                const SizedBox(width: 10),
-                _ImageEntry(
-                  count: imageCount,
-                  preview: imagePreview,
-                  onTap: onImageTap,
-                ),
+                if (!templateMode) ...[
+                  const SizedBox(width: 10),
+                  _ImageEntry(
+                    count: imageCount,
+                    preview: imagePreview,
+                    onTap: onImageTap,
+                  ),
+                ],
               ],
             ),
           ),
@@ -2082,7 +2177,10 @@ class _NumericKeypad extends StatelessWidget {
               Expanded(
                 child: SizedBox(
                   height: _keyHeight,
-                  child: _AgainKey(onTap: onSaveContinue),
+                  child: _AgainKey(
+                    label: templateMode ? '再建一个' : '再记一笔',
+                    onTap: onSaveContinue,
+                  ),
                 ),
               ),
               const SizedBox(width: _gap),
@@ -2191,8 +2289,9 @@ class _NumKey extends StatelessWidget {
 
 /// 左下「再记一笔」键：保存后不关页面，清空继续记。不可用时置灰。
 class _AgainKey extends StatelessWidget {
-  const _AgainKey({required this.onTap});
+  const _AgainKey({required this.label, required this.onTap});
 
+  final String label;
   final VoidCallback? onTap;
 
   @override
@@ -2207,7 +2306,7 @@ class _AgainKey extends StatelessWidget {
         borderRadius: context.radii.blockAll,
         child: Center(
           child: Text(
-            '再记一笔',
+            label,
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,

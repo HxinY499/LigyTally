@@ -64,14 +64,38 @@ class TransactionImages extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [Categories, Transactions, TransactionImages])
+/// 记账模板：每月固定的房租、话费、工资这类账单，点一下就记一笔。
+///
+/// 只存「这笔账是什么」（收支、金额、分类、备注），不存日期、位置和图片——
+/// 那些属于某一次记账，套用模板时取当下。
+///
+/// 分类删除时模板跟着删（cascade）：分类都没了，模板记出来的账无处可挂。
+@DataClassName('TemplateEntry')
+class TallyTemplates extends Table {
+  TextColumn get id => text()();
+  IntColumn get kind => integer()();
+  IntColumn get amountCents => integer()();
+  TextColumn get categoryId =>
+      text().references(Categories, #id, onDelete: KeyAction.cascade)();
+  TextColumn get note => text().withDefault(const Constant(''))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+@DriftDatabase(
+  tables: [Categories, Transactions, TransactionImages, TallyTemplates],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(driftDatabase(name: 'ligy_tally'));
 
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -109,6 +133,9 @@ class AppDatabase extends _$AppDatabase {
         await migrator.addColumn(transactions, transactions.locationLatitude);
         await migrator.addColumn(transactions, transactions.locationLongitude);
         await migrator.addColumn(transactions, transactions.locationName);
+      }
+      if (from < 5) {
+        await migrator.createTable(tallyTemplates);
       }
     },
     beforeOpen: (_) async {
@@ -401,13 +428,21 @@ class AppDatabase extends _$AppDatabase {
       await batch((batch) {
         batch.insertAllOnConflictUpdate(categories, rows);
       });
+      // 模板引用的分类同账单一样保留：导入是批量替换，不该顺手把用户的
+      // 模板删掉（分类删除会 cascade 到模板）。
       await customStatement('''
         DELETE FROM categories
         WHERE is_active = 0
-          AND id NOT IN (SELECT category_id FROM transactions)
+          AND id NOT IN (
+            SELECT category_id FROM transactions
+            UNION SELECT category_id FROM tally_templates
+          )
           AND id NOT IN (
             SELECT parent_id FROM categories
-            WHERE id IN (SELECT category_id FROM transactions)
+            WHERE id IN (
+                SELECT category_id FROM transactions
+                UNION SELECT category_id FROM tally_templates
+              )
               AND parent_id IS NOT NULL
           )
       ''');
@@ -1009,6 +1044,79 @@ class AppDatabase extends _$AppDatabase {
     return null;
   }
 
+  /// 全部模板连同分类，按 [TallyTemplates.sortOrder] 排。
+  ///
+  /// 不过滤停用分类：管理页要能看到它们才能改；记账面板自己筛。
+  Stream<List<TemplateItem>> watchTemplates() {
+    final query =
+        select(tallyTemplates).join([
+          innerJoin(
+            categories,
+            categories.id.equalsExp(tallyTemplates.categoryId),
+          ),
+        ])..orderBy([
+          OrderingTerm.asc(tallyTemplates.sortOrder),
+          OrderingTerm.asc(tallyTemplates.createdAt),
+        ]);
+    return query.watch().map(
+      (rows) => [
+        for (final row in rows)
+          TemplateItem(
+            template: row.readTable(tallyTemplates),
+            category: row.readTable(categories),
+          ),
+      ],
+    );
+  }
+
+  /// 新建或覆盖一个模板。新建时排到最后。
+  Future<void> saveTemplate({
+    String? existingId,
+    required String newId,
+    required int kind,
+    required int amountCents,
+    required String categoryId,
+    required String note,
+  }) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return transaction(() async {
+      if (existingId != null) {
+        await (update(
+          tallyTemplates,
+        )..where((row) => row.id.equals(existingId))).write(
+          TallyTemplatesCompanion(
+            kind: Value(kind),
+            amountCents: Value(amountCents),
+            categoryId: Value(categoryId),
+            note: Value(note),
+            updatedAt: Value(now),
+          ),
+        );
+        return;
+      }
+      final maxSort = tallyTemplates.sortOrder.max();
+      final result = await (selectOnly(
+        tallyTemplates,
+      )..addColumns([maxSort])).getSingle();
+      await into(tallyTemplates).insert(
+        TallyTemplatesCompanion.insert(
+          id: newId,
+          kind: kind,
+          amountCents: amountCents,
+          categoryId: categoryId,
+          note: Value(note),
+          sortOrder: Value((result.read(maxSort) ?? -1) + 1),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    });
+  }
+
+  Future<void> deleteTemplate(String id) async {
+    await (delete(tallyTemplates)..where((row) => row.id.equals(id))).go();
+  }
+
   Future<List<CategoryEntry>> exportCategories() => select(categories).get();
 
   Future<List<TransactionEntry>> exportTransactions() =>
@@ -1017,12 +1125,16 @@ class AppDatabase extends _$AppDatabase {
   Future<List<TransactionImageEntry>> exportImages() =>
       select(transactionImages).get();
 
+  Future<List<TemplateEntry>> exportTemplates() => select(tallyTemplates).get();
+
   Future<void> replaceAllData({
     required List<CategoryEntry> categoryRows,
     required List<TransactionEntry> transactionRows,
     required List<TransactionImageEntry> imageRows,
+    required List<TemplateEntry> templateRows,
   }) {
     return transaction(() async {
+      await delete(tallyTemplates).go();
       await delete(transactionImages).go();
       await delete(transactions).go();
       await delete(categories).go();
@@ -1030,6 +1142,7 @@ class AppDatabase extends _$AppDatabase {
         batch.insertAll(categories, categoryRows);
         batch.insertAll(transactions, transactionRows);
         batch.insertAll(transactionImages, imageRows);
+        batch.insertAll(tallyTemplates, templateRows);
       });
     });
   }
@@ -1045,6 +1158,19 @@ class LedgerItem {
 
   final TransactionEntry transaction;
   final CategoryEntry category;
+}
+
+class TemplateItem {
+  const TemplateItem({required this.template, required this.category});
+
+  final TemplateEntry template;
+  final CategoryEntry category;
+
+  /// 列表里的名字：备注优先，没写备注就用分类名。
+  ///
+  /// 不单独设名称字段：模板要和记账填的东西一致，备注本来就是用户给这笔账
+  /// 起的名字，多一个框只会让人纠结两个框各写什么。
+  String get title => template.note.isEmpty ? category.name : template.note;
 }
 
 class LedgerImageItem {
