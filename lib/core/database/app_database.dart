@@ -518,6 +518,51 @@ class AppDatabase extends _$AppDatabase {
     ];
   }
 
+  /// 按 id 取账单和分类，给批量删除、详情确认这类按 id 操作的入口用。
+  ///
+  /// 不返回不存在的 id：调用方必须自己比对「请求了哪些、实际拿到哪些」，
+  /// 不能把缺失当成已删除。
+  Future<List<LedgerItem>> transactionsByIds(Iterable<String> ids) async {
+    final wanted = ids.toSet();
+    if (wanted.isEmpty) return const [];
+    final query = select(transactions).join([
+      innerJoin(categories, categories.id.equalsExp(transactions.categoryId)),
+    ])..where(transactions.id.isIn(wanted));
+    final rows = await query.get();
+    return [
+      for (final row in rows)
+        LedgerItem(
+          transaction: row.readTable(transactions),
+          category: row.readTable(categories),
+        ),
+    ];
+  }
+
+  /// 一次性快照：区间内按业务口径汇总的收支。
+  ///
+  /// 与 [watchSummary] 共用同一段 SQL 口径，AI 工具不要另写一套聚合。
+  Future<LedgerSummary> summaryIn(
+    LedgerDateRange range, {
+    Set<String> excludedCategoryIds = const {},
+  }) {
+    return watchSummary(range, excludedCategoryIds: excludedCategoryIds).first;
+  }
+
+  /// 一次性快照：区间内某个收支类型的分类排行。
+  ///
+  /// 与 [watchCategoryTotals] 共用口径；AI 报出的分类金额才能和统计页对上。
+  Future<List<CategoryTotal>> categoryTotalsIn(
+    LedgerDateRange range,
+    int kind, {
+    Set<String> excludedCategoryIds = const {},
+  }) {
+    return watchCategoryTotals(
+      range,
+      kind,
+      excludedCategoryIds: excludedCategoryIds,
+    ).first;
+  }
+
   /// 某个一级分类在区间内的账单明细，按发生时间倒序。
   ///
   /// 归属口径与 [watchCategoryTotals] 一致：交易挂在二级分类上时也算进它的
@@ -600,7 +645,9 @@ class AppDatabase extends _$AppDatabase {
         Variable.withString(dateKey(range.endExclusive)),
         ...exclusion.keptVariables,
       ],
-      readsFrom: exclusion.isEmpty ? {transactions} : {transactions, categories},
+      readsFrom: exclusion.isEmpty
+          ? {transactions}
+          : {transactions, categories},
     ).watchSingle().map(
       (row) => LedgerSummary(
         incomeCents: row.read<int>('income'),
@@ -757,7 +804,9 @@ class AppDatabase extends _$AppDatabase {
         Variable.withString(dateKey(range.endExclusive)),
         ...exclusion.keptVariables,
       ],
-      readsFrom: exclusion.isEmpty ? {transactions} : {transactions, categories},
+      readsFrom: exclusion.isEmpty
+          ? {transactions}
+          : {transactions, categories},
     ).watch().map(
       (rows) => rows
           .map(
@@ -1302,7 +1351,10 @@ class PeriodBar {
 /// 空集合时所有片段都是空串，调用方保持原 SQL，避免无排除时多一次 JOIN。
 class _CategoryExclusion {
   _CategoryExclusion(Set<String> ids)
-    : ids = [for (final id in ids) if (id.isNotEmpty) id];
+    : ids = [
+        for (final id in ids)
+          if (id.isNotEmpty) id,
+      ];
 
   final List<String> ids;
   bool get isEmpty => ids.isEmpty;

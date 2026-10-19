@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.8.2+70
+version: 2.0.0+71
 
 environment:
   sdk: ^3.12.2
@@ -58,6 +58,14 @@ dependencies:
   geolocator: ^14.0.2
   geocoding: ^5.0.0
   excel_plus: ^2.14.2
+  # flutter_ai 生态仍是 0.x，流式协议/工具审批 API 可能在小版本变化；
+  # 与 forui 一样锁精确版本，升级由人工验证后决定。
+  flutter_ai_elements: 0.5.1
+  flutter_ai_client: 0.3.1
+  flutter_ai_core: 0.1.14
+  flutter_ai_provider_openai: 0.1.11
+  flutter_ai_tools: 0.1.4
+  flutter_secure_storage: ^10.3.4
 
 dev_dependencies:
   flutter_test:

@@ -25,6 +25,9 @@ class AppTextField extends StatelessWidget {
     this.maxLength,
     this.minLines,
     this.maxLines = 1,
+    this.obscureText = false,
+    this.autocorrect = true,
+    this.enableSuggestions = true,
     this.onTap,
   });
 
@@ -47,6 +50,9 @@ class AppTextField extends StatelessWidget {
   final int? maxLength;
   final int? minLines;
   final int maxLines;
+  final bool obscureText;
+  final bool autocorrect;
+  final bool enableSuggestions;
 
   /// 输入框获得点击时的回调（如用于收起自定义键盘）。
   final VoidCallback? onTap;
@@ -67,6 +73,9 @@ class AppTextField extends StatelessWidget {
         maxLength: maxLength,
         minLines: minLines ?? 1,
         maxLines: maxLines,
+        obscureText: obscureText,
+        autocorrect: autocorrect,
+        enableSuggestions: enableSuggestions,
         onTap: onTap,
       );
     }
@@ -81,6 +90,9 @@ class AppTextField extends StatelessWidget {
       maxLength: maxLength,
       minLines: minLines,
       maxLines: maxLines,
+      obscureText: obscureText,
+      autocorrect: autocorrect,
+      enableSuggestions: enableSuggestions,
       onTap: onTap,
     );
   }

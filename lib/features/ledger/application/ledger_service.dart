@@ -16,7 +16,14 @@ class LedgerService {
   final ImageStorage imageStorage;
   final Uuid _uuid = const Uuid();
 
-  Future<void> save({
+  /// 保存一笔账单，返回账单 id。
+  ///
+  /// 返回值给 AI 工具用：模型需要把「已记好」对应到具体账单，撤销/后续
+  /// 编辑也才有稳定目标。既有调用方忽略返回值不受影响。
+  Future<String> save({
+    /// AI 工具用同一个 toolCallId 重试时，传入稳定 id，避免网络重试写出
+    /// 两笔完全相同的账。手动记账不传，仍由服务生成 UUID。
+    String? id,
     LedgerItem? existing,
     required int kind,
     required int amountCents,
@@ -30,7 +37,7 @@ class LedgerService {
     required Set<String> removedImageIds,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    final transactionId = existing?.transaction.id ?? _uuid.v4();
+    final transactionId = existing?.transaction.id ?? id ?? _uuid.v4();
     final stored = <({String id, StoredImage image})>[];
 
     try {
@@ -92,6 +99,7 @@ class LedgerService {
         await imageStorage.deleteFile(image.thumbnailPath);
       }
     }
+    return transactionId;
   }
 
   Future<void> saveTemplate({

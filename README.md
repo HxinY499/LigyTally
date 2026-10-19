@@ -19,7 +19,9 @@ Android-first 的本地轻量记账应用，使用 Flutter、Riverpod、Drift �
 - 分类配置 JSON 导入和导出
 - 每笔账单最多五张本地图片
 - 包含图片的完整备份、可选密码和覆盖恢复
-- 纯本地存储，无账号、无服务端
+- 可选 AI 助手：用户自带 DeepSeek API Key，可解读账单、自然语言记账和删除
+- AI 对话支持本地多会话：新建、切换、删除，旧单会话自动迁移
+- 账单默认本地存储，无账号；AI 是可选功能，请求直接发往 DeepSeek，不经过自建服务端
 
 ## 运行
 
@@ -67,6 +69,11 @@ build/app/outputs/flutter-apk/app-debug.apk
 ## 数据
 
 账单和分类保存在应用私有 SQLite 数据库中，图片保存在应用私有 `media` 目录。备份文件扩展名为 `.ligytally`，迁移采用全量覆盖恢复，不提供多设备同步或数据合并。
+
+AI 功能需要用户自行在设置中填入 DeepSeek API Key。Key 保存在 Android Keystore，
+只用于应用直接请求 DeepSeek；AI 对话保存在本机，不进入账单备份。使用 AI 时，
+本次问题、必要的账单摘要/片段和当前时间会发送给 DeepSeek，图片、位置和备份不会发送。
+完整说明见应用内「隐私与备案」。
 
 ## 已知事项
 

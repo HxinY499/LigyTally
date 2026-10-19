@@ -17,6 +17,7 @@ import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/image_backdrop.dart';
 import '../../../shared/widgets/summary_band.dart';
+import '../../ai/presentation/ai_chat_screen.dart';
 import '../application/providers.dart';
 import 'month_picker.dart';
 import 'transaction_editor.dart';
@@ -73,6 +74,12 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
         builder: (_) => TransactionEditor(initialDate: dateOnly(day)),
       ),
     );
+  }
+
+  void _openAi() {
+    Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => const AiChatScreen()));
   }
 
   Future<void> _pickMonth() async {
@@ -230,6 +237,11 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             actions: _selecting
                 ? const []
                 : [
+                    AppHeaderAction(
+                      icon: FLucideIcons.sparkles,
+                      tooltip: 'AI 助手',
+                      onTap: _openAi,
+                    ),
                     AppHeaderAction(
                       icon: _searching ? FLucideIcons.x : FLucideIcons.search,
                       tooltip: _searching ? '关闭搜索' : '搜索',

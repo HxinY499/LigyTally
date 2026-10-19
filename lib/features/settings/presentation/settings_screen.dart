@@ -16,6 +16,8 @@ import '../../../core/update/update_controller.dart';
 import '../../../core/update/update_progress.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../ai/presentation/ai_chat_screen.dart';
+import '../../ai/presentation/ai_settings_screen.dart';
 import '../../ledger/application/providers.dart';
 import '../../ledger/presentation/template_screen.dart';
 import 'appearance_screen.dart';
@@ -297,6 +299,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onTap: () => Navigator.of(context).push<void>(
                       MaterialPageRoute(
                         builder: (_) => const AppearanceScreen(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const SectionLabel('智能'),
+              SettingsCard(
+                children: [
+                  SettingsItem(
+                    icon: FLucideIcons.sparkles,
+                    title: 'AI 助手',
+                    subtitle: '用 DeepSeek 解读账单、记账、删账单',
+                    showChevron: true,
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(builder: (_) => const AiChatScreen()),
+                    ),
+                  ),
+                  SettingsItem(
+                    icon: FLucideIcons.keyRound,
+                    title: 'AI 设置',
+                    subtitle: '配置 DeepSeek API Key 和模型',
+                    showChevron: true,
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => const AiSettingsScreen(),
                       ),
                     ),
                   ),
