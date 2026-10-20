@@ -68,10 +68,12 @@ android {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
+            // shared_preferences_android 2.5.x 通过 JNI 访问 Kotlin 协程和
+            // 标准库内部类，R8 会把这些仅反射可达的类裁掉/改名，导致正式版
+            // 在读写设置时抛 ClassNotFoundException。Dart 仍由 release 构建
+            // 的 --obfuscate 处理；这里关闭 R8，优先保证插件运行时完整。
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 
