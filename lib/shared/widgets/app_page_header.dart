@@ -650,7 +650,7 @@ class AppTopBar extends StatelessWidget {
             background: backgroundColor,
           ),
           Expanded(child: body!),
-          if (bottom != null) bottom!,
+          ?bottom,
         ],
       );
     } else {
