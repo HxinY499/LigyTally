@@ -13,13 +13,13 @@ import '../application/ai_approval.dart';
 import '../application/ai_chat_session.dart';
 import '../application/ai_settings.dart';
 import '../data/ai_chat_store.dart';
+import 'ai_chat_pane.dart';
 import 'ai_settings_screen.dart';
 
 /// AI 助手的唯一页面。
 ///
-/// 流式渲染、Markdown、自动滚动、输入框和停止按钮都由 flutter_ai_elements
-/// 负责；本页只做 DeepSeek 会话的创建/销毁、Key 缺失状态、错误提示，以及
-/// 写操作的人工确认。
+/// 气泡、Markdown、输入框和停止按钮来自 flutter_ai_elements。
+/// 滚动和页头布局在 [AiChatPane]：记录贴着输入框，不跟页头一起滚。
 class AiChatScreen extends ConsumerStatefulWidget {
   const AiChatScreen({super.key});
 
@@ -331,43 +331,25 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         onTap: _openSettings,
       ),
     ];
+    final Widget body;
+    if (_loading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (_error != null) {
+      body = _ErrorView(
+        message: _friendlyError(_error!),
+        onRetry: _retryInitialize,
+        onSettings: _openSettings,
+      );
+    } else if (_session == null) {
+      body = _SetupView(
+        onSetup: _openSettings,
+        maskedKey: _settings?.maskedKey,
+      );
+    } else {
+      body = _ChatBody(session: _session!, themed: _themed);
+    }
     return Scaffold(
-      body: AppTopBar(
-        title: 'AI 助手',
-        actions: actions,
-        slivers: [
-          if (_loading)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_error != null)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _ErrorView(
-                message: _friendlyError(_error!),
-                onRetry: _retryInitialize,
-                onSettings: _openSettings,
-              ),
-            )
-          else if (_session == null)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _SetupView(
-                onSetup: _openSettings,
-                maskedKey: _settings?.maskedKey,
-              ),
-            )
-          else
-            SliverFillRemaining(
-              // AiChatView 自带 ListView；这里必须声明「子里有滚动体」，
-              // 否则 SliverFillRemaining 会去问 viewport 要 intrinsic height，
-              // debug 下直接抛 RenderViewport 不支持 intrinsic dimensions。
-              hasScrollBody: true,
-              child: _ChatBody(session: _session!, themed: _themed),
-            ),
-        ],
-      ),
+      body: AppTopBar(title: 'AI 助手', actions: actions, body: body),
     );
   }
 
@@ -392,11 +374,11 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       linkColor: colors.primary,
       bubbleRadius: context.radii.cardAll,
       bubblePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      messageSpacing: 14,
-      textStyle: TextStyle(fontSize: 15.5, height: 1.55, color: colors.ink),
+      messageSpacing: 12,
+      textStyle: TextStyle(fontSize: 16, height: 1.55, color: colors.ink),
       loaderColor: colors.primary,
       orbColor: colors.primary,
-      composerPadding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+      composerPadding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
     );
     return Theme(
       data: base.copyWith(
@@ -421,38 +403,26 @@ class _ChatBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return themed(
-      ListenableBuilder(
-        listenable: session.chat,
-        builder: (context, _) {
-          final error = session.chat.error;
-          return Column(
-            children: [
-              if (error != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: AiErrorBanner(
-                    message: _errorText(error),
-                    onRetry: () => unawaited(session.chat.regenerate()),
-                  ),
-                ),
-              Expanded(
-                child: MediaQuery.removePadding(
-                  context: context,
-                  removeTop: true,
-                  child: AiChatView(
-                    controller: session.chat,
-                    hintText: '问账单，或说「记一笔午饭 28 元」',
-                    maxContentWidth: 760,
-                    emptyState: _AiWelcome(
-                      onSelected: (text) =>
-                          unawaited(session.chat.sendText(text)),
-                    ),
-                  ),
-                ),
+      AiChatPane(
+        controller: session.chat,
+        hintText: '问账单，或说「记一笔午饭 28 元」',
+        empty: _AiWelcome(
+          onSelected: (text) => unawaited(session.chat.sendText(text)),
+        ),
+        banner: ListenableBuilder(
+          listenable: session.chat,
+          builder: (context, _) {
+            final error = session.chat.error;
+            if (error == null) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: AiErrorBanner(
+                message: _errorText(error),
+                onRetry: () => unawaited(session.chat.regenerate()),
               ),
-            ],
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

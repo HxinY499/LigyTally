@@ -189,6 +189,27 @@ void main() {
       expect(tester.getRect(find.byIcon(FLucideIcons.chevronLeft)), backBefore);
       expect(find.byType(BackdropFilter), findsOneWidget);
     });
+
+    testWidgets('固定主体不进滚动体，标题仍在紧凑条中心', (tester) async {
+      await tester.pumpWidget(
+        host(
+          Scaffold(
+            body: AppTopBar(title: 'AI 助手', body: const Text('正文')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(fontSizeOf(tester, 'AI 助手'), 20);
+      expect(tester.getRect(find.text('AI 助手')).center.dy, centerLine);
+      expect(tester.getRect(find.text('AI 助手')).left, kAppHeaderGutter);
+      expect(find.byType(BackdropFilter), findsNothing);
+      expect(find.byType(CustomScrollView), findsNothing);
+      expect(
+        tester.getTopLeft(find.text('正文')).dy,
+        greaterThanOrEqualTo(kAppHeaderHeight),
+      );
+    });
   });
 
   testWidgets('搜索框模式：页头固定为紧凑高度，输入框不被缩放', (tester) async {
@@ -251,7 +272,9 @@ void main() {
       // 20px 的标题就直接压在照片上。这一层是它的可读性下限。
       await tester.pumpWidget(
         wallpaperHost(
-          Scaffold(body: AppPageHeader(title: '设置', slivers: longSlivers())),
+          Scaffold(
+            body: AppPageHeader(title: '设置', slivers: longSlivers()),
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -264,7 +287,9 @@ void main() {
     testWidgets('蒙版不跟着折叠变薄——内容穿过来时正是最需要底的时候', (tester) async {
       await tester.pumpWidget(
         wallpaperHost(
-          Scaffold(body: AppPageHeader(title: '设置', slivers: longSlivers())),
+          Scaffold(
+            body: AppPageHeader(title: '设置', slivers: longSlivers()),
+          ),
         ),
       );
       await tester.pumpAndSettle();

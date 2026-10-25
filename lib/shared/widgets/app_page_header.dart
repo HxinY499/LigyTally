@@ -592,11 +592,17 @@ class AppPageHeader extends StatelessWidget {
 /// **不是** PreferredSizeWidget，不能塞进 `Scaffold.appBar`，要当 body 用。
 ///
 /// 用法：`Scaffold(body: AppTopBar(title: '记一笔', slivers: [...]))`
+///
+/// 自带滚动的主体（聊天记录、输入框）改走 [body]，不要塞进 [slivers]。
+/// `SliverFillRemaining(hasScrollBody: true)` 申报的滚动范围是整屏高度，
+/// 页头之外永远还剩大约一条标题的可滚距离；输入框聚焦时系统会把光标滚进
+/// 可见区域，整页就上移，内容钻进钉住的标题背后。
 class AppTopBar extends StatelessWidget {
   const AppTopBar({
     super.key,
     required this.title,
-    required this.slivers,
+    this.slivers = const [],
+    this.body,
     this.actions,
     this.backgroundColor,
     this.bottom,
@@ -604,14 +610,18 @@ class AppTopBar extends StatelessWidget {
   });
 
   final String title;
+
+  /// 页头下方的滚动内容。
+  final List<Widget> slivers;
+
+  /// 固定在页头下方的主体。高度由本组件分配，不再参与页头滚动。
+  final Widget? body;
+
   final List<Widget>? actions;
 
   /// 整页底色。传 [Colors.transparent] 可让页面在本组件之下自绘背景
   /// （记一笔页把账单图片铺在这一层）。null 表示取页面底色。
   final Color? backgroundColor;
-
-  /// 页头下方的滚动内容。
-  final List<Widget> slivers;
 
   /// 贴在滚动区**下方**的常驻面板（记一笔页的数字键盘）。
   ///
@@ -623,34 +633,108 @@ class AppTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scroll = CustomScrollView(
-      controller: controller,
-      slivers: [
-        AppHeaderSliver(
-          title: title,
-          actions: actions,
-          showBack: Navigator.of(context).canPop(),
-          collapsible: false,
-          // 刻意把**没解析过**的值传下去：页头要能分清「调用方没指定」和
-          // 「调用方指定了透明」——前者在壁纸模式下需要自带一层蒙版，
-          // 后者（记一笔页）绝不能被糊住。解析成 canvas 再传，这两种就
-          // 变成同一个透明色，分不出来了。
-          background: backgroundColor,
-        ),
-        ...slivers,
-      ],
-    );
-    return Material(
-      // 页底仍然要解析：壁纸模式下它是透明的，壁纸从这里透上来。
-      color: backgroundColor ?? context.colors.canvas,
-      child: bottom == null
+    assert(slivers.isNotEmpty || body != null, 'slivers 与 body 至少提供一个');
+    assert(body == null || slivers.isEmpty, 'body 不进页头的滚动体');
+    final Widget page;
+    if (body != null) {
+      page = Column(
+        children: [
+          _FixedHeader(
+            title: title,
+            actions: actions,
+            showBack: Navigator.of(context).canPop(),
+            // 刻意把**没解析过**的值传下去：页头要能分清「调用方没指定」和
+            // 「调用方指定了透明」——前者在壁纸模式下需要自带一层蒙版，
+            // 后者（记一笔页）绝不能被糊住。解析成 canvas 再传，这两种就
+            // 变成同一个透明色，分不出来了。
+            background: backgroundColor,
+          ),
+          Expanded(child: body!),
+          if (bottom != null) bottom!,
+        ],
+      );
+    } else {
+      final scroll = CustomScrollView(
+        controller: controller,
+        slivers: [
+          AppHeaderSliver(
+            title: title,
+            actions: actions,
+            showBack: Navigator.of(context).canPop(),
+            collapsible: false,
+            // 没解析过的值：页头要分清「调用方没指定」和「调用方指定了透明」。
+            // 前者在壁纸模式下自带蒙版，后者（记一笔页）不能被糊住。
+            background: backgroundColor,
+          ),
+          ...slivers,
+        ],
+      );
+      page = bottom == null
           ? scroll
           : Column(
               children: [
                 Expanded(child: scroll),
                 bottom!,
               ],
+            );
+    }
+    return Material(
+      // 页底仍然要解析：壁纸模式下它是透明的，壁纸从这里透上来。
+      color: backgroundColor ?? context.colors.canvas,
+      child: page,
+    );
+  }
+}
+
+/// 二级页的固定页头。几何与吸顶条的紧凑态相同，但不在滚动体里。
+///
+/// 内容不会从它背后穿过，所以不挂毛玻璃。底边留一条分隔线，
+/// 避免正文直接贴上标题。
+class _FixedHeader extends StatelessWidget {
+  const _FixedHeader({
+    required this.title,
+    required this.actions,
+    required this.showBack,
+    required this.background,
+  });
+
+  final String title;
+  final List<Widget>? actions;
+  final bool showBack;
+  final Color? background;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    return SizedBox(
+      height: top + kAppHeaderHeight,
+      width: double.infinity,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: context.colors.lineSoft,
+              width: _kDividerThickness,
             ),
+          ),
+        ),
+        child: AppChromeGlass(
+          translucency: 0,
+          background: background,
+          child: Padding(
+            padding: EdgeInsets.only(top: top),
+            child: Material(
+              type: MaterialType.transparency,
+              child: _HeaderContent(
+                t: 1,
+                title: title,
+                actions: actions,
+                showBack: showBack,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
