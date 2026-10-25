@@ -13,6 +13,7 @@ import '../application/ai_approval.dart';
 import '../application/ai_chat_session.dart';
 import '../application/ai_settings.dart';
 import '../data/ai_chat_store.dart';
+import 'ai_bill_confirm_dialog.dart';
 import 'ai_chat_pane.dart';
 import 'ai_settings_screen.dart';
 
@@ -145,12 +146,14 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 
   Future<bool> _showApproval(ToolApprovalRequest request) async {
     if (!mounted) return false;
-    final result = await showAppConfirmDialog(
-      context,
-      message: request.message,
-      confirmLabel: request.confirmLabel,
-      accent: request.destructive ? null : context.colors.primary,
-    );
+    final result = request.bill == null
+        ? await showAppConfirmDialog(
+            context,
+            message: request.message,
+            confirmLabel: request.confirmLabel,
+            accent: request.destructive ? null : context.colors.primary,
+          )
+        : await showAiBillConfirmDialog(context, request);
     return result && mounted;
   }
 

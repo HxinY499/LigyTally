@@ -602,16 +602,12 @@ void main() {
       // 长按仍然是单条删除，不能误进批量选择。
       expect(find.textContaining('已选择'), findsNothing);
 
-      // 原来「取消」是裸 TextButton，宽度只跟着文字走，
-      // 和撑满的「确定」并排时一长一短。这条锁住两颗按钮等宽。
+      // 两颗都是撑满宽度的实心按钮，宽度和高度要一致。
       final confirm = tester.getSize(
-        find.ancestor(
-          of: find.text('确定'),
-          matching: find.byType(OutlinedButton),
-        ),
+        find.ancestor(of: find.text('确定'), matching: find.byType(FilledButton)),
       );
       final cancel = tester.getSize(
-        find.ancestor(of: find.text('取消'), matching: find.byType(TextButton)),
+        find.ancestor(of: find.text('取消'), matching: find.byType(FilledButton)),
       );
       expect(cancel.width, confirm.width);
       // 高度也应一致（同一组 vertical padding + 同字号）。

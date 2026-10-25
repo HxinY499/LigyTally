@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
 import '../../core/theme/app_theme.dart';
+import 'app_confirm_dialog.dart';
 
 /// 备份密码输入弹窗：圆角白卡 + 一个输入框 + 竖排两颗撑满宽度的按钮。
 ///
@@ -122,40 +123,10 @@ class _PasswordDialogState extends State<_PasswordDialog> {
               ),
             ),
             const SizedBox(height: 22),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: _submit,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: colors.primary,
-                  side: BorderSide(color: colors.primary, width: 1.5),
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(borderRadius: radii.sheetAll),
-                ),
-                child: Text(
-                  widget.confirmLabel,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
-                  foregroundColor: colors.ink,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(borderRadius: radii.sheetAll),
-                ),
-                child: const Text(
-                  '取消',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
+            AppConfirmButtons(
+              confirmLabel: widget.confirmLabel,
+              onConfirm: _submit,
+              onCancel: () => Navigator.pop(context),
             ),
           ],
         ),

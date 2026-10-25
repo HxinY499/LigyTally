@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/widgets/app_widgets.dart';
 
 /// 从下方弹出的月份选择器：两列滚轮（年/月），iOS 风。
 ///
@@ -127,50 +128,11 @@ class _MonthPickerDialogState extends State<_MonthPickerDialog> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop(DateTime(_year, _month)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: colors.primary,
-                      side: BorderSide(color: colors.primary, width: 1.5),
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: context.radii.sheetAll,
-                      ),
-                    ),
-                    child: const Text(
-                      '确定',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // 与「确定」同宽同高：一长一短会看着像没对齐，
-                // 也和 showAppConfirmDialog 的按钮区保持一致。
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: TextButton.styleFrom(
-                      foregroundColor: colors.ink,
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: context.radii.sheetAll,
-                      ),
-                    ),
-                    child: const Text(
-                      '取消',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                AppConfirmButtons(
+                  confirmLabel: '确定',
+                  onConfirm: () =>
+                      Navigator.of(context).pop(DateTime(_year, _month)),
+                  onCancel: () => Navigator.of(context).pop(),
                 ),
               ],
             ),

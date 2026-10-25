@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/widgets/app_widgets.dart';
 
 /// 改地点名。返回 null 表示取消；空串表示清掉文案、只留坐标。
 Future<String?> showLocationNameDialog(
@@ -96,37 +97,10 @@ class _LocationNameDialogState extends State<_LocationNameDialog> {
               ),
             ),
             const SizedBox(height: 22),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: _submit,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: colors.primary,
-                  side: BorderSide(color: colors.primary, width: 1.5),
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(borderRadius: radii.sheetAll),
-                ),
-                child: const Text(
-                  '确定',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
-                  foregroundColor: colors.ink,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(borderRadius: radii.sheetAll),
-                ),
-                child: const Text(
-                  '取消',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
+            AppConfirmButtons(
+              confirmLabel: '确定',
+              onConfirm: _submit,
+              onCancel: () => Navigator.pop(context),
             ),
           ],
         ),

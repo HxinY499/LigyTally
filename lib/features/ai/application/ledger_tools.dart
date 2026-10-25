@@ -1,6 +1,7 @@
 import 'package:flutter_ai_tools/flutter_ai_tools.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/location/place_fix.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../ledger/application/ledger_service.dart';
 import 'ai_approval.dart';
@@ -17,6 +18,7 @@ class LedgerToolService {
       _categoryBreakdownTool().withExecutor((args) => categoryBreakdown(args)),
       _searchTool().withExecutor((args) => searchTransactions(args)),
       _saveTool().withExecutor((args) => saveTransaction(args)),
+      _updateTool().withExecutor((args) => updateTransaction(args)),
       _deleteTool().withExecutor((args) => deleteTransactions(args)),
     ]);
   }
@@ -75,7 +77,7 @@ class LedgerToolService {
     name: 'search_transactions',
     description:
         '按日期范围、关键词、收支类型或分类查账单。用于定位用户说的某一笔/某一类账单，'
-        '也是删除前必须调用的一步。最多返回 30 条，超过时 truncated=true。'
+        '也是修改和删除前必须调用的一步。最多返回 30 条，超过时 truncated=true。'
         '不要凭记忆猜账单 id。',
     parametersSchema: const {
       'type': 'object',
@@ -146,6 +148,49 @@ class LedgerToolService {
     execute: null,
   );
 
+  static ToolSpec _updateTool() => ToolSpec(
+    name: 'update_transaction',
+    description:
+        '修改已经存在的一笔账单。必须先用 search_transactions 拿到 id，不要猜。'
+        '一次只改一笔，只传要改的字段，没传的金额、分类、日期、备注保持原样。'
+        '改日期传 accountingDate；改 kind 时必须同时传匹配的 categoryId。'
+        '这个工具不改图片和位置。会先弹给用户确认，返回成功前不要说已经改好。'
+        '金额单位是分。',
+    parametersSchema: const {
+      'type': 'object',
+      'properties': {
+        'id': {'type': 'string', 'description': 'search_transactions 返回的账单 id'},
+        'kind': {
+          'type': 'string',
+          'enum': ['expense', 'income'],
+        },
+        'amountCents': {
+          'type': 'integer',
+          'minimum': 1,
+          'maximum': 100000000,
+          'description': '新金额，单位分',
+        },
+        'categoryId': {'type': 'string', 'description': '新分类 id，必须来自系统提供的分类列表'},
+        'accountingDate': {
+          'type': 'string',
+          'description': '新的记账日 YYYY-MM-DD。改哪一天传这个，不要只改 occurredAt',
+        },
+        'note': {
+          'type': 'string',
+          'maxLength': 200,
+          'description': '新备注。传空字符串会清空备注；不传则保留',
+        },
+        'occurredAt': {
+          'type': 'string',
+          'description': '新的发生时刻 ISO 8601。只改钟点时使用',
+        },
+      },
+      'required': ['id'],
+      'additionalProperties': false,
+    },
+    execute: null,
+  );
+
   static ToolSpec _deleteTool() => ToolSpec(
     name: 'delete_transactions',
     description:
@@ -175,12 +220,43 @@ class LedgerToolService {
         return ToolApprovalRequest(
           toolName: call.toolName,
           confirmLabel: '确认记账',
+          title: '记一笔',
+          bill: ToolApprovalBill(
+            kind: draft.kind,
+            amountCents: draft.amountCents,
+            accountingDate: draft.accountingDate,
+            categoryName: draft.category.name,
+            note: draft.note,
+          ),
           message:
               'AI 想记一笔：\n'
               '${draft.kind == 1 ? '收入' : '支出'} ${formatMoney(draft.amountCents)}'
               ' · ${draft.category.name}\n'
               '${dateKey(draft.accountingDate)}'
               '${draft.note.isEmpty ? '' : ' · ${draft.note}'}',
+        );
+      case 'update_transaction':
+        final update = await _readUpdate(call.args);
+        if (update.changes.isEmpty) return null;
+        final kept = await _keptSideEffects(update.item);
+        return ToolApprovalRequest(
+          toolName: call.toolName,
+          confirmLabel: '确认修改',
+          title: '修改这笔',
+          bill: ToolApprovalBill(
+            kind: update.kind,
+            amountCents: update.amountCents,
+            accountingDate: update.accountingDate,
+            categoryName: update.category.name,
+            note: update.note,
+          ),
+          changes: update.changes,
+          footnote: kept.isEmpty ? null : kept,
+          message:
+              'AI 想修改这笔账单：\n'
+              '${_transactionLine(update.item)}\n'
+              '${update.changes.map((change) => '${change.label} ${change.before} → ${change.after}').join('\n')}'
+              '${kept.isEmpty ? '' : '\n$kept'}',
         );
       case 'delete_transactions':
         final items = await _readDeleteItems(call.args);
@@ -351,6 +427,48 @@ class LedgerToolService {
     };
   }
 
+  Future<Map<String, Object?>> updateTransaction(
+    Map<String, Object?> args,
+  ) async {
+    final update = await _readUpdate(args);
+    final tx = update.item.transaction;
+    if (update.changes.isEmpty) {
+      return _updateResult(update, changed: false);
+    }
+    final images = await database.imagesFor(tx.id);
+    await ledgerService.save(
+      existing: update.item,
+      kind: update.kind,
+      amountCents: update.amountCents,
+      categoryId: update.category.id,
+      accountingDate: update.accountingDate,
+      occurredAt: update.occurredAt,
+      note: update.note,
+      place: PlaceFix.tryFrom(tx),
+      pendingImages: const [],
+      existingImages: images,
+      removedImageIds: const {},
+    );
+    return _updateResult(update, changed: true);
+  }
+
+  Map<String, Object?> _updateResult(
+    _TxnUpdate update, {
+    required bool changed,
+  }) {
+    return {
+      'ok': true,
+      'changed': changed,
+      'transactionId': update.item.transaction.id,
+      'kind': update.kind == 0 ? 'expense' : 'income',
+      'amountCents': update.amountCents,
+      'categoryId': update.category.id,
+      'categoryName': update.category.name,
+      'accountingDate': dateKey(update.accountingDate),
+      'note': update.note,
+    };
+  }
+
   Future<Map<String, Object?>> deleteTransactions(
     Map<String, Object?> args,
   ) async {
@@ -426,6 +544,166 @@ class LedgerToolService {
       note: note,
     );
   }
+
+  Future<_TxnUpdate> _readUpdate(Map<String, Object?> args) async {
+    final id = _requiredString(args, 'id');
+    final items = await database.transactionsByIds([id]);
+    if (items.length != 1) {
+      throw StateError('找不到这笔账单，请重新搜索确认');
+    }
+    final item = items.single;
+    final tx = item.transaction;
+    const patchKeys = [
+      'kind',
+      'amountCents',
+      'categoryId',
+      'accountingDate',
+      'note',
+      'occurredAt',
+    ];
+    if (!patchKeys.any(args.containsKey)) {
+      throw ArgumentError('至少要改一个字段');
+    }
+
+    final hasKind = args.containsKey('kind');
+    final kind = hasKind ? _kindCode(_requiredString(args, 'kind')) : tx.kind;
+    if (hasKind && kind != tx.kind && !args.containsKey('categoryId')) {
+      throw ArgumentError('改了收支类型就必须同时传入对应的 categoryId');
+    }
+    final amountCents = args.containsKey('amountCents')
+        ? _requiredInt(args, 'amountCents')
+        : tx.amountCents;
+    if (amountCents <= 0) {
+      throw ArgumentError('amountCents 必须大于 0');
+    }
+    if (amountCents > 100000000) {
+      throw ArgumentError('单笔金额过大，请核对 amountCents 是否按分填写');
+    }
+
+    final category = args.containsKey('categoryId')
+        ? await _findCategory(_requiredString(args, 'categoryId'), kind)
+        : item.category;
+    final previousOccurred = DateTime.fromMillisecondsSinceEpoch(tx.occurredAt);
+    final accountingDate = args.containsKey('accountingDate')
+        ? _parseDate(_requiredString(args, 'accountingDate'))
+        : _parseDate(tx.accountingDate);
+    final DateTime occurredAt;
+    if (args.containsKey('occurredAt')) {
+      final parsed = DateTime.tryParse(_requiredString(args, 'occurredAt'));
+      if (parsed == null) {
+        throw ArgumentError('occurredAt 不是合法的 ISO 8601 时间');
+      }
+      occurredAt = parsed;
+    } else if (dateKey(accountingDate) != tx.accountingDate) {
+      // 只改记账日时，钟点跟着挪到新的那天，和手动编辑同一条规则。
+      occurredAt = DateTime(
+        accountingDate.year,
+        accountingDate.month,
+        accountingDate.day,
+        previousOccurred.hour,
+        previousOccurred.minute,
+        previousOccurred.second,
+      );
+    } else {
+      occurredAt = previousOccurred;
+    }
+    final note = args.containsKey('note')
+        ? (_optionalString(args, 'note') ?? '').trim()
+        : tx.note;
+    if (note.length > 200) {
+      throw ArgumentError('备注不能超过 200 字');
+    }
+
+    final changes = <ToolApprovalChange>[];
+    if (kind != tx.kind) {
+      changes.add(
+        ToolApprovalChange(
+          label: '收支',
+          before: _kindLabel(tx.kind),
+          after: _kindLabel(kind),
+        ),
+      );
+    }
+    if (amountCents != tx.amountCents) {
+      changes.add(
+        ToolApprovalChange(
+          label: '金额',
+          before: formatMoney(tx.amountCents),
+          after: formatMoney(amountCents),
+        ),
+      );
+    }
+    if (category.id != item.category.id) {
+      changes.add(
+        ToolApprovalChange(
+          label: '分类',
+          before: item.category.name,
+          after: category.name,
+        ),
+      );
+    }
+    if (dateKey(accountingDate) != tx.accountingDate) {
+      changes.add(
+        ToolApprovalChange(
+          label: '日期',
+          before: tx.accountingDate,
+          after: dateKey(accountingDate),
+        ),
+      );
+    }
+    if (formatClock(occurredAt) != formatClock(previousOccurred)) {
+      changes.add(
+        ToolApprovalChange(
+          label: '时间',
+          before: formatClock(previousOccurred),
+          after: formatClock(occurredAt),
+        ),
+      );
+    }
+    if (note != tx.note) {
+      changes.add(
+        ToolApprovalChange(
+          label: '备注',
+          before: _noteLabel(tx.note),
+          after: _noteLabel(note),
+        ),
+      );
+    }
+    return _TxnUpdate(
+      item: item,
+      kind: kind,
+      amountCents: amountCents,
+      category: category,
+      accountingDate: accountingDate,
+      occurredAt: occurredAt,
+      note: note,
+      changes: changes,
+    );
+  }
+
+  Future<String> _keptSideEffects(LedgerItem item) async {
+    final images = await database.imagesFor(item.transaction.id);
+    final parts = <String>[
+      if (images.isNotEmpty) '图片保留',
+      if (item.transaction.locationLatitude != null &&
+          item.transaction.locationLongitude != null)
+        '位置保留',
+    ];
+    if (parts.isEmpty) return '';
+    return '${parts.join('，')}。';
+  }
+
+  String _transactionLine(LedgerItem item) {
+    final tx = item.transaction;
+    final note = tx.note.trim();
+    return '${tx.accountingDate} · ${_kindLabel(tx.kind)} · '
+        '${item.category.name} · ${formatMoney(tx.amountCents)}'
+        '${note.isEmpty ? '' : ' · $note'}';
+  }
+
+  String _kindLabel(int kind) => kind == 1 ? '收入' : '支出';
+
+  String _noteLabel(String note) => note.isEmpty ? '（空）' : note;
 
   Future<List<LedgerItem>> _readDeleteItems(Map<String, Object?> args) async {
     final raw = args['ids'];
@@ -532,6 +810,28 @@ class LedgerToolService {
     }
     throw ArgumentError('$key 必须是整数');
   }
+}
+
+class _TxnUpdate {
+  const _TxnUpdate({
+    required this.item,
+    required this.kind,
+    required this.amountCents,
+    required this.category,
+    required this.accountingDate,
+    required this.occurredAt,
+    required this.note,
+    required this.changes,
+  });
+
+  final LedgerItem item;
+  final int kind;
+  final int amountCents;
+  final CategoryEntry category;
+  final DateTime accountingDate;
+  final DateTime occurredAt;
+  final String note;
+  final List<ToolApprovalChange> changes;
 }
 
 extension on ToolSpec {

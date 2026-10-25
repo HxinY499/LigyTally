@@ -363,7 +363,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   Future<void> _showImageSheet() async {
     final storage = ref.read(imageStorageProvider);
     final colors = context.colors;
-    final accent = _kind == 0 ? colors.expense : colors.income;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: colors.surface,
@@ -450,26 +449,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: accent,
-                        side: BorderSide(color: accent, width: 1.5),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: context.radii.sheetAll,
-                        ),
-                      ),
-                      child: Text(
-                        '确认（$count/$kMaxTransactionImages）',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
+                  AppConfirmButtons(
+                    confirmLabel: '确认（$count/$kMaxTransactionImages）',
+                    onConfirm: () => Navigator.pop(context),
                   ),
                 ],
               ),

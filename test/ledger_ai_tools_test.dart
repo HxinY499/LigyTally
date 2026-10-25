@@ -5,6 +5,7 @@ import 'package:flutter_ai_tools/flutter_ai_tools.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:ligy_tally/core/database/app_database.dart';
+import 'package:ligy_tally/core/location/place_fix.dart';
 import 'package:ligy_tally/core/media/image_storage.dart';
 import 'package:ligy_tally/features/ai/application/ledger_tools.dart';
 import 'package:ligy_tally/features/ledger/application/ledger_service.dart';
@@ -89,6 +90,9 @@ void main() {
 
     expect(request, isNotNull);
     expect(request!.confirmLabel, '确认记账');
+    expect(request.title, '记一笔');
+    expect(request.bill?.amountCents, 2800);
+    expect(request.bill?.categoryName, '三餐');
     expect(request.message, contains('¥28.00'));
     expect(request.message, contains('三餐'));
     expect(request.message, contains('2026-10-19'));
@@ -149,6 +153,115 @@ void main() {
     });
     expect(result['deletedCount'], 1);
     expect(await database.exportTransactions(), isEmpty);
+  });
+
+  test('修改只动指定字段，图片和位置还在', () async {
+    final id = await tools.ledgerService.save(
+      kind: 0,
+      amountCents: 2800,
+      categoryId: 'expense_food_meals',
+      accountingDate: DateTime(2026, 10, 18),
+      occurredAt: DateTime(2026, 10, 18, 12, 30),
+      note: '午饭',
+      place: PlaceFix(
+        latitude: 31.2,
+        longitude: 121.5,
+        capturedAt: DateTime(2026, 10, 18, 12, 30),
+        name: '公司',
+      ),
+      pendingImages: const <XFile>[],
+      existingImages: const <TransactionImageEntry>[],
+      removedImageIds: const <String>{},
+    );
+    await database
+        .into(database.transactionImages)
+        .insert(
+          TransactionImagesCompanion.insert(
+            id: 'img-1',
+            transactionId: id,
+            imagePath: 'x/a.jpg',
+            thumbnailPath: 'x/a_thumb.jpg',
+            sizeBytes: 10,
+            createdAt: 1,
+          ),
+        );
+
+    final request = await tools.describe(
+      ToolCallPart(
+        toolCallId: 'call-edit',
+        toolName: 'update_transaction',
+        args: {'id': id, 'amountCents': 3000},
+        state: ToolCallState.inputAvailable,
+      ),
+    );
+    expect(request, isNotNull);
+    expect(request!.confirmLabel, '确认修改');
+    expect(request.title, '修改这笔');
+    expect(request.bill?.amountCents, 3000);
+    expect(request.changes.single.label, '金额');
+    expect(request.destructive, isFalse);
+    expect(request.message, contains('¥28.00'));
+    expect(request.message, contains('¥30.00'));
+    expect(request.message, contains('位置保留'));
+    expect(request.message, contains('图片保留'));
+
+    final result = await tools.updateTransaction({
+      'id': id,
+      'amountCents': 3000,
+    });
+    expect(result['changed'], isTrue);
+    expect(result['amountCents'], 3000);
+    expect(result['note'], '午饭');
+    expect(result['categoryId'], 'expense_food_meals');
+
+    final row = (await database.exportTransactions()).single;
+    expect(row.amountCents, 3000);
+    expect(row.note, '午饭');
+    expect(row.accountingDate, '2026-10-18');
+    expect(row.locationLatitude, 31.2);
+    expect(row.locationName, '公司');
+    expect(await database.imagesFor(id), hasLength(1));
+
+    final moved = await tools.updateTransaction({
+      'id': id,
+      'accountingDate': '2026-10-19',
+    });
+    expect(moved['accountingDate'], '2026-10-19');
+    final movedRow = (await database.exportTransactions()).single;
+    final occurred = DateTime.fromMillisecondsSinceEpoch(movedRow.occurredAt);
+    expect(occurred.hour, 12);
+    expect(occurred.minute, 30);
+    expect(occurred.day, 19);
+  });
+
+  test('没改动、缺字段、收支类型不匹配时不落库', () async {
+    final id = await _saveFood(tools);
+
+    final same = await tools.describe(
+      ToolCallPart(
+        toolCallId: 'call-same',
+        toolName: 'update_transaction',
+        args: {'id': id, 'amountCents': 2800},
+        state: ToolCallState.inputAvailable,
+      ),
+    );
+    expect(same, isNull);
+    final unchanged = await tools.updateTransaction({
+      'id': id,
+      'amountCents': 2800,
+    });
+    expect(unchanged['changed'], isFalse);
+
+    await expectLater(tools.updateTransaction({'id': id}), throwsArgumentError);
+    await expectLater(
+      tools.updateTransaction({'id': id, 'kind': 'income'}),
+      throwsArgumentError,
+    );
+    await expectLater(
+      tools.updateTransaction({'id': 'missing', 'amountCents': 100}),
+      throwsStateError,
+    );
+    expect((await database.exportTransactions()).single.amountCents, 2800);
   });
 
   test('分类收支类型不匹配时拒绝写入', () async {
