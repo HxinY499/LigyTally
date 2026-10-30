@@ -85,6 +85,7 @@ class SettingsItem extends StatelessWidget {
     this.trailing,
     this.showChevron = false,
     this.accent = false,
+    this.selected = false,
     this.onTap,
   });
 
@@ -99,6 +100,9 @@ class SettingsItem extends StatelessWidget {
 
   /// true 时标题与图标走品牌色，用于「有新版本可更新」这类强引导。
   final bool accent;
+
+  /// true 时图标改成实心品牌色。行背景由调用方铺，避免和浅色底座叠在一起。
+  final bool selected;
   final VoidCallback? onTap;
 
   @override
@@ -125,14 +129,16 @@ class SettingsItem extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: accent ? colors.primary : colors.primarySoft,
+                  color: accent || selected
+                      ? colors.primary
+                      : colors.primarySoft,
                   borderRadius: context.radii.chipAll,
                 ),
                 alignment: Alignment.center,
                 child: Icon(
                   icon,
                   size: 17,
-                  color: accent ? Colors.white : colors.primary,
+                  color: accent || selected ? Colors.white : colors.primary,
                 ),
               ),
               const SizedBox(width: 12),

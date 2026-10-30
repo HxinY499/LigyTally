@@ -11,8 +11,6 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../settings/presentation/settings_widgets.dart';
 import '../application/ai_settings.dart';
 
-const _deepSeekPrivacyUrl =
-    'https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html';
 const _deepSeekKeysUrl = 'https://platform.deepseek.com/api_keys';
 
 /// DeepSeek BYOK 设置页。
@@ -208,70 +206,66 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 const SectionLabel('DeepSeek'),
                 SettingsCard(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          AppTextField(
-                            controller: _keyController,
-                            label: const Text('API Key'),
-                            hint: 'sk-...',
-                            obscureText: true,
-                            autocorrect: false,
-                            enableSuggestions: false,
-                            keyboardType: TextInputType.visiblePassword,
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            '当前：${_settings?.maskedKey ?? '未配置'}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colors.inactive,
-                              height: 1.35,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          GestureDetector(
-                            onTap: () => _open(_deepSeekKeysUrl),
-                            child: Text(
-                              '去 DeepSeek 开放平台申请 Key',
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: colors.primary,
-                                height: 1.35,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          Row(
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _KeyStatus(
+                          configured: _settings?.hasKey ?? false,
+                          masked: _settings?.maskedKey ?? '未配置',
+                          onClear: (_settings?.hasKey ?? false) ? _clear : null,
+                        ),
+                        Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: colors.lineSoft,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Expanded(
-                                child: AppButton(
-                                  onPress: _saving ? null : _save,
-                                  child: Text(_saving ? '保存中…' : '保存'),
+                              AppTextField(
+                                controller: _keyController,
+                                label: const Text('API Key'),
+                                hint: (_settings?.hasKey ?? false)
+                                    ? '留空则保持当前 Key'
+                                    : 'sk-...',
+                                obscureText: true,
+                                autocorrect: false,
+                                enableSuggestions: false,
+                                keyboardType: TextInputType.visiblePassword,
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: _KeyLink(
+                                  onTap: () => _open(_deepSeekKeysUrl),
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: AppButton(
-                                  variant: AppButtonVariant.outline,
-                                  onPress: _testing ? null : _test,
-                                  child: Text(_testing ? '测试中…' : '测试连接'),
-                                ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: AppButton(
+                                      onPress: _saving ? null : _save,
+                                      child: Text(_saving ? '保存中…' : '保存'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: AppButton(
+                                      variant: AppButtonVariant.outline,
+                                      onPress: _testing ? null : _test,
+                                      child: Text(_testing ? '测试中…' : '测试连接'),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                          if (_settings?.hasKey ?? false) ...[
-                            const SizedBox(height: 8),
-                            AppButton(
-                              variant: AppButtonVariant.ghost,
-                              onPress: _clear,
-                              child: const Text('清除 Key'),
-                            ),
-                          ],
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -280,22 +274,17 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 SettingsCard(
                   children: [
                     for (final model in kDeepSeekModels)
-                      SettingsItem(
-                        icon: model == 'deepseek-flash'
-                            ? FLucideIcons.zap
-                            : FLucideIcons.brain,
+                      _ModelOption(
                         title: model,
                         subtitle: model == 'deepseek-flash'
                             ? '日常查账、记账，速度快'
                             : '复杂分析，成本更高',
-                        trailing: model == _model
-                            ? Icon(
-                                FLucideIcons.check,
-                                size: 18,
-                                color: colors.primary,
-                              )
-                            : null,
+                        icon: model == 'deepseek-flash'
+                            ? FLucideIcons.zap
+                            : FLucideIcons.brain,
+                        selected: model == _model,
                         onTap: () async {
+                          // 模型单独落盘，不跟 Key 绑成同一次保存。
                           setState(() => _model = model);
                           await ref
                               .read(aiSettingsProvider.notifier)
@@ -304,38 +293,16 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 18),
-                const SectionLabel('数据与隐私'),
-                SettingsCard(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        'Key 只保存在本机 Android Keystore，AI 请求直接发往 DeepSeek，不经过本应用服务器。\n\n'
-                        '使用 AI 时，你输入的问题、本次查询所需的账单摘要或片段，以及当前时间会发送给 DeepSeek；图片、位置和备份不会发送。AI 对话保存在本机，可在聊天页清空。\n\n'
-                        'DeepSeek 可能按其隐私政策处理这些数据，请先阅读并确认。',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: colors.ink,
-                          height: 1.55,
-                        ),
-                      ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Text(
+                    '点选后立即生效。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.inactive,
+                      height: 1.4,
                     ),
-                    SettingsItem(
-                      icon: FLucideIcons.shieldCheck,
-                      title: 'DeepSeek 隐私政策',
-                      showChevron: true,
-                      onTap: () => _open(_deepSeekPrivacyUrl),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'AI 可能理解错金额或分类。涉及删除时会弹确认，记账前请核对摘要。',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colors.inactive,
-                    height: 1.45,
                   ),
                 ),
               ],
@@ -343,6 +310,154 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _KeyStatus extends StatelessWidget {
+  const _KeyStatus({
+    required this.configured,
+    required this.masked,
+    this.onClear,
+  });
+
+  final bool configured;
+  final String masked;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 14, onClear == null ? 16 : 6, 14),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: colors.primarySoft,
+              borderRadius: context.radii.chipAll,
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              configured ? FLucideIcons.circleCheck : FLucideIcons.keyRound,
+              size: 17,
+              color: colors.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  configured ? 'Key 已配置' : '尚未配置',
+                  style: TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w600,
+                    color: colors.ink,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  configured ? masked : '填入自己的 DeepSeek Key 后即可使用',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.inactive,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onClear != null)
+            TextButton(
+              onPressed: onClear,
+              style: TextButton.styleFrom(
+                foregroundColor: colors.danger,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                '清除',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KeyLink extends StatelessWidget {
+  const _KeyLink({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '去 DeepSeek 开放平台申请 Key',
+              style: TextStyle(
+                fontSize: 13,
+                color: colors.primary,
+                height: 1.3,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(FLucideIcons.externalLink, size: 13, color: colors.primary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModelOption extends StatelessWidget {
+  const _ModelOption({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return ColoredBox(
+      color: selected ? colors.primarySoft : Colors.transparent,
+      child: SettingsItem(
+        icon: icon,
+        title: title,
+        subtitle: subtitle,
+        selected: selected,
+        trailing: selected
+            ? Icon(FLucideIcons.check, size: 18, color: colors.primary)
+            : const SizedBox(width: 18, height: 18),
+        onTap: onTap,
+      ),
     );
   }
 }
