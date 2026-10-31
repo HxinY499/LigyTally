@@ -20,6 +20,8 @@ const _zh = AiLocalizations(
   toolResult: '结果',
   toolError: '错误',
   scrollToLatest: '回到最新',
+  attach: '上传图片',
+  removeAttachment: '移除图片',
 );
 
 /// 聊天记录 + 输入框。
@@ -35,7 +37,8 @@ class AiChatPane extends StatefulWidget {
     required this.controller,
     this.empty,
     this.banner,
-    this.hintText = '问账单，或说「记一笔午饭 28 元」',
+    this.hintText = '',
+    this.onPickAttachment,
   });
 
   final UseChatController controller;
@@ -44,6 +47,9 @@ class AiChatPane extends StatefulWidget {
   /// 放在记录上方、输入框同一列里。错误条走这里，才能用到本页的中文文案。
   final Widget? banner;
   final String hintText;
+
+  /// 非空时输入框左侧出现上传图片按钮。
+  final Future<List<FilePart>> Function()? onPickAttachment;
 
   @override
   State<AiChatPane> createState() => _AiChatPaneState();
@@ -154,6 +160,7 @@ class _AiChatPaneState extends State<AiChatPane> {
             child: AiPromptInput(
               controller: widget.controller,
               hintText: widget.hintText,
+              onPickAttachment: widget.onPickAttachment,
             ),
           ),
         ],

@@ -11,6 +11,9 @@ const kDeepSeekModels = <String>['deepseek-flash', 'deepseek-v4-pro'];
 
 const kDeepSeekDefaultModel = 'deepseek-flash';
 
+/// 官方定价表里只有 flash 标了 Vision。v4-pro 带图会直接 400。
+bool deepSeekModelAcceptsImages(String model) => model == 'deepseek-flash';
+
 class AiSettings {
   const AiSettings({this.apiKey, this.model = kDeepSeekDefaultModel});
 

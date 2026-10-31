@@ -14,6 +14,7 @@ import '../application/ai_chat_session.dart';
 import '../application/ai_settings.dart';
 import '../data/ai_chat_store.dart';
 import 'ai_bill_confirm_dialog.dart';
+import 'ai_chat_images.dart';
 import 'ai_chat_pane.dart';
 import 'ai_settings_screen.dart';
 
@@ -40,6 +41,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   bool _loading = true;
   Object? _error;
   int _generation = 0;
+  String _model = kDeepSeekDefaultModel;
+  String _headerTitle = '新会话';
 
   @override
   void initState() {
@@ -86,6 +89,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       if (!settings.hasKey) {
         setState(() {
           _settings = settings;
+          _model = settings.model;
           _threadId = null;
           _threads = const [];
           _loading = false;
@@ -127,6 +131,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       if (!mounted || generation != _generation) return;
       setState(() {
         _settings = settings;
+        _model = settings.model;
         _threads = refreshed;
         _loading = false;
       });
@@ -313,21 +318,72 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     return 'AI 请求失败：$short';
   }
 
+  Future<void> _applyModel(String model) async {
+    if (!kDeepSeekModels.contains(model) || model == _model) return;
+    setState(() => _model = model);
+    _session?.useModel(model);
+    await ref.read(aiSettingsProvider.notifier).setModel(model);
+  }
+
+  Future<void> _openModelSheet() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _ModelSheet(selected: _model),
+    );
+    if (picked == null || !mounted) return;
+    await _applyModel(picked);
+  }
+
+  Future<List<FilePart>> _pickImages() async {
+    if (!deepSeekModelAcceptsImages(_model)) {
+      showAppToast(
+        context,
+        message: 'deepseek-v4-pro 不能看图，请先切到 deepseek-flash',
+      );
+      return const [];
+    }
+    return pickChatImages(context);
+  }
+
+  String _titleFrom(UseChatController chat) {
+    for (final message in chat.messages) {
+      if (message.role != AiRole.user) continue;
+      final text = message.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+      if (text.isNotEmpty) return text;
+      if (message.parts.whereType<FilePart>().isNotEmpty) return '图片';
+    }
+    return '新会话';
+  }
+
+  Widget? _headerCenter() {
+    final session = _session;
+    if (session != null) {
+      return ListenableBuilder(
+        listenable: session.chat,
+        builder: (context, _) {
+          final title = _titleFrom(session.chat);
+          _headerTitle = title;
+          return _ConversationTitle(
+            title: title,
+            onTap: () => unawaited(_openConversationSheet()),
+          );
+        },
+      );
+    }
+    if (_settings?.hasKey != true || _threadId == null) return null;
+    return _ConversationTitle(
+      title: _headerTitle,
+      onTap: () => unawaited(_openConversationSheet()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final chatting = _settings?.hasKey == true && _threadId != null;
     final actions = <Widget>[
-      if (_session != null)
-        AppHeaderAction(
-          icon: FLucideIcons.history,
-          tooltip: '会话列表',
-          onTap: () => unawaited(_openConversationSheet()),
-        ),
-      if (_session != null)
-        AppHeaderAction(
-          icon: FLucideIcons.plus,
-          tooltip: '新建会话',
-          onTap: () => unawaited(_newConversation()),
-        ),
+      if (chatting)
+        _ModelButton(model: _model, onTap: () => unawaited(_openModelSheet())),
       AppHeaderAction(
         icon: FLucideIcons.settings2,
         tooltip: 'AI 设置',
@@ -349,10 +405,19 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         maskedKey: _settings?.maskedKey,
       );
     } else {
-      body = _ChatBody(session: _session!, themed: _themed);
+      body = _ChatBody(
+        session: _session!,
+        themed: _themed,
+        onPickAttachment: _pickImages,
+      );
     }
     return Scaffold(
-      body: AppTopBar(title: 'AI 助手', actions: actions, body: body),
+      body: AppTopBar(
+        title: 'AI 助手',
+        center: _headerCenter(),
+        actions: actions,
+        body: body,
+      ),
     );
   }
 
@@ -398,17 +463,22 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 }
 
 class _ChatBody extends StatelessWidget {
-  const _ChatBody({required this.session, required this.themed});
+  const _ChatBody({
+    required this.session,
+    required this.themed,
+    required this.onPickAttachment,
+  });
 
   final AiChatSession session;
   final Widget Function(Widget child) themed;
+  final Future<List<FilePart>> Function() onPickAttachment;
 
   @override
   Widget build(BuildContext context) {
     return themed(
       AiChatPane(
         controller: session.chat,
-        hintText: '问账单，或说「记一笔午饭 28 元」',
+        onPickAttachment: onPickAttachment,
         empty: _AiWelcome(
           onSelected: (text) => unawaited(session.chat.sendText(text)),
         ),
@@ -777,6 +847,157 @@ class _ConversationSheet extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConversationTitle extends StatelessWidget {
+  const _ConversationTitle({required this.title, required this.onTap});
+
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Tooltip(
+      message: '切换会话',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final maxText = (constraints.maxWidth - 22).clamp(
+                0.0,
+                constraints.maxWidth,
+              );
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxText),
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        color: colors.ink,
+                      ),
+                    ),
+                  ),
+                  Icon(FLucideIcons.chevronDown, size: 16, color: colors.muted),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModelButton extends StatelessWidget {
+  const _ModelButton({required this.model, required this.onTap});
+
+  final String model;
+  final VoidCallback onTap;
+
+  String get _label => switch (model) {
+    'deepseek-flash' => 'flash',
+    'deepseek-v4-pro' => 'v4-pro',
+    _ => model,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Tooltip(
+      message: '切换模型',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: colors.muted,
+                ),
+              ),
+              Icon(FLucideIcons.chevronDown, size: 14, color: colors.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModelSheet extends StatelessWidget {
+  const _ModelSheet({required this.selected});
+
+  final String selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SafeArea(
+      top: false,
+      child: Material(
+        color: colors.surface,
+        borderRadius: context.radii.sheetTop,
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 38,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.line,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '模型',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: colors.ink,
+                  ),
+                ),
+              ),
+            ),
+            for (final model in kDeepSeekModels)
+              ListTile(
+                title: Text(model),
+                subtitle: Text(
+                  model == 'deepseek-flash' ? '日常查账，可以看图' : '复杂分析，不能看图',
+                ),
+                trailing: model == selected
+                    ? Icon(FLucideIcons.check, size: 18, color: colors.primary)
+                    : null,
+                onTap: () => Navigator.pop(context, model),
+              ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );

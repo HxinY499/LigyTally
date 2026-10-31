@@ -269,11 +269,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('问问你的账本'), findsOneWidget);
-    await tester.tap(find.byTooltip('会话列表'));
+    expect(find.byTooltip('会话列表'), findsNothing);
+    expect(find.text('新会话'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('切换会话'));
     await tester.pumpAndSettle();
 
     expect(find.text('会话'), findsOneWidget);
     expect(find.text('新建'), findsOneWidget);
     expect(find.text('新会话'), findsWidgets);
+
+    Navigator.of(tester.element(find.text('会话'))).pop();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('切换模型'));
+    await tester.pumpAndSettle();
+    expect(find.text('deepseek-flash'), findsOneWidget);
+    expect(find.text('deepseek-v4-pro'), findsOneWidget);
+    expect(find.textContaining('可以看图'), findsOneWidget);
+    expect(find.textContaining('不能看图'), findsOneWidget);
   });
 }

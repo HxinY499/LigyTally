@@ -601,6 +601,7 @@ class AppTopBar extends StatelessWidget {
   const AppTopBar({
     super.key,
     required this.title,
+    this.center,
     this.slivers = const [],
     this.body,
     this.actions,
@@ -610,6 +611,11 @@ class AppTopBar extends StatelessWidget {
   });
 
   final String title;
+
+  /// 非空时替换紧凑条中间的标题。返回和右侧操作仍在原来的位置。
+  ///
+  /// 只作用于固定页头（[body]）。滚动页头继续用左对齐的 [title]。
+  final Widget? center;
 
   /// 页头下方的滚动内容。
   final List<Widget> slivers;
@@ -641,6 +647,7 @@ class AppTopBar extends StatelessWidget {
         children: [
           _FixedHeader(
             title: title,
+            center: center,
             actions: actions,
             showBack: Navigator.of(context).canPop(),
             // 刻意把**没解析过**的值传下去：页头要能分清「调用方没指定」和
@@ -686,6 +693,46 @@ class AppTopBar extends StatelessWidget {
   }
 }
 
+/// 固定页头的中间槽：返回和右侧操作钉在两端，[center] 占中间剩余宽度。
+class _CenteredHeader extends StatelessWidget {
+  const _CenteredHeader({
+    required this.center,
+    required this.actions,
+    required this.showBack,
+  });
+
+  final Widget center;
+  final List<Widget>? actions;
+  final bool showBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final actionList = actions ?? const <Widget>[];
+    return SizedBox(
+      height: kAppHeaderHeight,
+      child: Row(
+        children: [
+          if (showBack)
+            const Padding(
+              padding: EdgeInsets.only(left: _actionEdgeInset),
+              child: _BackButton(),
+            )
+          else
+            const SizedBox(width: kAppHeaderGutter),
+          Expanded(child: center),
+          if (actionList.isEmpty)
+            const SizedBox(width: kAppHeaderGutter)
+          else
+            Padding(
+              padding: const EdgeInsets.only(right: _actionEdgeInset),
+              child: Row(mainAxisSize: MainAxisSize.min, children: actionList),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 二级页的固定页头。几何与吸顶条的紧凑态相同，但不在滚动体里。
 ///
 /// 内容不会从它背后穿过，所以不挂毛玻璃。底边留一条分隔线，
@@ -693,12 +740,14 @@ class AppTopBar extends StatelessWidget {
 class _FixedHeader extends StatelessWidget {
   const _FixedHeader({
     required this.title,
+    required this.center,
     required this.actions,
     required this.showBack,
     required this.background,
   });
 
   final String title;
+  final Widget? center;
   final List<Widget>? actions;
   final bool showBack;
   final Color? background;
@@ -725,12 +774,18 @@ class _FixedHeader extends StatelessWidget {
             padding: EdgeInsets.only(top: top),
             child: Material(
               type: MaterialType.transparency,
-              child: _HeaderContent(
-                t: 1,
-                title: title,
-                actions: actions,
-                showBack: showBack,
-              ),
+              child: center == null
+                  ? _HeaderContent(
+                      t: 1,
+                      title: title,
+                      actions: actions,
+                      showBack: showBack,
+                    )
+                  : _CenteredHeader(
+                      center: center!,
+                      actions: actions,
+                      showBack: showBack,
+                    ),
             ),
           ),
         ),
