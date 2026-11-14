@@ -137,6 +137,85 @@ bool isAssistantTurnHead(AiMessage message, List<AiMessage> messages) {
   return true;
 }
 
+/// 一轮里要画出来的一块内容，带着它所属的那条消息。
+class TurnPiece {
+  const TurnPiece(this.message, this.part);
+
+  final AiMessage message;
+  final AiPart part;
+}
+
+/// 一轮助手回复拆成「过程」和「最后一段文字」。
+///
+/// 过程包括最后一段正文之前的文字、思考和工具调用。没有正文时全部算过程。
+class TurnContent {
+  const TurnContent({required this.process, this.answer, this.answerMessage});
+
+  final List<TurnPiece> process;
+  final TextPart? answer;
+  final AiMessage? answerMessage;
+}
+
+/// 从这条助手消息起到下一个用户消息之前，含中间的工具结果。
+List<AiMessage> messagesInTurn(AiMessage head, List<AiMessage> messages) {
+  final index = messages.indexWhere((item) => item.id == head.id);
+  if (index < 0) return [head];
+  final turn = <AiMessage>[];
+  for (var i = index; i < messages.length; i++) {
+    if (i != index && messages[i].role == AiRole.user) break;
+    turn.add(messages[i]);
+  }
+  return turn;
+}
+
+TurnContent splitAssistantTurn(List<AiMessage> turn) {
+  final pieces = <TurnPiece>[];
+  for (final message in turn) {
+    if (message.role != AiRole.assistant) continue;
+    for (final part in message.parts) {
+      if (!_visiblePiece(part)) continue;
+      pieces.add(TurnPiece(message, part));
+    }
+  }
+  var lastText = -1;
+  for (var i = 0; i < pieces.length; i++) {
+    if (pieces[i].part is TextPart) lastText = i;
+  }
+  if (lastText < 0) {
+    return TurnContent(process: pieces);
+  }
+  final answer = pieces[lastText];
+  return TurnContent(
+    process: pieces.sublist(0, lastText),
+    answer: answer.part as TextPart,
+    answerMessage: answer.message,
+  );
+}
+
+/// 折叠行上的短标题。
+String workProcessLabel(List<TurnPiece> process) {
+  var thoughts = 0;
+  var tools = 0;
+  for (final piece in process) {
+    if (piece.part is ReasoningPart) thoughts++;
+    if (piece.part is ToolCallPart) tools++;
+  }
+  final bits = <String>[];
+  if (thoughts > 0) bits.add('思考');
+  if (tools == 1) bits.add('1 个工具');
+  if (tools > 1) bits.add('$tools 个工具');
+  if (bits.isEmpty) return '过程';
+  return bits.join(' · ');
+}
+
+bool _visiblePiece(AiPart part) {
+  if (part is DataPart && part.dataType == kTurnTimingDataType) return false;
+  if (part is ToolResultPart) return false;
+  if (part is TextPart && part.text.trim().isEmpty) return false;
+  if (part is ReasoningPart && part.text.trim().isEmpty) return false;
+  return true;
+}
+
 String? assistantTurnHeadId(AiConversation conversation) {
   final messages = conversation.messages;
   final lastUser = messages.lastIndexWhere(

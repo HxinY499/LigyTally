@@ -86,6 +86,41 @@ void main() {
     expect(AiReasoningEffort.fromWire('nope'), AiReasoningEffort.high);
   });
 
+  test('一轮结束后，最后一段文字之外都算过程', () {
+    final first = AiMessage(
+      id: 'a1',
+      role: AiRole.assistant,
+      parts: const [
+        ReasoningPart('先查'),
+        TextPart('我先看一下范围。'),
+        ToolCallPart(
+          toolCallId: 'c1',
+          toolName: 'search_transactions',
+          state: ToolCallState.outputAvailable,
+        ),
+      ],
+    );
+    final second = AiMessage.text(
+      id: 'a2',
+      role: AiRole.assistant,
+      text: '这个月餐饮花了 28 元。',
+    );
+    final content = splitAssistantTurn([first, second]);
+    expect(content.answer?.text, '这个月餐饮花了 28 元。');
+    expect(content.process.map((piece) => piece.part.runtimeType).toList(), [
+      ReasoningPart,
+      TextPart,
+      ToolCallPart,
+    ]);
+    expect(workProcessLabel(content.process), '思考 · 1 个工具');
+    expect(
+      splitAssistantTurn([
+        AiMessage.text(id: 'a', role: AiRole.assistant, text: '只有回答'),
+      ]).process,
+      isEmpty,
+    );
+  });
+
   test('DeepSeek 的 reasoning_content 会变成思考增量，并且排在正文前面', () {
     final parser = DeepSeekChunkParser();
     final started = parser.parse({

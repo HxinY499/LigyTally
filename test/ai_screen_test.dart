@@ -352,17 +352,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('用时 1.2 秒'), findsOneWidget);
-    expect(find.text('思考'), findsOneWidget);
+    expect(find.textContaining('本月支出不多'), findsOneWidget);
+    expect(find.text('思考 · 1 个工具'), findsOneWidget);
     expect(find.textContaining('先对一下'), findsNothing);
+    expect(
+      find.text('查询${formatDateSpan('2026-11-01', '2026-11-14')}的收支'),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('思考 · 1 个工具'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('先对一下'), findsOneWidget);
     expect(
       find.text('查询${formatDateSpan('2026-11-01', '2026-11-14')}的收支'),
       findsOneWidget,
     );
     expect(find.text('get_cashflow_summary'), findsNothing);
-
-    await tester.tap(find.text('思考'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('先对一下'), findsOneWidget);
 
     await tester.tap(
       find.text('查询${formatDateSpan('2026-11-01', '2026-11-14')}的收支'),

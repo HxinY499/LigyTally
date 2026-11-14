@@ -9,8 +9,7 @@ import 'package:forui/forui.dart';
 import '../../../core/theme/app_theme.dart';
 import '../application/ai_turn_format.dart';
 import 'ai_composer_bar.dart';
-import 'ai_thinking_block.dart';
-import 'ai_tool_row.dart';
+import 'ai_turn_body.dart';
 import 'ai_turn_label.dart';
 
 const _zh = AiLocalizations(
@@ -238,26 +237,31 @@ class _AiChatPaneState extends State<AiChatPane> {
         final fromBottom = showLoader ? index - 1 : index;
         final message = messages[messages.length - 1 - fromBottom];
         if (message.role == AiRole.tool) return const SizedBox.shrink();
-        final head = isAssistantTurnHead(message, messages);
-        final fixedMs = head
-            ? turnTimingMs(message) ?? widget.elapsedOverride?.call(message.id)
-            : null;
-        final live = head && fixedMs == null
-            ? widget.turnStartedAt?.call()
-            : null;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (head && (fixedMs != null || live != null))
-              AiTurnLabel(fixedMs: fixedMs, startedAt: live),
-            AiMessageBubble(
-              key: ValueKey(message.id),
-              message: message,
-              partBuilder: (context, part, owner) =>
-                  _part(part, owner, results),
-            ),
-          ],
-        );
+        if (message.role == AiRole.assistant) {
+          if (!isAssistantTurnHead(message, messages)) {
+            return const SizedBox.shrink();
+          }
+          final fixedMs =
+              turnTimingMs(message) ?? widget.elapsedOverride?.call(message.id);
+          final live = fixedMs == null ? widget.turnStartedAt?.call() : null;
+          final lastUser = messages.lastIndexWhere(
+            (item) => item.role == AiRole.user,
+          );
+          final headIndex = messages.indexWhere(
+            (item) => item.id == message.id,
+          );
+          final working =
+              widget.controller.status.isBusy && headIndex > lastUser;
+          return AiTurnBody(
+            key: ValueKey(message.id),
+            turn: messagesInTurn(message, messages),
+            results: results,
+            working: working,
+            fixedMs: fixedMs,
+            startedAt: live,
+          );
+        }
+        return AiMessageBubble(key: ValueKey(message.id), message: message);
       },
     );
 
@@ -288,32 +292,6 @@ class _AiChatPaneState extends State<AiChatPane> {
         ],
       ),
     );
-  }
-
-  Widget? _part(
-    AiPart part,
-    AiMessage message,
-    Map<String, ToolResultPart> results,
-  ) {
-    if (part is DataPart && part.dataType == kTurnTimingDataType) {
-      return const SizedBox.shrink();
-    }
-    if (part is ToolResultPart) return const SizedBox.shrink();
-    if (part is TextPart && part.text.isEmpty) return const SizedBox.shrink();
-    if (part is ReasoningPart) {
-      final text = part.text.trim();
-      if (text.isEmpty) return const SizedBox.shrink();
-      return AiThinkingBlock(
-        text: text,
-        live:
-            message.status == AiMessageStatus.streaming &&
-            message.text.trim().isEmpty,
-      );
-    }
-    if (part is ToolCallPart) {
-      return AiToolRow(call: part, result: results[part.toolCallId]);
-    }
-    return null;
   }
 
   void _jumpToLatest() {
