@@ -5,29 +5,13 @@ import 'package:ligy_tally/features/ai/application/ai_turn_format.dart';
 import 'package:ligy_tally/features/ai/application/deepseek_provider.dart';
 
 void main() {
-  test('工具说明按参数生成，不暴露工具名', () {
+  test('工具说明用模型写的 desc，参数没到齐时先占位', () {
     expect(
-      describeToolCall('get_cashflow_summary', {
-        'from': '2026-11-01',
-        'to': '2026-11-14',
-      }),
-      '查询${formatDateSpan('2026-11-01', '2026-11-14')}的收支',
+      toolCallDesc({'desc': ' 查询这个月的收支 ', 'from': '2026-11-01'}),
+      '查询这个月的收支',
     );
-    expect(describeToolCall('search_transactions', {'query': '午饭'}), '查找「午饭」');
-    expect(
-      describeToolCall('save_transaction', {
-        'kind': 'expense',
-        'amountCents': 2800,
-      }),
-      '记一笔支出 ¥28.00',
-    );
-    expect(
-      describeToolCall('delete_transactions', {
-        'ids': ['a', 'b'],
-      }),
-      '删除 2 笔账单',
-    );
-    expect(describeToolCall('get_cashflow_summary', {}), '正在查询收支');
+    expect(toolCallDesc({'from': '2026-11-01'}), '正在调用');
+    expect(toolCallDesc({'desc': '   '}), '正在调用');
     expect(toolCategory('search_transactions'), AiToolCategory.search);
     expect(toolCategory('save_transaction'), AiToolCategory.write);
     expect(toolCategory('delete_transactions'), AiToolCategory.remove);

@@ -14,12 +14,20 @@ import 'ai_approval.dart';
 class LedgerToolService {
   LedgerToolService(this.database, this.ledgerService) {
     registry = ToolRegistry([
-      _summaryTool().withExecutor((args) => summary(args)),
-      _categoryBreakdownTool().withExecutor((args) => categoryBreakdown(args)),
-      _searchTool().withExecutor((args) => searchTransactions(args)),
-      _saveTool().withExecutor((args) => saveTransaction(args)),
-      _updateTool().withExecutor((args) => updateTransaction(args)),
-      _deleteTool().withExecutor((args) => deleteTransactions(args)),
+      _summaryTool().withExecutor((args) => summary(args)).withUserDesc(),
+      _categoryBreakdownTool()
+          .withExecutor((args) => categoryBreakdown(args))
+          .withUserDesc(),
+      _searchTool()
+          .withExecutor((args) => searchTransactions(args))
+          .withUserDesc(),
+      _saveTool().withExecutor((args) => saveTransaction(args)).withUserDesc(),
+      _updateTool()
+          .withExecutor((args) => updateTransaction(args))
+          .withUserDesc(),
+      _deleteTool()
+          .withExecutor((args) => deleteTransactions(args))
+          .withUserDesc(),
     ]);
   }
 
@@ -841,4 +849,28 @@ extension on ToolSpec {
     parametersSchema: parametersSchema,
     execute: executor,
   );
+
+  /// 每个工具都要求模型写一句给用户看的 desc。校验不通过会打回重写。
+  ToolSpec withUserDesc() => ToolSpec(
+    name: name,
+    description:
+        '$description 每次调用都必须带 desc：给用户看的一句简短中文，'
+        '说明这次在做什么，不要写工具名或参数名。',
+    parametersSchema: _schemaWithDesc(parametersSchema),
+    execute: execute,
+  );
+}
+
+Map<String, Object?> _schemaWithDesc(Map<String, Object?> schema) {
+  final properties = Map<String, Object?>.from(
+    (schema['properties'] as Map?)?.cast<String, Object?>() ?? const {},
+  );
+  properties['desc'] = const {
+    'type': 'string',
+    'maxLength': 40,
+    'description': '给用户看的一句话，说明这次调用在做什么。简短中文，不要写工具名。',
+  };
+  final required = <Object?>[...((schema['required'] as List?) ?? const [])];
+  if (!required.contains('desc')) required.add('desc');
+  return {...schema, 'properties': properties, 'required': required};
 }

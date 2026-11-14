@@ -9,7 +9,6 @@ import 'package:forui/forui.dart';
 import '../../../core/theme/app_theme.dart';
 import '../application/ai_turn_format.dart';
 import 'ai_composer_bar.dart';
-import 'ai_expand_down.dart';
 import 'ai_turn_body.dart';
 import 'ai_turn_label.dart';
 
@@ -165,38 +164,35 @@ class _AiChatPaneState extends State<AiChatPane> {
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    return AiExpandDown(
-      onToggle: _expandDown,
-      child: AiLocalizationsScope(
-        strings: _zh,
-        child: Column(
-          children: [
-            if (widget.banner != null) widget.banner!,
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: media.padding.left,
-                  right: media.padding.right,
-                ),
-                child: ListenableBuilder(
-                  listenable: widget.controller,
-                  builder: (context, _) => _transcript(),
-                ),
+    return AiLocalizationsScope(
+      strings: _zh,
+      child: Column(
+        children: [
+          if (widget.banner != null) widget.banner!,
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: media.padding.left,
+                right: media.padding.right,
+              ),
+              child: ListenableBuilder(
+                listenable: widget.controller,
+                builder: (context, _) => _transcript(),
               ),
             ),
-            _ComposerDock(
-              child: AiComposerBar(
-                controller: widget.controller,
-                hintText: widget.hintText,
-                onPickAttachment: widget.onPickAttachment,
-                model: widget.model,
-                onPickModel: widget.onPickModel,
-                reasoningLabel: widget.reasoningLabel,
-                onPickReasoning: widget.onPickReasoning,
-              ),
+          ),
+          _ComposerDock(
+            child: AiComposerBar(
+              controller: widget.controller,
+              hintText: widget.hintText,
+              onPickAttachment: widget.onPickAttachment,
+              model: widget.model,
+              onPickModel: widget.onPickModel,
+              reasoningLabel: widget.reasoningLabel,
+              onPickReasoning: widget.onPickReasoning,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -296,45 +292,6 @@ class _AiChatPaneState extends State<AiChatPane> {
         ],
       ),
     );
-  }
-
-  int _expandGeneration = 0;
-
-  /// 反向列表贴在底部时，变高会把内容往上顶。这里把标题钉在原地，让详情往下长。
-  void _expandDown(GlobalKey anchor, VoidCallback change) {
-    final origin = _anchorTop(anchor);
-    final generation = ++_expandGeneration;
-    change();
-    final started = DateTime.now();
-    void tick(Duration _) {
-      if (!mounted || generation != _expandGeneration) return;
-      final top = _anchorTop(anchor);
-      if (origin != null && top != null && _scroll.hasClients) {
-        final shift = origin - top;
-        if (shift.abs() > 0.5) {
-          final position = _scroll.position;
-          final target = (position.pixels + shift).clamp(
-            position.minScrollExtent,
-            position.maxScrollExtent,
-          );
-          if ((target - position.pixels).abs() > 0.5) {
-            position.jumpTo(target.toDouble());
-          }
-        }
-      }
-      if (DateTime.now().difference(started) <
-          const Duration(milliseconds: 260)) {
-        WidgetsBinding.instance.addPostFrameCallback(tick);
-      }
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback(tick);
-  }
-
-  double? _anchorTop(GlobalKey key) {
-    final box = key.currentContext?.findRenderObject();
-    if (box is! RenderBox || !box.hasSize || !box.attached) return null;
-    return box.localToGlobal(Offset.zero).dy;
   }
 
   void _jumpToLatest() {

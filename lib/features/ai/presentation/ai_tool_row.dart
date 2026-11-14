@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ai_client/flutter_ai_client.dart';
 import 'package:forui/forui.dart';
 
-import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../application/ai_turn_format.dart';
-import 'ai_expand_down.dart';
+import 'ai_downward_reveal.dart';
 
 /// 一次工具调用：分类图标 + 一句说明。点开才看参数和结果，外面不套方框。
 class AiToolRow extends StatefulWidget {
@@ -19,7 +18,6 @@ class AiToolRow extends StatefulWidget {
 }
 
 class _AiToolRowState extends State<AiToolRow> {
-  final GlobalKey _anchor = GlobalKey();
   bool _open = false;
 
   @override
@@ -34,22 +32,17 @@ class _AiToolRowState extends State<AiToolRow> {
         : running
         ? colors.primary
         : colors.muted;
-    final desc = describeToolCall(widget.call.toolName, widget.call.args);
+    final desc = toolCallDesc(widget.call.args);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Semantics(
-          key: _anchor,
           button: true,
           expanded: _open,
           label: desc,
           child: InkWell(
-            onTap: () => AiExpandDown.run(
-              context,
-              _anchor,
-              () => setState(() => _open = !_open),
-            ),
+            onTap: () => setState(() => _open = !_open),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -85,21 +78,14 @@ class _AiToolRowState extends State<AiToolRow> {
             ),
           ),
         ),
-        AnimatedSize(
-          duration: context.motion(const Duration(milliseconds: 180)),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topCenter,
-          child: _open
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 6),
-                  child: AiDetailFrame(
-                    child: _ToolDetails(
-                      call: widget.call,
-                      result: widget.result,
-                    ),
-                  ),
-                )
-              : const SizedBox(width: double.infinity),
+        AiDownwardReveal(
+          open: _open,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 6),
+            child: AiDetailFrame(
+              child: _ToolDetails(call: widget.call, result: widget.result),
+            ),
+          ),
         ),
       ],
     );
@@ -137,7 +123,7 @@ class _ToolDetails extends StatelessWidget {
         const SizedBox(height: 8),
         Text('参数', style: label),
         const SizedBox(height: 4),
-        StructuredValue(value: call.args),
+        StructuredValue(value: _withoutDesc(call.args)),
         if (result != null) ...[
           const SizedBox(height: 10),
           Text(result!.isError ? '错误' : '结果', style: label),
@@ -146,6 +132,14 @@ class _ToolDetails extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  static Map<String, Object?> _withoutDesc(Map<String, Object?> args) {
+    if (!args.containsKey('desc')) return args;
+    return {
+      for (final entry in args.entries)
+        if (entry.key != 'desc') entry.key: entry.value,
+    };
   }
 }
 

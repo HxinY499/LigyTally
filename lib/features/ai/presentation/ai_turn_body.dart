@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ai_elements/flutter_ai_elements.dart';
 import 'package:forui/forui.dart';
 
-import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../application/ai_turn_format.dart';
-import 'ai_expand_down.dart';
+import 'ai_downward_reveal.dart';
 import 'ai_tool_row.dart';
 import 'ai_turn_label.dart';
 
@@ -81,7 +80,6 @@ class _WorkProcess extends StatefulWidget {
 }
 
 class _WorkProcessState extends State<_WorkProcess> {
-  final GlobalKey _anchor = GlobalKey();
   late bool _open = widget.working;
   bool _pinned = false;
 
@@ -112,16 +110,13 @@ class _WorkProcessState extends State<_WorkProcess> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Semantics(
-          key: _anchor,
           button: true,
           expanded: _open,
           label: workProcessLabel(widget.pieces),
           child: InkWell(
-            onTap: () => AiExpandDown.run(context, _anchor, () {
-              setState(() {
-                _pinned = true;
-                _open = !_open;
-              });
+            onTap: () => setState(() {
+              _pinned = true;
+              _open = !_open;
             }),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
@@ -150,16 +145,12 @@ class _WorkProcessState extends State<_WorkProcess> {
             ),
           ),
         ),
-        AnimatedSize(
-          duration: context.motion(const Duration(milliseconds: 180)),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topCenter,
-          child: _open
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 6),
-                  child: body,
-                )
-              : const SizedBox(width: double.infinity),
+        AiDownwardReveal(
+          open: _open,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 6),
+            child: body,
+          ),
         ),
       ],
     );
@@ -204,7 +195,6 @@ class _ThinkingBlock extends StatefulWidget {
 }
 
 class _ThinkingBlockState extends State<_ThinkingBlock> {
-  final GlobalKey _anchor = GlobalKey();
   late bool _open = widget.live;
   bool _pinned = false;
 
@@ -227,16 +217,13 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Semantics(
-          key: _anchor,
           button: true,
           expanded: _open,
           label: label,
           child: InkWell(
-            onTap: () => AiExpandDown.run(context, _anchor, () {
-              setState(() {
-                _pinned = true;
-                _open = !_open;
-              });
+            onTap: () => setState(() {
+              _pinned = true;
+              _open = !_open;
             }),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
@@ -265,27 +252,23 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
             ),
           ),
         ),
-        AnimatedSize(
-          duration: context.motion(const Duration(milliseconds: 180)),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topCenter,
-          child: _open
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 6),
-                  child: AiDetailFrame(
-                    maxHeight: 180,
-                    reverse: widget.live,
-                    child: Text(
-                      widget.text,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        height: 1.45,
-                        color: colors.ink.withValues(alpha: 0.72),
-                      ),
-                    ),
-                  ),
-                )
-              : const SizedBox(width: double.infinity),
+        AiDownwardReveal(
+          open: _open,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 6),
+            child: AiDetailFrame(
+              maxHeight: 180,
+              reverse: widget.live,
+              child: Text(
+                widget.text,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  height: 1.45,
+                  color: colors.ink.withValues(alpha: 0.72),
+                ),
+              ),
+            ),
+          ),
         ),
       ],
     );
