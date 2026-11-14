@@ -5,6 +5,7 @@ import 'package:forui/forui.dart';
 import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../application/ai_turn_format.dart';
+import 'ai_expand_down.dart';
 
 /// 一次工具调用：分类图标 + 一句说明。点开才看参数和结果，外面不套方框。
 class AiToolRow extends StatefulWidget {
@@ -18,6 +19,7 @@ class AiToolRow extends StatefulWidget {
 }
 
 class _AiToolRowState extends State<AiToolRow> {
+  final GlobalKey _anchor = GlobalKey();
   bool _open = false;
 
   @override
@@ -38,11 +40,16 @@ class _AiToolRowState extends State<AiToolRow> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Semantics(
+          key: _anchor,
           button: true,
           expanded: _open,
           label: desc,
           child: InkWell(
-            onTap: () => setState(() => _open = !_open),
+            onTap: () => AiExpandDown.run(
+              context,
+              _anchor,
+              () => setState(() => _open = !_open),
+            ),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -84,8 +91,13 @@ class _AiToolRowState extends State<AiToolRow> {
           alignment: Alignment.topCenter,
           child: _open
               ? Padding(
-                  padding: const EdgeInsets.only(left: 23, bottom: 4),
-                  child: _ToolDetails(call: widget.call, result: widget.result),
+                  padding: const EdgeInsets.only(top: 4, bottom: 6),
+                  child: AiDetailFrame(
+                    child: _ToolDetails(
+                      call: widget.call,
+                      result: widget.result,
+                    ),
+                  ),
                 )
               : const SizedBox(width: double.infinity),
         ),
@@ -118,25 +130,54 @@ class _ToolDetails extends StatelessWidget {
       color: colors.inactive,
       height: 1.4,
     );
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 220),
-      child: SingleChildScrollView(
-        physics: const ClampingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(call.toolName, style: label),
-            const SizedBox(height: 8),
-            Text('参数', style: label),
-            const SizedBox(height: 4),
-            StructuredValue(value: call.args),
-            if (result != null) ...[
-              const SizedBox(height: 10),
-              Text(result!.isError ? '错误' : '结果', style: label),
-              const SizedBox(height: 4),
-              StructuredValue(value: result!.result),
-            ],
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(call.toolName, style: label),
+        const SizedBox(height: 8),
+        Text('参数', style: label),
+        const SizedBox(height: 4),
+        StructuredValue(value: call.args),
+        if (result != null) ...[
+          const SizedBox(height: 10),
+          Text(result!.isError ? '错误' : '结果', style: label),
+          const SizedBox(height: 4),
+          StructuredValue(value: result!.result),
+        ],
+      ],
+    );
+  }
+}
+
+/// 思考和工具详情共用的圆角框。内容超出后在框里滚动。
+class AiDetailFrame extends StatelessWidget {
+  const AiDetailFrame({
+    super.key,
+    required this.child,
+    this.maxHeight = 220,
+    this.reverse = false,
+  });
+
+  final Widget child;
+  final double maxHeight;
+  final bool reverse;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.lineSoft),
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: SingleChildScrollView(
+          reverse: reverse,
+          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: child,
         ),
       ),
     );

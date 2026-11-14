@@ -5,13 +5,14 @@ import 'package:forui/forui.dart';
 import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../application/ai_turn_format.dart';
+import 'ai_expand_down.dart';
 import 'ai_tool_row.dart';
 import 'ai_turn_label.dart';
 
 /// 一轮助手回复。
 ///
-/// 进行中时，思考、工具和中途写的字都摊开。结束后这些收成一行，
-/// 只留下最后一段正文。点那一行可以再打开。
+/// 进行中时过程摊开，但每段思考结束后自己收起。整轮结束后过程和工具再收成一行。
+/// 点开那一行时，思考仍然是收起的。
 class AiTurnBody extends StatelessWidget {
   const AiTurnBody({
     super.key,
@@ -46,6 +47,7 @@ class AiTurnBody extends StatelessWidget {
                 pieces: content.process,
                 results: results,
                 working: working,
+                hasAnswer: content.answer != null,
               ),
             if (content.answer != null)
               _AnswerText(
@@ -66,17 +68,20 @@ class _WorkProcess extends StatefulWidget {
     required this.pieces,
     required this.results,
     required this.working,
+    required this.hasAnswer,
   });
 
   final List<TurnPiece> pieces;
   final Map<String, ToolResultPart> results;
   final bool working;
+  final bool hasAnswer;
 
   @override
   State<_WorkProcess> createState() => _WorkProcessState();
 }
 
 class _WorkProcessState extends State<_WorkProcess> {
+  final GlobalKey _anchor = GlobalKey();
   late bool _open = widget.working;
   bool _pinned = false;
 
@@ -94,7 +99,10 @@ class _WorkProcessState extends State<_WorkProcess> {
   Widget build(BuildContext context) {
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [for (final piece in widget.pieces) _piece(piece)],
+      children: [
+        for (var i = 0; i < widget.pieces.length; i++)
+          _piece(widget.pieces[i], i),
+      ],
     );
     if (widget.working) return body;
 
@@ -104,13 +112,16 @@ class _WorkProcessState extends State<_WorkProcess> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Semantics(
+          key: _anchor,
           button: true,
           expanded: _open,
           label: workProcessLabel(widget.pieces),
           child: InkWell(
-            onTap: () => setState(() {
-              _pinned = true;
-              _open = !_open;
+            onTap: () => AiExpandDown.run(context, _anchor, () {
+              setState(() {
+                _pinned = true;
+                _open = !_open;
+              });
             }),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
@@ -154,20 +165,16 @@ class _WorkProcessState extends State<_WorkProcess> {
     );
   }
 
-  Widget _piece(TurnPiece piece) {
+  Widget _piece(TurnPiece piece, int index) {
     final part = piece.part;
     if (part is ReasoningPart) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(
-          part.text.trim(),
-          style: TextStyle(
-            fontSize: 13.5,
-            height: 1.45,
-            color: context.colors.ink.withValues(alpha: 0.62),
-          ),
-        ),
-      );
+      final last = index == widget.pieces.length - 1;
+      final live =
+          widget.working &&
+          !widget.hasAnswer &&
+          last &&
+          piece.message.status == AiMessageStatus.streaming;
+      return _ThinkingBlock(text: part.text.trim(), live: live);
     }
     if (part is ToolCallPart) {
       return AiToolRow(call: part, result: widget.results[part.toolCallId]);
@@ -183,6 +190,105 @@ class _WorkProcessState extends State<_WorkProcess> {
     }
     if (part is FilePart) return AiAttachment(file: part);
     return const SizedBox.shrink();
+  }
+}
+
+class _ThinkingBlock extends StatefulWidget {
+  const _ThinkingBlock({required this.text, required this.live});
+
+  final String text;
+  final bool live;
+
+  @override
+  State<_ThinkingBlock> createState() => _ThinkingBlockState();
+}
+
+class _ThinkingBlockState extends State<_ThinkingBlock> {
+  final GlobalKey _anchor = GlobalKey();
+  late bool _open = widget.live;
+  bool _pinned = false;
+
+  @override
+  void didUpdateWidget(_ThinkingBlock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.live) {
+      _open = true;
+      return;
+    }
+    if (oldWidget.live && !_pinned) _open = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final muted = colors.muted;
+    final label = widget.live ? '思考中' : '思考';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          key: _anchor,
+          button: true,
+          expanded: _open,
+          label: label,
+          child: InkWell(
+            onTap: () => AiExpandDown.run(context, _anchor, () {
+              setState(() {
+                _pinned = true;
+                _open = !_open;
+              });
+            }),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(FLucideIcons.brain, size: 15, color: muted),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: muted,
+                      height: 1.3,
+                    ),
+                  ),
+                  Icon(
+                    _open ? FLucideIcons.chevronUp : FLucideIcons.chevronDown,
+                    size: 14,
+                    color: muted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: context.motion(const Duration(milliseconds: 180)),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: _open
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 6),
+                  child: AiDetailFrame(
+                    maxHeight: 180,
+                    reverse: widget.live,
+                    child: Text(
+                      widget.text,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        height: 1.45,
+                        color: colors.ink.withValues(alpha: 0.72),
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
   }
 }
 
