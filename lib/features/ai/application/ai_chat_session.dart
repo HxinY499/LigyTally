@@ -1,5 +1,4 @@
 import 'package:flutter_ai_client/flutter_ai_client.dart';
-import 'package:flutter_ai_provider_openai/flutter_ai_provider_openai.dart';
 
 import '../../../core/branding/app_brand.dart';
 import '../../../core/database/app_database.dart';
@@ -7,6 +6,8 @@ import '../../../core/utils/ledger_date.dart';
 import '../../ledger/application/ledger_service.dart';
 import 'ai_approval.dart';
 import 'ai_settings.dart';
+import 'ai_turn_format.dart';
+import 'deepseek_provider.dart';
 import 'ledger_tools.dart';
 
 /// 一次 AI 聊天会话：DeepSeek provider、工具、流式 controller、系统提示词
@@ -19,16 +20,19 @@ class AiChatSession {
     required this.provider,
     required this.tools,
     required this.approval,
-    required this.settingsModel,
+    required String settingsModel,
+    required AiReasoningEffort settingsReasoning,
     required AiConversation initial,
     required this._systemPrompt,
-  }) {
+  }) : _model = settingsModel,
+       _reasoning = settingsReasoning {
     chat = UseChatController(
       provider: provider,
       initial: initial,
       tools: tools.registry.definitions,
-      options: requestOptions(settingsModel),
+      options: requestOptions(_model, _reasoning),
       onToolCalls: _onToolCalls,
+      observer: _TurnClock(this),
       maxSteps: 5,
       // 两笔完全相同的账（例如两杯同样的咖啡）是合法场景；第三次相同调用
       // 才按死循环处理。
@@ -38,23 +42,40 @@ class AiChatSession {
     );
   }
 
-  final OpenAiProvider provider;
+  final DeepSeekProvider provider;
   final LedgerToolService tools;
   final ToolApprovalCoordinator approval;
   final String _systemPrompt;
-  final String settingsModel;
+  String _model;
+  AiReasoningEffort _reasoning;
   late final UseChatController chat;
 
-  /// 记账/查账是结构化动作，关掉 thinking 明显降低首 token 延迟。
-  static AiRequestOptions requestOptions(String model) => AiRequestOptions(
-    model: model,
-    extra: const {
-      'thinking': {'type': 'disabled'},
-    },
-  );
+  DateTime? _turnStartedAt;
+  bool _closed = false;
+  bool _stamping = false;
+  final Map<String, int> _elapsedOverrides = {};
+
+  /// 这一轮开始的时刻。回复还没写完时，页面用它走表。
+  DateTime? get turnStartedAt => _turnStartedAt;
+
+  /// 失败的那一轮没法写回消息（写回去会把错误状态清掉），只留在当前会话里。
+  int? elapsedOverrideFor(String messageId) => _elapsedOverrides[messageId];
+
+  /// 思考内容在 `reasoning_content` 里，由 [DeepSeekProvider] 收下来。
+  /// 关掉时不传 `reasoning_effort`；打开时带上 low / high / max。
+  static AiRequestOptions requestOptions(
+    String model,
+    AiReasoningEffort effort,
+  ) => AiRequestOptions(model: model, extra: thinkingRequestExtra(effort));
 
   void useModel(String model) {
-    chat.setOptions(requestOptions(model));
+    _model = model;
+    chat.setOptions(requestOptions(_model, _reasoning));
+  }
+
+  void useReasoning(AiReasoningEffort effort) {
+    _reasoning = effort;
+    chat.setOptions(requestOptions(_model, _reasoning));
   }
 
   static Future<AiChatSession> create({
@@ -69,9 +90,8 @@ class AiChatSession {
       throw StateError('还没有配置 DeepSeek API Key');
     }
     final systemPrompt = await _buildSystemPrompt(database);
-    final provider = OpenAiProvider(
+    final provider = DeepSeekProvider(
       apiKey: apiKey,
-      baseUrl: Uri.parse('https://api.deepseek.com'),
       defaultModel: settings.model,
       maxRetries: 2,
       timeout: const Duration(seconds: 60),
@@ -84,6 +104,7 @@ class AiChatSession {
       initial: initial ?? AiConversation.empty('ledger-ai-main'),
       systemPrompt: systemPrompt,
       settingsModel: settings.model,
+      settingsReasoning: settings.reasoning,
     );
   }
 
@@ -258,6 +279,7 @@ class AiChatSession {
 7. 统计工具默认按全部分类计算，不沿用统计页的排除项；回答时说明“按全部分类”。
 8. 回答用简洁中文。涉及统计时带上日期范围和口径；不确定时先问用户。不要提供投资建议。
 9. 用户这一轮附上的图片可以直接看。看不清金额、日期或分类时要说明，不要编造。上文如果只写「发过图片」，那张图已经不在上下文里。
+10. 回答前先思考。思考用简短中文，只写判断过程，不要把最终回答写进思考里。
 
 可用分类（id | 名称 | 收支类型 | 父级）：
 $categoryLines
@@ -269,7 +291,42 @@ $categoryLines
       .any((part) => part.mediaType.startsWith('image/'));
 
   void dispose() {
+    _closed = true;
     chat.dispose();
     provider.close();
   }
+
+  void _beginTiming() {
+    _turnStartedAt = DateTime.now();
+  }
+
+  void _finishTiming() {
+    final started = _turnStartedAt;
+    _turnStartedAt = null;
+    if (_closed || _stamping || started == null) return;
+    final ms = DateTime.now().difference(started).inMilliseconds;
+    // load() 会把错误清掉。失败的这一轮只记在内存里，成功和手动停止才写进消息。
+    if (chat.status == ChatStatus.error) {
+      final id = assistantTurnHeadId(chat.conversation);
+      if (id != null) _elapsedOverrides[id] = ms < 0 ? 0 : ms;
+      return;
+    }
+    final stamped = stampTurnDuration(chat.conversation, ms);
+    if (identical(stamped, chat.conversation)) return;
+    _stamping = true;
+    chat.load(stamped);
+    _stamping = false;
+  }
+}
+
+class _TurnClock extends ChatObserver {
+  const _TurnClock(this._session);
+
+  final AiChatSession _session;
+
+  @override
+  void onTurnStart(AiConversation conversation) => _session._beginTiming();
+
+  @override
+  void onTurnEnd({AiUsage? totalUsage}) => _session._finishTiming();
 }

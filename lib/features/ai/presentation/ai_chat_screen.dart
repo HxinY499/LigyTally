@@ -42,6 +42,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   Object? _error;
   int _generation = 0;
   String _model = kDeepSeekDefaultModel;
+  AiReasoningEffort _reasoning = AiReasoningEffort.fallback;
   String _headerTitle = '新会话';
 
   @override
@@ -90,6 +91,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         setState(() {
           _settings = settings;
           _model = settings.model;
+          _reasoning = settings.reasoning;
           _threadId = null;
           _threads = const [];
           _loading = false;
@@ -132,6 +134,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       setState(() {
         _settings = settings;
         _model = settings.model;
+        _reasoning = settings.reasoning;
         _threads = refreshed;
         _loading = false;
       });
@@ -246,10 +249,6 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
           Navigator.of(sheetContext).pop();
           if (thread.id != _threadId) unawaited(_openThread(thread.id));
         },
-        onNew: () {
-          Navigator.of(sheetContext).pop();
-          unawaited(_newConversation());
-        },
         onDelete: (thread) {
           Navigator.of(sheetContext).pop();
           unawaited(_deleteThread(thread));
@@ -325,6 +324,13 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     await ref.read(aiSettingsProvider.notifier).setModel(model);
   }
 
+  Future<void> _applyReasoning(AiReasoningEffort effort) async {
+    if (effort == _reasoning) return;
+    setState(() => _reasoning = effort);
+    _session?.useReasoning(effort);
+    await ref.read(aiSettingsProvider.notifier).setReasoning(effort);
+  }
+
   Future<void> _openModelSheet() async {
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -333,6 +339,16 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     );
     if (picked == null || !mounted) return;
     await _applyModel(picked);
+  }
+
+  Future<void> _openReasoningSheet() async {
+    final picked = await showModalBottomSheet<AiReasoningEffort>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _ReasoningSheet(selected: _reasoning),
+    );
+    if (picked == null || !mounted) return;
+    await _applyReasoning(picked);
   }
 
   Future<List<FilePart>> _pickImages() async {
@@ -382,13 +398,17 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   Widget build(BuildContext context) {
     final chatting = _settings?.hasKey == true && _threadId != null;
     final actions = <Widget>[
-      if (chatting)
-        _ModelButton(model: _model, onTap: () => unawaited(_openModelSheet())),
       AppHeaderAction(
         icon: FLucideIcons.settings2,
         tooltip: 'AI 设置',
         onTap: _openSettings,
       ),
+      if (chatting)
+        AppHeaderAction(
+          icon: FLucideIcons.squarePen,
+          tooltip: '新建会话',
+          onTap: () => unawaited(_newConversation()),
+        ),
     ];
     final Widget body;
     if (_loading) {
@@ -407,8 +427,12 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     } else {
       body = _ChatBody(
         session: _session!,
+        model: _model,
+        reasoningLabel: _reasoning.label,
         themed: _themed,
         onPickAttachment: _pickImages,
+        onPickModel: () => unawaited(_openModelSheet()),
+        onPickReasoning: () => unawaited(_openReasoningSheet()),
       );
     }
     return Scaffold(
@@ -465,13 +489,21 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 class _ChatBody extends StatelessWidget {
   const _ChatBody({
     required this.session,
+    required this.model,
+    required this.reasoningLabel,
     required this.themed,
     required this.onPickAttachment,
+    required this.onPickModel,
+    required this.onPickReasoning,
   });
 
   final AiChatSession session;
+  final String model;
+  final String reasoningLabel;
   final Widget Function(Widget child) themed;
   final Future<List<FilePart>> Function() onPickAttachment;
+  final VoidCallback onPickModel;
+  final VoidCallback onPickReasoning;
 
   @override
   Widget build(BuildContext context) {
@@ -479,6 +511,12 @@ class _ChatBody extends StatelessWidget {
       AiChatPane(
         controller: session.chat,
         onPickAttachment: onPickAttachment,
+        model: model,
+        onPickModel: onPickModel,
+        reasoningLabel: reasoningLabel,
+        onPickReasoning: onPickReasoning,
+        turnStartedAt: () => session.turnStartedAt,
+        elapsedOverride: session.elapsedOverrideFor,
         empty: _AiWelcome(
           onSelected: (text) => unawaited(session.chat.sendText(text)),
         ),
@@ -693,14 +731,12 @@ class _ConversationSheet extends StatelessWidget {
     required this.threads,
     required this.activeId,
     required this.onSelect,
-    required this.onNew,
     required this.onDelete,
   });
 
   final List<ChatThread> threads;
   final String? activeId;
   final ValueChanged<ChatThread> onSelect;
-  final VoidCallback onNew;
   final ValueChanged<ChatThread> onDelete;
 
   @override
@@ -726,28 +762,17 @@ class _ConversationSheet extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 12, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '会话',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: colors.ink,
-                        ),
-                      ),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '会话',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: colors.ink,
                     ),
-                    TextButton.icon(
-                      onPressed: onNew,
-                      style: TextButton.styleFrom(
-                        foregroundColor: colors.primary,
-                      ),
-                      icon: const Icon(FLucideIcons.plus, size: 18),
-                      label: const Text('新建'),
-                    ),
-                  ],
+                  ),
                 ),
               ),
               Divider(height: 1, thickness: 1, color: colors.lineSoft),
@@ -903,48 +928,6 @@ class _ConversationTitle extends StatelessWidget {
   }
 }
 
-class _ModelButton extends StatelessWidget {
-  const _ModelButton({required this.model, required this.onTap});
-
-  final String model;
-  final VoidCallback onTap;
-
-  String get _label => switch (model) {
-    'deepseek-flash' => 'flash',
-    'deepseek-v4-pro' => 'v4-pro',
-    _ => model,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Tooltip(
-      message: '切换模型',
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: colors.muted,
-                ),
-              ),
-              Icon(FLucideIcons.chevronDown, size: 14, color: colors.muted),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _ModelSheet extends StatelessWidget {
   const _ModelSheet({required this.selected});
 
@@ -988,13 +971,66 @@ class _ModelSheet extends StatelessWidget {
             for (final model in kDeepSeekModels)
               ListTile(
                 title: Text(model),
-                subtitle: Text(
-                  model == 'deepseek-flash' ? '日常查账，可以看图' : '复杂分析，不能看图',
-                ),
                 trailing: model == selected
                     ? Icon(FLucideIcons.check, size: 18, color: colors.primary)
                     : null,
                 onTap: () => Navigator.pop(context, model),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReasoningSheet extends StatelessWidget {
+  const _ReasoningSheet({required this.selected});
+
+  final AiReasoningEffort selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SafeArea(
+      top: false,
+      child: Material(
+        color: colors.surface,
+        borderRadius: context.radii.sheetTop,
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 38,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.line,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '思考',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: colors.ink,
+                  ),
+                ),
+              ),
+            ),
+            for (final effort in AiReasoningEffort.values)
+              ListTile(
+                title: Text(effort.label),
+                trailing: effort == selected
+                    ? Icon(FLucideIcons.check, size: 18, color: colors.primary)
+                    : null,
+                onTap: () => Navigator.pop(context, effort),
               ),
             const SizedBox(height: 8),
           ],

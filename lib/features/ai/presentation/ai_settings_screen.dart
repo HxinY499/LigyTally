@@ -28,6 +28,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
   final TextEditingController _keyController = TextEditingController();
   AiSettings? _settings;
   String _model = kDeepSeekDefaultModel;
+  AiReasoningEffort _reasoning = AiReasoningEffort.fallback;
   bool _loading = true;
   bool _saving = false;
   bool _testing = false;
@@ -56,6 +57,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
       setState(() {
         _settings = value;
         _model = value.model;
+        _reasoning = value.reasoning;
         _loading = false;
       });
     } on Object catch (error) {
@@ -276,12 +278,6 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                     for (final model in kDeepSeekModels)
                       _ModelOption(
                         title: model,
-                        subtitle: model == 'deepseek-flash'
-                            ? '日常查账、记账，速度快'
-                            : '复杂分析，成本更高',
-                        icon: model == 'deepseek-flash'
-                            ? FLucideIcons.zap
-                            : FLucideIcons.brain,
                         selected: model == _model,
                         onTap: () async {
                           // 模型单独落盘，不跟 Key 绑成同一次保存。
@@ -293,11 +289,29 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                       ),
                   ],
                 ),
+                const SizedBox(height: 18),
+                const SectionLabel('思考'),
+                SettingsCard(
+                  children: [
+                    for (final effort in AiReasoningEffort.values)
+                      _ModelOption(
+                        title: effort.label,
+                        icon: FLucideIcons.brain,
+                        selected: effort == _reasoning,
+                        onTap: () async {
+                          setState(() => _reasoning = effort);
+                          await ref
+                              .read(aiSettingsProvider.notifier)
+                              .setReasoning(effort);
+                        },
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 Padding(
                   padding: const EdgeInsets.only(left: 4),
                   child: Text(
-                    '点选后立即生效。',
+                    '从下一轮对话开始生效。',
                     style: TextStyle(
                       fontSize: 12,
                       color: colors.inactive,
@@ -431,14 +445,12 @@ class _KeyLink extends StatelessWidget {
 class _ModelOption extends StatelessWidget {
   const _ModelOption({
     required this.title,
-    required this.subtitle,
-    required this.icon,
     required this.selected,
     required this.onTap,
+    this.icon = FLucideIcons.cpu,
   });
 
   final String title;
-  final String subtitle;
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
@@ -451,7 +463,6 @@ class _ModelOption extends StatelessWidget {
       child: SettingsItem(
         icon: icon,
         title: title,
-        subtitle: subtitle,
         selected: selected,
         trailing: selected
             ? Icon(FLucideIcons.check, size: 18, color: colors.primary)

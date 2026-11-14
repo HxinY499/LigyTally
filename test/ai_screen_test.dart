@@ -11,6 +11,7 @@ import 'package:ligy_tally/core/database/app_database.dart';
 import 'package:ligy_tally/core/media/image_storage.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/features/ai/application/ai_settings.dart';
+import 'package:ligy_tally/features/ai/application/ai_turn_format.dart';
 import 'package:ligy_tally/features/ai/data/deepseek_key_store.dart';
 import 'package:ligy_tally/features/ai/presentation/ai_chat_pane.dart';
 import 'package:ligy_tally/features/ai/presentation/ai_chat_screen.dart';
@@ -238,6 +239,12 @@ void main() {
     expect(find.text('API Key'), findsOneWidget);
     expect(find.text('deepseek-flash'), findsOneWidget);
     expect(find.text('deepseek-v4-pro'), findsOneWidget);
+    expect(find.text('关'), findsOneWidget);
+    expect(find.text('低'), findsOneWidget);
+    expect(find.text('高'), findsOneWidget);
+    expect(find.text('最高'), findsOneWidget);
+    expect(find.textContaining('日常查账'), findsNothing);
+    expect(find.textContaining('复杂分析'), findsNothing);
   });
 
   testWidgets('配置 Key 后可以打开会话列表', (tester) async {
@@ -270,23 +277,98 @@ void main() {
 
     expect(find.text('问问你的账本'), findsOneWidget);
     expect(find.byTooltip('会话列表'), findsNothing);
+    expect(find.byTooltip('新建会话'), findsOneWidget);
     expect(find.text('新会话'), findsOneWidget);
 
     await tester.tap(find.byTooltip('切换会话'));
     await tester.pumpAndSettle();
 
     expect(find.text('会话'), findsOneWidget);
-    expect(find.text('新建'), findsOneWidget);
+    expect(find.text('新建'), findsNothing);
     expect(find.text('新会话'), findsWidgets);
 
     Navigator.of(tester.element(find.text('会话'))).pop();
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('切换模型'));
     await tester.pumpAndSettle();
-    expect(find.text('deepseek-flash'), findsOneWidget);
+    expect(find.text('deepseek-flash'), findsWidgets);
     expect(find.text('deepseek-v4-pro'), findsOneWidget);
-    expect(find.textContaining('可以看图'), findsOneWidget);
-    expect(find.textContaining('不能看图'), findsOneWidget);
+    expect(find.textContaining('可以看图'), findsNothing);
+    expect(find.textContaining('不能看图'), findsNothing);
+
+    Navigator.of(tester.element(find.text('模型'))).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('思考强度'));
+    await tester.pumpAndSettle();
+    expect(find.text('关'), findsOneWidget);
+    expect(find.text('低'), findsOneWidget);
+    expect(find.text('高'), findsWidgets);
+    expect(find.text('最高'), findsOneWidget);
+  });
+
+  testWidgets('工具显示说明，思考默认收起，回复顶部有用时', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = UseChatController(
+      provider: _ScriptProvider(),
+      initial: AiConversation(
+        id: 'c',
+        messages: [
+          AiMessage.text(id: 'u', role: AiRole.user, text: '这个月花了多少'),
+          AiMessage(
+            id: 'a',
+            role: AiRole.assistant,
+            parts: [
+              const DataPart(dataType: kTurnTimingDataType, data: {'ms': 1200}),
+              const ReasoningPart('先对一下这个月的范围'),
+              const ToolCallPart(
+                toolCallId: 'c1',
+                toolName: 'get_cashflow_summary',
+                args: {'from': '2026-11-01', 'to': '2026-11-14'},
+                state: ToolCallState.outputAvailable,
+              ),
+              const TextPart('本月支出不多。'),
+            ],
+          ),
+          const AiMessage(
+            id: 'tool',
+            role: AiRole.tool,
+            parts: [
+              ToolResultPart(toolCallId: 'c1', result: {'expenseCents': 10000}),
+            ],
+          ),
+        ],
+      ),
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_chatHost(controller));
+    await tester.pumpAndSettle();
+
+    expect(find.text('用时 1.2 秒'), findsOneWidget);
+    expect(find.text('思考'), findsOneWidget);
+    expect(find.textContaining('先对一下'), findsNothing);
+    expect(
+      find.text('查询${formatDateSpan('2026-11-01', '2026-11-14')}的收支'),
+      findsOneWidget,
+    );
+    expect(find.text('get_cashflow_summary'), findsNothing);
+
+    await tester.tap(find.text('思考'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('先对一下'), findsOneWidget);
+
+    await tester.tap(
+      find.text('查询${formatDateSpan('2026-11-01', '2026-11-14')}的收支'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('get_cashflow_summary'), findsOneWidget);
+    expect(find.textContaining('expenseCents'), findsOneWidget);
   });
 }

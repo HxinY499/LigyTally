@@ -14,11 +14,54 @@ const kDeepSeekDefaultModel = 'deepseek-flash';
 /// 官方定价表里只有 flash 标了 Vision。v4-pro 带图会直接 400。
 bool deepSeekModelAcceptsImages(String model) => model == 'deepseek-flash';
 
+/// DeepSeek 思考档位。
+///
+/// Chat Completions 真正生效的是 `low` / `high` / `max`，外加把思考关掉。
+/// 默认 `high`，和官方未传 `reasoning_effort` 时的行为一致。
+enum AiReasoningEffort {
+  off('off', '关'),
+  low('low', '低'),
+  high('high', '高'),
+  max('max', '最高');
+
+  const AiReasoningEffort(this.wireName, this.label);
+
+  final String wireName;
+  final String label;
+
+  static const fallback = AiReasoningEffort.high;
+
+  static AiReasoningEffort fromWire(String? value) {
+    for (final effort in values) {
+      if (effort.wireName == value) return effort;
+    }
+    return fallback;
+  }
+}
+
+/// 写进 DeepSeek 请求的思考参数。
+Map<String, Object?> thinkingRequestExtra(AiReasoningEffort effort) {
+  if (effort == AiReasoningEffort.off) {
+    return const {
+      'thinking': {'type': 'disabled'},
+    };
+  }
+  return {
+    'thinking': const {'type': 'enabled'},
+    'reasoning_effort': effort.wireName,
+  };
+}
+
 class AiSettings {
-  const AiSettings({this.apiKey, this.model = kDeepSeekDefaultModel});
+  const AiSettings({
+    this.apiKey,
+    this.model = kDeepSeekDefaultModel,
+    this.reasoning = AiReasoningEffort.fallback,
+  });
 
   final String? apiKey;
   final String model;
+  final AiReasoningEffort reasoning;
 
   bool get hasKey => (apiKey ?? '').trim().isNotEmpty;
 
@@ -30,8 +73,15 @@ class AiSettings {
     return '${value.substring(0, 4)}…${value.substring(value.length - 4)}';
   }
 
-  AiSettings copyWith({String? apiKey, String? model}) =>
-      AiSettings(apiKey: apiKey ?? this.apiKey, model: model ?? this.model);
+  AiSettings copyWith({
+    String? apiKey,
+    String? model,
+    AiReasoningEffort? reasoning,
+  }) => AiSettings(
+    apiKey: apiKey ?? this.apiKey,
+    model: model ?? this.model,
+    reasoning: reasoning ?? this.reasoning,
+  );
 }
 
 final deepSeekKeyStoreProvider = Provider<DeepSeekKeyStore>(
@@ -45,6 +95,7 @@ final aiSettingsProvider =
 
 class AiSettingsController extends AsyncNotifier<AiSettings> {
   static const _modelPrefsKey = 'ai_deepseek_model_v1';
+  static const _reasoningPrefsKey = 'ai_deepseek_reasoning_v1';
 
   @override
   Future<AiSettings> build() async {
@@ -54,7 +105,10 @@ class AiSettingsController extends AsyncNotifier<AiSettings> {
     final model = kDeepSeekModels.contains(storedModel)
         ? storedModel!
         : kDeepSeekDefaultModel;
-    return AiSettings(apiKey: key, model: model);
+    final reasoning = AiReasoningEffort.fromWire(
+      prefs.getString(_reasoningPrefsKey),
+    );
+    return AiSettings(apiKey: key, model: model, reasoning: reasoning);
   }
 
   Future<void> save({required String apiKey, required String model}) async {
@@ -65,12 +119,13 @@ class AiSettingsController extends AsyncNotifier<AiSettings> {
     if (!kDeepSeekModels.contains(model)) {
       throw ArgumentError.value(model, 'model', '不支持的 DeepSeek 模型');
     }
+    final reasoning = state.value?.reasoning ?? AiReasoningEffort.fallback;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       await ref.read(deepSeekKeyStoreProvider).write(trimmed);
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_modelPrefsKey, model);
-      return AiSettings(apiKey: trimmed, model: model);
+      return AiSettings(apiKey: trimmed, model: model, reasoning: reasoning);
     });
   }
 
@@ -85,6 +140,14 @@ class AiSettingsController extends AsyncNotifier<AiSettings> {
     state = AsyncData(current.copyWith(model: model));
   }
 
+  Future<void> setReasoning(AiReasoningEffort effort) async {
+    final current = state.value;
+    if (current == null || current.reasoning == effort) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_reasoningPrefsKey, effort.wireName);
+    state = AsyncData(current.copyWith(reasoning: effort));
+  }
+
   Future<void> clearKey() async {
     final current = state.value;
     state = const AsyncLoading();
@@ -93,6 +156,7 @@ class AiSettingsController extends AsyncNotifier<AiSettings> {
       return AiSettings(
         apiKey: null,
         model: current?.model ?? kDeepSeekDefaultModel,
+        reasoning: current?.reasoning ?? AiReasoningEffort.fallback,
       );
     });
   }

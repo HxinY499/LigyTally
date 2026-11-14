@@ -7,6 +7,11 @@ import 'package:flutter_ai_elements/flutter_ai_elements.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../application/ai_turn_format.dart';
+import 'ai_composer_bar.dart';
+import 'ai_thinking_block.dart';
+import 'ai_tool_row.dart';
+import 'ai_turn_label.dart';
 
 const _zh = AiLocalizations(
   send: '发送',
@@ -14,6 +19,7 @@ const _zh = AiLocalizations(
   retry: '重试',
   dismiss: '关闭',
   thinking: '正在思考',
+  reasoning: '思考',
   you: '你',
   assistant: '助手',
   toolArguments: '参数',
@@ -37,8 +43,14 @@ class AiChatPane extends StatefulWidget {
     required this.controller,
     this.empty,
     this.banner,
-    this.hintText = '',
+    this.hintText = '问问账本',
     this.onPickAttachment,
+    this.model,
+    this.onPickModel,
+    this.reasoningLabel,
+    this.onPickReasoning,
+    this.turnStartedAt,
+    this.elapsedOverride,
   });
 
   final UseChatController controller;
@@ -50,6 +62,20 @@ class AiChatPane extends StatefulWidget {
 
   /// 非空时输入框左侧出现上传图片按钮。
   final Future<List<FilePart>> Function()? onPickAttachment;
+
+  /// 聚焦后出现在附件右边。不传就不显示。
+  final String? model;
+  final VoidCallback? onPickModel;
+
+  /// 模型右边的思考档位，例如「高」。不传就不显示。
+  final String? reasoningLabel;
+  final VoidCallback? onPickReasoning;
+
+  /// 当前这一轮的开始时刻。回复还在生成时用来走表。
+  final DateTime? Function()? turnStartedAt;
+
+  /// 没写进消息里的用时，例如这一轮失败了。
+  final int? Function(String messageId)? elapsedOverride;
 
   @override
   State<AiChatPane> createState() => _AiChatPaneState();
@@ -157,10 +183,14 @@ class _AiChatPaneState extends State<AiChatPane> {
             ),
           ),
           _ComposerDock(
-            child: AiPromptInput(
+            child: AiComposerBar(
               controller: widget.controller,
               hintText: widget.hintText,
               onPickAttachment: widget.onPickAttachment,
+              model: widget.model,
+              onPickModel: widget.onPickModel,
+              reasoningLabel: widget.reasoningLabel,
+              onPickReasoning: widget.onPickReasoning,
             ),
           ),
         ],
@@ -178,6 +208,7 @@ class _AiChatPaneState extends State<AiChatPane> {
       return widget.empty!;
     }
 
+    final results = toolResultsIn(messages);
     final list = ListView.builder(
       controller: _scroll,
       reverse: true,
@@ -189,17 +220,44 @@ class _AiChatPaneState extends State<AiChatPane> {
       itemCount: messages.length + (showLoader ? 1 : 0),
       itemBuilder: (context, index) {
         if (showLoader && index == 0) {
-          return const Align(
+          final started = widget.turnStartedAt?.call();
+          return Align(
             alignment: AlignmentDirectional.centerStart,
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: AiLoader(),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (started != null) AiTurnLabel(startedAt: started),
+                  const AiLoader(),
+                ],
+              ),
             ),
           );
         }
         final fromBottom = showLoader ? index - 1 : index;
         final message = messages[messages.length - 1 - fromBottom];
-        return AiMessageBubble(key: ValueKey(message.id), message: message);
+        if (message.role == AiRole.tool) return const SizedBox.shrink();
+        final head = isAssistantTurnHead(message, messages);
+        final fixedMs = head
+            ? turnTimingMs(message) ?? widget.elapsedOverride?.call(message.id)
+            : null;
+        final live = head && fixedMs == null
+            ? widget.turnStartedAt?.call()
+            : null;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (head && (fixedMs != null || live != null))
+              AiTurnLabel(fixedMs: fixedMs, startedAt: live),
+            AiMessageBubble(
+              key: ValueKey(message.id),
+              message: message,
+              partBuilder: (context, part, owner) =>
+                  _part(part, owner, results),
+            ),
+          ],
+        );
       },
     );
 
@@ -230,6 +288,32 @@ class _AiChatPaneState extends State<AiChatPane> {
         ],
       ),
     );
+  }
+
+  Widget? _part(
+    AiPart part,
+    AiMessage message,
+    Map<String, ToolResultPart> results,
+  ) {
+    if (part is DataPart && part.dataType == kTurnTimingDataType) {
+      return const SizedBox.shrink();
+    }
+    if (part is ToolResultPart) return const SizedBox.shrink();
+    if (part is TextPart && part.text.isEmpty) return const SizedBox.shrink();
+    if (part is ReasoningPart) {
+      final text = part.text.trim();
+      if (text.isEmpty) return const SizedBox.shrink();
+      return AiThinkingBlock(
+        text: text,
+        live:
+            message.status == AiMessageStatus.streaming &&
+            message.text.trim().isEmpty,
+      );
+    }
+    if (part is ToolCallPart) {
+      return AiToolRow(call: part, result: results[part.toolCallId]);
+    }
+    return null;
   }
 
   void _jumpToLatest() {
