@@ -19,12 +19,11 @@ class AiDownwardReveal extends StatefulWidget {
 
 class _AiDownwardRevealState extends State<AiDownwardReveal>
     with SingleTickerProviderStateMixin {
-  static const _sizeCurve = Curves.easeOutCubic;
-  static const _fadeCurve = Cubic(0.16, 1, 0.3, 1);
-
   late final AnimationController _controller;
   double _fullHeight = 0;
   double _shown = 0;
+  double _factor = 0;
+  double _opacity = 0;
 
   @override
   void initState() {
@@ -34,7 +33,19 @@ class _AiDownwardRevealState extends State<AiDownwardReveal>
       duration: const Duration(milliseconds: 320),
       value: widget.open ? 1 : 0,
     )..addListener(_onTick);
-    _shown = _fullHeight * _sizeCurve.transform(_controller.value);
+    _syncVisuals(notify: false);
+  }
+
+  void _syncVisuals({required bool notify}) {
+    final t = _controller.value;
+    final closing = _controller.status == AnimationStatus.reverse;
+    // 关闭时用 easeIn，一开始就动。easeOut 倒放会先停一下，像有延迟。
+    _factor = (closing ? Curves.easeInCubic : Curves.easeOutCubic).transform(t);
+    _opacity = (closing ? Curves.easeIn : Curves.easeOut)
+        .transform(t)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    if (notify) setState(() {});
   }
 
   @override
@@ -68,7 +79,8 @@ class _AiDownwardRevealState extends State<AiDownwardReveal>
   }
 
   void _onTick() {
-    final shown = _fullHeight * _sizeCurve.transform(_controller.value);
+    _syncVisuals(notify: false);
+    final shown = _fullHeight * _factor;
     final delta = shown - _shown;
     _shown = shown;
     final position = Scrollable.maybeOf(context)?.position;
@@ -85,6 +97,8 @@ class _AiDownwardRevealState extends State<AiDownwardReveal>
 
   void _rememberHeight(double height) {
     _fullHeight = height;
+    if (_controller.isAnimating) return;
+    _shown = height * _controller.value;
   }
 
   @override
@@ -92,10 +106,9 @@ class _AiDownwardRevealState extends State<AiDownwardReveal>
     if (!widget.open && _controller.value == 0) {
       return const SizedBox(width: double.infinity);
     }
-    final t = _controller.value;
     return _RevealBox(
-      heightFactor: _sizeCurve.transform(t),
-      opacity: _fadeCurve.transform(t).clamp(0, 1),
+      heightFactor: _factor,
+      opacity: _opacity,
       onMeasured: _rememberHeight,
       child: widget.child,
     );
@@ -176,11 +189,21 @@ class _RenderReveal extends RenderProxyBox {
   @override
   void paint(PaintingContext context, Offset offset) {
     if (_opacity <= 0 || size.height <= 0 || child == null) return;
-    context.pushOpacity(offset, (_opacity * 255).round().clamp(0, 255), (
+    final alpha = (_opacity * 255).round().clamp(0, 255);
+    // 内容从上面几像素的位置落到原位，同时由透明变为不透明。
+    final drop = (1 - _opacity) * -8;
+    context.pushClipRect(needsCompositing, offset, Offset.zero & size, (
       ctx,
       off,
     ) {
-      ctx.pushClipRect(needsCompositing, off, Offset.zero & size, super.paint);
+      ctx.pushOpacity(off, alpha, (fadeCtx, fadeOff) {
+        fadeCtx.pushTransform(
+          needsCompositing,
+          fadeOff,
+          Matrix4.translationValues(0, drop, 0),
+          super.paint,
+        );
+      });
     });
   }
 }

@@ -70,6 +70,51 @@ void main() {
     expect(AiReasoningEffort.fromWire('nope'), AiReasoningEffort.high);
   });
 
+  test('智谱和 Kimi 不能关思考，Kimi 不传 thinking', () {
+    expect(thinkingExtraFor('glm-5.3', AiReasoningEffort.off), {
+      'thinking': {'type': 'enabled'},
+      'reasoning_effort': 'low',
+    });
+    expect(thinkingExtraFor('glm-5.3-flash', AiReasoningEffort.max), {
+      'thinking': {'type': 'enabled'},
+      'reasoning_effort': 'max',
+    });
+    expect(thinkingExtraFor('kimi-k3.1-pro', AiReasoningEffort.off), {
+      'reasoning_effort': 'low',
+    });
+    expect(thinkingExtraFor('kimi-k3', AiReasoningEffort.high), {
+      'reasoning_effort': 'high',
+    });
+    expect(
+      thinkingExtraFor('deepseek-v4-pro', AiReasoningEffort.off),
+      thinkingRequestExtra(AiReasoningEffort.off),
+    );
+  });
+
+  test('只列出已经配置 Key 的平台，模型是叠加的', () {
+    expect(
+      modelsForConfigured({AiPlatform.glm, AiPlatform.kimi}).map((m) => m.id),
+      [
+        'glm-5.3',
+        'glm-5.3-flash',
+        'kimi-k3.1-pro',
+        'kimi-k3.1-pro-highspeed',
+        'kimi-k3',
+      ],
+    );
+    expect(
+      resolveSelectedModel('deepseek-flash', {AiPlatform.kimi}),
+      'kimi-k3.1-pro',
+    );
+    expect(
+      resolveSelectedModel('glm-5.3-flash', {
+        AiPlatform.deepseek,
+        AiPlatform.glm,
+      }),
+      'glm-5.3-flash',
+    );
+  });
+
   test('一轮结束后，最后一段文字之外都算过程', () {
     final first = AiMessage(
       id: 'a1',
@@ -97,6 +142,29 @@ void main() {
       ToolCallPart,
     ]);
     expect(workProcessLabel(content.process), '思考 · 1 个工具');
+    expect(processStaysOpen(content.process), isFalse);
+    expect(
+      processStaysOpen([
+        TurnPiece(
+          AiMessage.text(id: 'a', role: AiRole.assistant, text: ''),
+          const ReasoningPart('只有一段'),
+        ),
+      ]),
+      isTrue,
+    );
+    expect(
+      processStaysOpen([
+        TurnPiece(
+          AiMessage.text(id: 'a', role: AiRole.assistant, text: ''),
+          const ToolCallPart(
+            toolCallId: 'c',
+            toolName: 'search_transactions',
+            state: ToolCallState.outputAvailable,
+          ),
+        ),
+      ]),
+      isTrue,
+    );
     expect(
       splitAssistantTurn([
         AiMessage.text(id: 'a', role: AiRole.assistant, text: '只有回答'),

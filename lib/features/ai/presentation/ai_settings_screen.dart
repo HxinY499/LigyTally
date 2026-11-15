@@ -10,13 +10,12 @@ import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../settings/presentation/settings_widgets.dart';
 import '../application/ai_settings.dart';
+import 'ai_platform_logo.dart';
 
-const _deepSeekKeysUrl = 'https://platform.deepseek.com/api_keys';
-
-/// DeepSeek BYOK 设置页。
+/// 各官方平台的 BYOK 设置页。
 ///
-/// Key 不预填、不回显完整值；保存后只展示首尾各四位。测试连接走 DeepSeek
-/// 的余额接口，既不消耗 token，也能顺带发现余额不足。
+/// Key 不预填、不回显完整值；保存后只展示首尾各四位。测试连接走各家不消耗
+/// 对话额度的接口。配好的平台，模型才会出现在下面和对话里。
 class AiSettingsScreen extends ConsumerStatefulWidget {
   const AiSettingsScreen({super.key});
 
@@ -25,13 +24,15 @@ class AiSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
-  final TextEditingController _keyController = TextEditingController();
+  final Map<AiPlatform, TextEditingController> _keyControllers = {
+    for (final platform in AiPlatform.values) platform: TextEditingController(),
+  };
   AiSettings? _settings;
   String _model = kDeepSeekDefaultModel;
   AiReasoningEffort _reasoning = AiReasoningEffort.fallback;
   bool _loading = true;
-  bool _saving = false;
-  bool _testing = false;
+  AiPlatform? _saving;
+  AiPlatform? _testing;
   Object? _loadError;
 
   @override
@@ -42,7 +43,9 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
 
   @override
   void dispose() {
-    _keyController.dispose();
+    for (final controller in _keyControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -74,44 +77,49 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     await _load();
   }
 
-  Future<void> _save() async {
-    if (_saving) return;
-    final typed = _keyController.text.trim();
-    final existing = _settings?.apiKey?.trim();
+  Future<void> _save(AiPlatform platform) async {
+    if (_saving != null) return;
+    final spec = platformSpec(platform);
+    final typed = _keyControllers[platform]!.text.trim();
+    final existing = _settings?.keyFor(platform);
     final key = typed.isNotEmpty ? typed : existing;
     if (key == null || key.isEmpty) {
-      _toast('请输入 DeepSeek API Key', level: AppToastLevel.error);
+      _toast('请输入 ${spec.label} API Key', level: AppToastLevel.error);
       return;
     }
-    setState(() => _saving = true);
+    setState(() => _saving = platform);
     await ref
         .read(aiSettingsProvider.notifier)
-        .save(apiKey: key, model: _model);
+        .saveKey(platform: platform, apiKey: key);
     if (!mounted) return;
     final state = ref.read(aiSettingsProvider);
-    setState(() => _saving = false);
+    setState(() => _saving = null);
     if (state.hasError) {
       _toast('保存失败：${state.error}', level: AppToastLevel.error);
       return;
     }
-    _keyController.clear();
-    setState(() => _settings = state.value);
-    _toast('AI 设置已保存', level: AppToastLevel.success);
+    _keyControllers[platform]!.clear();
+    setState(() {
+      _settings = state.value;
+      _model = state.value?.model ?? _model;
+    });
+    _toast('${spec.label} Key 已保存', level: AppToastLevel.success);
   }
 
-  Future<void> _test() async {
-    if (_testing) return;
-    final typed = _keyController.text.trim();
-    final key = typed.isNotEmpty ? typed : _settings?.apiKey?.trim();
+  Future<void> _test(AiPlatform platform) async {
+    if (_testing != null) return;
+    final spec = platformSpec(platform);
+    final typed = _keyControllers[platform]!.text.trim();
+    final key = typed.isNotEmpty ? typed : _settings?.keyFor(platform);
     if (key == null || key.isEmpty) {
       _toast('请先填写 API Key', level: AppToastLevel.error);
       return;
     }
-    setState(() => _testing = true);
+    setState(() => _testing = platform);
     try {
       final response = await http
           .get(
-            Uri.parse('https://api.deepseek.com/user/balance'),
+            Uri.parse(spec.probeUrl),
             headers: {'Authorization': 'Bearer $key'},
           )
           .timeout(const Duration(seconds: 15));
@@ -119,13 +127,15 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
       switch (response.statusCode) {
         case 200:
           var available = true;
-          try {
-            final body = jsonDecode(response.body);
-            if (body is Map && body['is_available'] == false) {
-              available = false;
+          if (platform == AiPlatform.deepseek) {
+            try {
+              final body = jsonDecode(response.body);
+              if (body is Map && body['is_available'] == false) {
+                available = false;
+              }
+            } on Object {
+              // 余额接口的正文解析失败不影响「连接成功」这个结论。
             }
-          } on Object {
-            // 余额接口的正文解析失败不影响「连接成功」这个结论。
           }
           _toast(
             available ? '连接成功，Key 可用' : 'Key 有效，但账户当前不可用',
@@ -134,7 +144,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
         case 401:
           _toast('Key 无效，请检查是否复制完整', level: AppToastLevel.error);
         case 402:
-          _toast('DeepSeek 余额不足，请先充值', level: AppToastLevel.error);
+          _toast('${spec.label} 余额不足，请先充值', level: AppToastLevel.error);
         case 429:
           _toast('请求过于频繁，请稍后再试', level: AppToastLevel.error);
         default:
@@ -148,26 +158,30 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
         _toast('连接失败，请检查网络后重试', level: AppToastLevel.error);
       }
     } finally {
-      if (mounted) setState(() => _testing = false);
+      if (mounted) setState(() => _testing = null);
     }
   }
 
-  Future<void> _clear() async {
+  Future<void> _clear(AiPlatform platform) async {
+    final label = platformSpec(platform).label;
     final confirmed = await showAppConfirmDialog(
       context,
-      message: '清除 DeepSeek Key 后 AI 助手将不可用，账单数据不受影响。',
+      message: '清除 $label Key 后，这个平台的模型不再可选。账单数据不受影响。',
       confirmLabel: '清除 Key',
     );
     if (!confirmed || !mounted) return;
-    await ref.read(aiSettingsProvider.notifier).clearKey();
+    await ref.read(aiSettingsProvider.notifier).clearKey(platform);
     if (!mounted) return;
     final state = ref.read(aiSettingsProvider);
     if (state.hasError) {
       _toast('清除失败：${state.error}', level: AppToastLevel.error);
       return;
     }
-    _keyController.clear();
-    setState(() => _settings = state.value);
+    _keyControllers[platform]!.clear();
+    setState(() {
+      _settings = state.value;
+      _model = state.value?.model ?? _model;
+    });
     _toast('Key 已清除', level: AppToastLevel.success);
   }
 
@@ -180,6 +194,84 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     if (!ok && mounted) {
       _toast('无法打开网页', level: AppToastLevel.error);
     }
+  }
+
+  Widget _platformCard(AiPlatformSpec spec, AppColors colors) {
+    final configured = _settings?.hasKeyFor(spec.id) ?? false;
+    final saving = _saving == spec.id;
+    final testing = _testing == spec.id;
+    return SettingsCard(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  AiPlatformLogo(spec.id, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      spec.label,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: colors.ink,
+                        height: 1.2,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    configured ? _settings!.maskedKeyFor(spec.id) : '未配置',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.inactive,
+                      height: 1.2,
+                    ),
+                  ),
+                  if (configured)
+                    _CardAction(
+                      label: '清除',
+                      color: colors.danger,
+                      onTap: () => _clear(spec.id),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              AppTextField(
+                controller: _keyControllers[spec.id],
+                hint: configured ? '留空则保持当前 Key' : '粘贴 API Key',
+                obscureText: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                keyboardType: TextInputType.visiblePassword,
+              ),
+              Row(
+                children: [
+                  _KeyLink(
+                    label: '申请 Key',
+                    onTap: () => _open(spec.keyPageUrl),
+                  ),
+                  const Spacer(),
+                  _CardAction(
+                    label: testing ? '测试中' : '测试',
+                    color: colors.muted,
+                    onTap: _testing != null ? null : () => _test(spec.id),
+                  ),
+                  _CardAction(
+                    label: saving ? '保存中' : '保存',
+                    color: colors.primary,
+                    onTap: _saving != null ? null : () => _save(spec.id),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -205,90 +297,40 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
               else if (_loadError != null)
                 _ErrorCard(message: '读取设置失败：$_loadError', onRetry: _retry)
               else ...[
-                const SectionLabel('DeepSeek'),
-                SettingsCard(
-                  children: [
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _KeyStatus(
-                          configured: _settings?.hasKey ?? false,
-                          masked: _settings?.maskedKey ?? '未配置',
-                          onClear: (_settings?.hasKey ?? false) ? _clear : null,
-                        ),
-                        Divider(
-                          height: 1,
-                          thickness: 1,
-                          color: colors.lineSoft,
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              AppTextField(
-                                controller: _keyController,
-                                label: const Text('API Key'),
-                                hint: (_settings?.hasKey ?? false)
-                                    ? '留空则保持当前 Key'
-                                    : 'sk-...',
-                                obscureText: true,
-                                autocorrect: false,
-                                enableSuggestions: false,
-                                keyboardType: TextInputType.visiblePassword,
-                              ),
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: _KeyLink(
-                                  onTap: () => _open(_deepSeekKeysUrl),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: AppButton(
-                                      onPress: _saving ? null : _save,
-                                      child: Text(_saving ? '保存中…' : '保存'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: AppButton(
-                                      variant: AppButtonVariant.outline,
-                                      onPress: _testing ? null : _test,
-                                      child: Text(_testing ? '测试中…' : '测试连接'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
+                for (final spec in kAiPlatforms) ...[
+                  _platformCard(spec, colors),
+                  const SizedBox(height: 10),
+                ],
                 const SectionLabel('模型'),
-                SettingsCard(
-                  children: [
-                    for (final model in kDeepSeekModels)
-                      _ModelOption(
-                        title: model,
-                        selected: model == _model,
-                        onTap: () async {
-                          // 模型单独落盘，不跟 Key 绑成同一次保存。
-                          setState(() => _model = model);
-                          await ref
-                              .read(aiSettingsProvider.notifier)
-                              .setModel(model);
-                        },
+                if ((_settings?.availableModels ?? const []).isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Text(
+                      '配好 Key 后，对应平台的模型会出现在这里。',
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.45,
+                        color: colors.inactive,
                       ),
-                  ],
-                ),
+                    ),
+                  )
+                else
+                  SettingsCard(
+                    children: [
+                      for (final model in _settings!.availableModels)
+                        _ModelOption(
+                          title: model.id,
+                          mark: AiPlatformLogo(model.platform, size: 22),
+                          selected: model.id == _model,
+                          onTap: () async {
+                            setState(() => _model = model.id);
+                            await ref
+                                .read(aiSettingsProvider.notifier)
+                                .setModel(model.id);
+                          },
+                        ),
+                    ],
+                  ),
                 const SizedBox(height: 18),
                 const SectionLabel('思考'),
                 SettingsCard(
@@ -311,7 +353,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 Padding(
                   padding: const EdgeInsets.only(left: 4),
                   child: Text(
-                    '从下一轮对话开始生效。',
+                    '从下一轮对话开始生效。智谱和 Kimi 的当前模型不能关闭思考，选「关」时按最低强度发送。',
                     style: TextStyle(
                       fontSize: 12,
                       color: colors.inactive,
@@ -328,90 +370,35 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
   }
 }
 
-class _KeyStatus extends StatelessWidget {
-  const _KeyStatus({
-    required this.configured,
-    required this.masked,
-    this.onClear,
-  });
+class _CardAction extends StatelessWidget {
+  const _CardAction({required this.label, required this.color, this.onTap});
 
-  final bool configured;
-  final String masked;
-  final VoidCallback? onClear;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(16, 14, onClear == null ? 16 : 6, 14),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: colors.primarySoft,
-              borderRadius: context.radii.chipAll,
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              configured ? FLucideIcons.circleCheck : FLucideIcons.keyRound,
-              size: 17,
-              color: colors.primary,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  configured ? 'Key 已配置' : '尚未配置',
-                  style: TextStyle(
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w600,
-                    color: colors.ink,
-                    height: 1.25,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  configured ? masked : '填入自己的 DeepSeek Key 后即可使用',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colors.inactive,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (onClear != null)
-            TextButton(
-              onPressed: onClear,
-              style: TextButton.styleFrom(
-                foregroundColor: colors.danger,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text(
-                '清除',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-              ),
-            ),
-        ],
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: color,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
       ),
     );
   }
 }
 
 class _KeyLink extends StatelessWidget {
-  const _KeyLink({required this.onTap});
+  const _KeyLink({required this.label, required this.onTap});
 
+  final String label;
   final VoidCallback onTap;
 
   @override
@@ -421,16 +408,16 @@ class _KeyLink extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '去 DeepSeek 开放平台申请 Key',
+              label,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12.5,
                 color: colors.primary,
-                height: 1.3,
+                height: 1.2,
               ),
             ),
             const SizedBox(width: 4),
@@ -448,10 +435,12 @@ class _ModelOption extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.icon = FLucideIcons.cpu,
+    this.mark,
   });
 
   final String title;
   final IconData icon;
+  final Widget? mark;
   final bool selected;
   final VoidCallback onTap;
 
@@ -462,6 +451,7 @@ class _ModelOption extends StatelessWidget {
       color: selected ? colors.primarySoft : Colors.transparent,
       child: SettingsItem(
         icon: icon,
+        mark: mark,
         title: title,
         selected: selected,
         trailing: selected

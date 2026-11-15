@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 2.0.11+82
+version: 2.0.12+83
 
 environment:
   sdk: ^3.12.2
@@ -51,6 +51,9 @@ dependencies:
   #（其 10.x 依赖 win32 ^6，与 share_plus 12的 win32 ^5 冲突）
   http: ^1.6.0
   shared_preferences: ^2.5.5
+  # 2.5.0 的 JNI 绑定在 Android 上会找不到 SharedPreferencesApiRegistrar.getInstance。
+  # 锁到带新注册方式的版本，并带上会保留 Kotlin 协程类的 jni。
+  shared_preferences_android: ^2.5.5
   crypto: ^3.0.7
   # 锁定小版本：forui 仍是 0.x，minor 升级可能带破坏性变更，升级由人工主动决定
   forui: 0.25.0

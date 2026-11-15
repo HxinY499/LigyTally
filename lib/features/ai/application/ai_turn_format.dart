@@ -123,6 +123,27 @@ TurnContent splitAssistantTurn(List<AiMessage> turn) {
   );
 }
 
+/// 只有一段思考，或只有一次工具调用时，不必再收成一行。
+bool processStaysOpen(List<TurnPiece> process) {
+  var thoughts = 0;
+  var tools = 0;
+  var other = 0;
+  for (final piece in process) {
+    final part = piece.part;
+    if (part is ReasoningPart) {
+      thoughts++;
+    } else if (part is ToolCallPart) {
+      tools++;
+    } else {
+      other++;
+    }
+  }
+  if (other > 0) return false;
+  if (thoughts == 1 && tools == 0) return true;
+  if (tools == 1 && thoughts == 0) return true;
+  return false;
+}
+
 /// 折叠行上的短标题。
 String workProcessLabel(List<TurnPiece> process) {
   var thoughts = 0;

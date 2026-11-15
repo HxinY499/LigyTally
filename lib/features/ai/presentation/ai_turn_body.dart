@@ -102,7 +102,7 @@ class _WorkProcessState extends State<_WorkProcess> {
           _piece(widget.pieces[i], i),
       ],
     );
-    if (widget.working) return body;
+    if (widget.working || processStaysOpen(widget.pieces)) return body;
 
     final colors = context.colors;
     final muted = colors.muted;
@@ -165,7 +165,11 @@ class _WorkProcessState extends State<_WorkProcess> {
           !widget.hasAnswer &&
           last &&
           piece.message.status == AiMessageStatus.streaming;
-      return _ThinkingBlock(text: part.text.trim(), live: live);
+      return _ThinkingBlock(
+        text: part.text.trim(),
+        live: live,
+        stayOpen: processStaysOpen(widget.pieces),
+      );
     }
     if (part is ToolCallPart) {
       return AiToolRow(call: part, result: widget.results[part.toolCallId]);
@@ -185,27 +189,35 @@ class _WorkProcessState extends State<_WorkProcess> {
 }
 
 class _ThinkingBlock extends StatefulWidget {
-  const _ThinkingBlock({required this.text, required this.live});
+  const _ThinkingBlock({
+    required this.text,
+    required this.live,
+    required this.stayOpen,
+  });
 
   final String text;
   final bool live;
+
+  /// 整轮里只有这一段思考时，结束后仍然摊开。
+  final bool stayOpen;
 
   @override
   State<_ThinkingBlock> createState() => _ThinkingBlockState();
 }
 
 class _ThinkingBlockState extends State<_ThinkingBlock> {
-  late bool _open = widget.live;
+  late bool _open = widget.live || widget.stayOpen;
   bool _pinned = false;
 
   @override
   void didUpdateWidget(_ThinkingBlock oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.live) {
+    if (_pinned) return;
+    if (widget.live || widget.stayOpen) {
       _open = true;
       return;
     }
-    if (oldWidget.live && !_pinned) _open = false;
+    if (oldWidget.live) _open = false;
   }
 
   @override

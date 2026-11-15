@@ -86,10 +86,14 @@ class SettingsItem extends StatelessWidget {
     this.showChevron = false,
     this.accent = false,
     this.selected = false,
+    this.mark,
     this.onTap,
   });
 
   final IconData icon;
+
+  /// 放在图标位。模型行用来放平台标志，不再套一层纯色底。
+  final Widget? mark;
   final String title;
   final String? subtitle;
 
@@ -128,18 +132,22 @@ class SettingsItem extends StatelessWidget {
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(
-                  color: accent || selected
-                      ? colors.primary
-                      : colors.primarySoft,
-                  borderRadius: context.radii.chipAll,
-                ),
+                decoration: mark == null
+                    ? BoxDecoration(
+                        color: accent || selected
+                            ? colors.primary
+                            : colors.primarySoft,
+                        borderRadius: context.radii.chipAll,
+                      )
+                    : null,
                 alignment: Alignment.center,
-                child: Icon(
-                  icon,
-                  size: 17,
-                  color: accent || selected ? Colors.white : colors.primary,
-                ),
+                child:
+                    mark ??
+                    Icon(
+                      icon,
+                      size: 17,
+                      color: accent || selected ? Colors.white : colors.primary,
+                    ),
               ),
               const SizedBox(width: 12),
               Expanded(

@@ -24,24 +24,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class _EmptyKeyStore extends DeepSeekKeyStore {
   @override
-  Future<String?> read() async => null;
+  Future<String?> readFor(AiPlatform platform) async => null;
 
   @override
-  Future<void> write(String value) async {}
+  Future<void> writeFor(AiPlatform platform, String value) async {}
 
   @override
-  Future<void> clear() async {}
+  Future<void> clearFor(AiPlatform platform) async {}
 }
 
 class _ConfiguredKeyStore extends DeepSeekKeyStore {
   @override
-  Future<String?> read() async => 'test-deepseek-key';
+  Future<String?> readFor(AiPlatform platform) async =>
+      platform == AiPlatform.deepseek ? 'test-deepseek-key' : null;
 
   @override
-  Future<void> write(String value) async {}
+  Future<void> writeFor(AiPlatform platform, String value) async {}
 
   @override
-  Future<void> clear() async {}
+  Future<void> clearFor(AiPlatform platform) async {}
 }
 
 class _ScriptProvider implements LlmProvider {
@@ -111,7 +112,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('AI 助手'), findsWidgets);
-    expect(find.text('先配置 DeepSeek API Key'), findsOneWidget);
+    expect(find.text('先配置 API Key'), findsOneWidget);
     expect(find.text('去配置'), findsOneWidget);
   });
 
@@ -218,7 +219,7 @@ void main() {
     expect(field.bottom, lessThanOrEqualTo(844 - 320 + 1));
   });
 
-  testWidgets('AI 设置页展示 Key 输入和两个模型', (tester) async {
+  testWidgets('AI 设置页展示三个平台，没配 Key 时不列出模型', (tester) async {
     SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -236,9 +237,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('AI 助手设置'), findsWidgets);
-    expect(find.text('API Key'), findsOneWidget);
-    expect(find.text('deepseek-flash'), findsOneWidget);
-    expect(find.text('deepseek-v4-pro'), findsOneWidget);
+    expect(find.text('申请 Key'), findsNWidgets(3));
+    expect(find.text('DeepSeek'), findsWidgets);
+    expect(find.text('智谱'), findsWidgets);
+    expect(find.text('Kimi'), findsWidgets);
+    await tester.drag(
+      find.byType(CustomScrollView).first,
+      const Offset(0, -900),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('配好 Key 后，对应平台的模型会出现在这里。'), findsOneWidget);
+    expect(find.text('deepseek-flash'), findsNothing);
+    expect(find.text('glm-5.3'), findsNothing);
+    expect(find.text('kimi-k3.1-pro'), findsNothing);
     expect(find.text('关'), findsOneWidget);
     expect(find.text('低'), findsOneWidget);
     expect(find.text('高'), findsOneWidget);
@@ -296,6 +307,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('deepseek-flash'), findsWidgets);
     expect(find.text('deepseek-v4-pro'), findsOneWidget);
+    expect(find.text('glm-5.3'), findsNothing);
+    expect(find.text('kimi-k3.1-pro'), findsNothing);
     expect(find.textContaining('可以看图'), findsNothing);
     expect(find.textContaining('不能看图'), findsNothing);
 

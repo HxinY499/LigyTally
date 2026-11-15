@@ -7,6 +7,8 @@ import 'package:forui/forui.dart';
 
 import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_theme.dart';
+import '../application/ai_platform.dart';
+import 'ai_platform_logo.dart';
 
 /// 底部输入条。
 ///
@@ -202,7 +204,7 @@ class _AiComposerBarState extends State<AiComposerBar> {
       key: _fieldKey,
       controller: _text,
       focusNode: _focus,
-      minLines: expanded ? 3 : 1,
+      minLines: expanded ? 2 : 1,
       maxLines: expanded ? 8 : 1,
       textInputAction: expanded
           ? TextInputAction.newline
@@ -257,8 +259,13 @@ class _ModelChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              AiPlatformLogo(
+                aiModelById(model)?.platform ?? AiPlatform.deepseek,
+                size: 16,
+              ),
+              const SizedBox(width: 6),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 148),
+                constraints: const BoxConstraints(maxWidth: 132),
                 child: Text(
                   model,
                   maxLines: 1,

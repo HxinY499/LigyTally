@@ -10,11 +10,11 @@ import 'ai_turn_format.dart';
 import 'deepseek_provider.dart';
 import 'ledger_tools.dart';
 
-/// 一次 AI 聊天会话：DeepSeek provider、工具、流式 controller、系统提示词
+/// 一次 AI 聊天会话：官方平台的 provider、工具、流式 controller、系统提示词
 /// 和本地账目查询的胶水层。
 ///
-/// UI 只拿 [chat] 交给 AiChatView；这个类之外不需要知道 DeepSeek 的
-/// Chat Completions 细节。
+/// UI 只拿 [chat] 交给 AiChatView。DeepSeek、智谱、Kimi 都走同一套
+/// OpenAI 兼容协议，差别在地址、Key 和思考参数。
 class AiChatSession {
   AiChatSession._({
     required this.provider,
@@ -24,6 +24,8 @@ class AiChatSession {
     required AiReasoningEffort settingsReasoning,
     required AiConversation initial,
     required this._systemPrompt,
+    required this._apiKey,
+    required this._baseUrl,
   }) : _model = settingsModel,
        _reasoning = settingsReasoning {
     chat = UseChatController(
@@ -42,7 +44,10 @@ class AiChatSession {
     );
   }
 
-  final DeepSeekProvider provider;
+  DeepSeekProvider provider;
+  String _apiKey;
+  String _baseUrl;
+  final List<DeepSeekProvider> _retiredProviders = [];
   final LedgerToolService tools;
   final ToolApprovalCoordinator approval;
   final String _systemPrompt;
@@ -62,13 +67,32 @@ class AiChatSession {
   int? elapsedOverrideFor(String messageId) => _elapsedOverrides[messageId];
 
   /// 思考内容在 `reasoning_content` 里，由 [DeepSeekProvider] 收下来。
-  /// 关掉时不传 `reasoning_effort`；打开时带上 low / high / max。
+  /// 各家能不能关掉、参数叫什么，由 [thinkingExtraFor] 区分。
   static AiRequestOptions requestOptions(
     String model,
     AiReasoningEffort effort,
-  ) => AiRequestOptions(model: model, extra: thinkingRequestExtra(effort));
+  ) => AiRequestOptions(model: model, extra: thinkingExtraFor(model, effort));
 
-  void useModel(String model) {
+  void useModel(String model, {required String apiKey}) {
+    final spec = aiModelById(model);
+    final baseUrl = spec == null
+        ? _baseUrl
+        : platformSpec(spec.platform).baseUrl;
+    if (apiKey != _apiKey || baseUrl != _baseUrl) {
+      final next = DeepSeekProvider(
+        apiKey: apiKey,
+        baseUrl: Uri.parse(baseUrl),
+        defaultModel: model,
+        maxRetries: 2,
+        timeout: const Duration(seconds: 60),
+      );
+      chat.setProvider(next);
+      // 正在进行的那一轮还拿着旧 client，页面关掉时再释放。
+      _retiredProviders.add(provider);
+      provider = next;
+      _apiKey = apiKey;
+      _baseUrl = baseUrl;
+    }
     _model = model;
     chat.setOptions(requestOptions(_model, _reasoning));
   }
@@ -85,13 +109,17 @@ class AiChatSession {
     required AiConversation? initial,
     required ToolApprovalCoordinator approval,
   }) async {
-    final apiKey = settings.apiKey?.trim();
-    if (apiKey == null || apiKey.isEmpty) {
-      throw StateError('还没有配置 DeepSeek API Key');
+    final spec = aiModelById(settings.model);
+    final platform = spec?.platform ?? AiPlatform.deepseek;
+    final apiKey = settings.keyFor(platform);
+    if (apiKey == null) {
+      throw StateError('还没有配置 ${platformSpec(platform).label} API Key');
     }
+    final baseUrl = platformSpec(platform).baseUrl;
     final systemPrompt = await _buildSystemPrompt(database);
     final provider = DeepSeekProvider(
       apiKey: apiKey,
+      baseUrl: Uri.parse(baseUrl),
       defaultModel: settings.model,
       maxRetries: 2,
       timeout: const Duration(seconds: 60),
@@ -105,6 +133,8 @@ class AiChatSession {
       systemPrompt: systemPrompt,
       settingsModel: settings.model,
       settingsReasoning: settings.reasoning,
+      apiKey: apiKey,
+      baseUrl: baseUrl,
     );
   }
 
@@ -294,6 +324,9 @@ $categoryLines
   void dispose() {
     _closed = true;
     chat.dispose();
+    for (final retired in _retiredProviders) {
+      retired.close();
+    }
     provider.close();
   }
 

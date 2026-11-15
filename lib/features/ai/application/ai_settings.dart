@@ -2,17 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/deepseek_key_store.dart';
+import 'ai_platform.dart';
 
-/// DeepSeek 当前可用的模型名。
-///
-/// 旧教程里的 deepseek-chat / deepseek-reasoner 已退役；这里只列官方当前
-/// 文档中的模型。默认用 flash，日常查询和记账工具调用足够，延迟也低。
-const kDeepSeekModels = <String>['deepseek-flash', 'deepseek-v4-pro'];
-
-const kDeepSeekDefaultModel = 'deepseek-flash';
-
-/// 官方定价表里只有 flash 标了 Vision。v4-pro 带图会直接 400。
-bool deepSeekModelAcceptsImages(String model) => model == 'deepseek-flash';
+export 'ai_platform.dart';
 
 /// DeepSeek 思考档位。
 ///
@@ -52,36 +44,75 @@ Map<String, Object?> thinkingRequestExtra(AiReasoningEffort effort) {
   };
 }
 
+/// 按模型所属平台写思考参数。
+///
+/// DeepSeek 可以关掉。智谱 GLM-5.3 和 Kimi K3 不能关，传 disabled 会 400；
+/// 选「关」时改成官方允许的最低强度。Kimi 只认顶层 `reasoning_effort`。
+Map<String, Object?> thinkingExtraFor(String model, AiReasoningEffort effort) {
+  final spec = aiModelById(model);
+  if (spec == null || !spec.thinkingAlwaysOn) {
+    return thinkingRequestExtra(effort);
+  }
+  final wire = effort == AiReasoningEffort.off
+      ? AiReasoningEffort.low.wireName
+      : effort.wireName;
+  if (spec.platform == AiPlatform.kimi) {
+    return {'reasoning_effort': wire};
+  }
+  return {
+    'thinking': const {'type': 'enabled'},
+    'reasoning_effort': wire,
+  };
+}
+
 class AiSettings {
   const AiSettings({
-    this.apiKey,
+    this.keys = const {},
     this.model = kDeepSeekDefaultModel,
     this.reasoning = AiReasoningEffort.fallback,
   });
 
-  final String? apiKey;
+  final Map<AiPlatform, String> keys;
   final String model;
   final AiReasoningEffort reasoning;
 
-  bool get hasKey => (apiKey ?? '').trim().isNotEmpty;
+  bool hasKeyFor(AiPlatform platform) =>
+      (keys[platform] ?? '').trim().isNotEmpty;
+
+  bool get hasKey => AiPlatform.values.any(hasKeyFor);
+
+  String? keyFor(AiPlatform platform) {
+    final value = (keys[platform] ?? '').trim();
+    return value.isEmpty ? null : value;
+  }
 
   /// 只给设置页展示用，绝不把完整 Key 回填到输入框。
-  String get maskedKey {
+  String maskedKeyFor(AiPlatform platform) => _mask(keys[platform]);
+
+  Set<AiPlatform> get configuredPlatforms => {
+    for (final platform in AiPlatform.values)
+      if (hasKeyFor(platform)) platform,
+  };
+
+  List<AiModelSpec> get availableModels =>
+      modelsForConfigured(configuredPlatforms);
+
+  AiSettings copyWith({
+    Map<AiPlatform, String>? keys,
+    String? model,
+    AiReasoningEffort? reasoning,
+  }) => AiSettings(
+    keys: keys ?? this.keys,
+    model: model ?? this.model,
+    reasoning: reasoning ?? this.reasoning,
+  );
+
+  static String _mask(String? apiKey) {
     final value = (apiKey ?? '').trim();
     if (value.isEmpty) return '未配置';
     if (value.length <= 8) return '已配置';
     return '${value.substring(0, 4)}…${value.substring(value.length - 4)}';
   }
-
-  AiSettings copyWith({
-    String? apiKey,
-    String? model,
-    AiReasoningEffort? reasoning,
-  }) => AiSettings(
-    apiKey: apiKey ?? this.apiKey,
-    model: model ?? this.model,
-    reasoning: reasoning ?? this.reasoning,
-  );
 }
 
 final deepSeekKeyStoreProvider = Provider<DeepSeekKeyStore>(
@@ -99,42 +130,52 @@ class AiSettingsController extends AsyncNotifier<AiSettings> {
 
   @override
   Future<AiSettings> build() async {
-    final key = await ref.read(deepSeekKeyStoreProvider).read();
+    final store = ref.read(deepSeekKeyStoreProvider);
+    final keys = <AiPlatform, String>{};
+    for (final platform in AiPlatform.values) {
+      final value = (await store.readFor(platform))?.trim();
+      if (value != null && value.isNotEmpty) keys[platform] = value;
+    }
     final prefs = await SharedPreferences.getInstance();
-    final storedModel = prefs.getString(_modelPrefsKey);
-    final model = kDeepSeekModels.contains(storedModel)
-        ? storedModel!
-        : kDeepSeekDefaultModel;
+    final configured = keys.keys.toSet();
+    final model = resolveSelectedModel(
+      prefs.getString(_modelPrefsKey),
+      configured,
+    );
     final reasoning = AiReasoningEffort.fromWire(
       prefs.getString(_reasoningPrefsKey),
     );
-    return AiSettings(apiKey: key, model: model, reasoning: reasoning);
+    return AiSettings(keys: keys, model: model, reasoning: reasoning);
   }
 
-  Future<void> save({required String apiKey, required String model}) async {
+  Future<void> saveKey({
+    required AiPlatform platform,
+    required String apiKey,
+  }) async {
     final trimmed = apiKey.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError.value(apiKey, 'apiKey', 'API Key 不能为空');
     }
-    if (!kDeepSeekModels.contains(model)) {
-      throw ArgumentError.value(model, 'model', '不支持的 DeepSeek 模型');
-    }
-    final reasoning = state.value?.reasoning ?? AiReasoningEffort.fallback;
+    final current = state.value;
+    final reasoning = current?.reasoning ?? AiReasoningEffort.fallback;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await ref.read(deepSeekKeyStoreProvider).write(trimmed);
+      await ref.read(deepSeekKeyStoreProvider).writeFor(platform, trimmed);
+      final keys = Map<AiPlatform, String>.from(current?.keys ?? const {});
+      keys[platform] = trimmed;
+      final model = resolveSelectedModel(current?.model, keys.keys.toSet());
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_modelPrefsKey, model);
-      return AiSettings(apiKey: trimmed, model: model, reasoning: reasoning);
+      return AiSettings(keys: keys, model: model, reasoning: reasoning);
     });
   }
 
   Future<void> setModel(String model) async {
-    if (!kDeepSeekModels.contains(model)) {
-      throw ArgumentError.value(model, 'model', '不支持的 DeepSeek 模型');
-    }
+    final spec = aiModelById(model);
     final current = state.value;
-    if (current == null) return;
+    if (spec == null || current == null || !current.hasKeyFor(spec.platform)) {
+      throw ArgumentError.value(model, 'model', '这个模型还不可用');
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_modelPrefsKey, model);
     state = AsyncData(current.copyWith(model: model));
@@ -148,14 +189,19 @@ class AiSettingsController extends AsyncNotifier<AiSettings> {
     state = AsyncData(current.copyWith(reasoning: effort));
   }
 
-  Future<void> clearKey() async {
+  Future<void> clearKey(AiPlatform platform) async {
     final current = state.value;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await ref.read(deepSeekKeyStoreProvider).clear();
+      await ref.read(deepSeekKeyStoreProvider).clearFor(platform);
+      final keys = Map<AiPlatform, String>.from(current?.keys ?? const {});
+      keys.remove(platform);
+      final model = resolveSelectedModel(current?.model, keys.keys.toSet());
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_modelPrefsKey, model);
       return AiSettings(
-        apiKey: null,
-        model: current?.model ?? kDeepSeekDefaultModel,
+        keys: keys,
+        model: model,
         reasoning: current?.reasoning ?? AiReasoningEffort.fallback,
       );
     });

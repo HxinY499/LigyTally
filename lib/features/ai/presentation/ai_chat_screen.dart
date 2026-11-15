@@ -16,6 +16,7 @@ import '../data/ai_chat_store.dart';
 import 'ai_bill_confirm_dialog.dart';
 import 'ai_chat_images.dart';
 import 'ai_chat_pane.dart';
+import 'ai_platform_logo.dart';
 import 'ai_settings_screen.dart';
 
 /// AI 助手的唯一页面。
@@ -298,29 +299,34 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 
   String _friendlyError(Object error) {
     if (error is LlmAuthException) {
-      return 'DeepSeek Key 无效，请到 AI 设置里检查。';
+      return '${_vendorName()} Key 无效，请到 AI 设置里检查。';
     }
     if (error is LlmRateLimitException) {
       return '请求过于频繁，请稍后再试。';
     }
     if (error is LlmException && error.statusCode == 402) {
-      return 'DeepSeek 余额不足，请先充值。';
+      return '${_vendorName()} 余额不足，请先充值。';
     }
     if (error is TimeoutException) {
       return '连接超时，请检查网络后重试。';
     }
     final text = error.toString();
-    if (text.contains('401')) return 'DeepSeek Key 无效，请到 AI 设置里检查。';
-    if (text.contains('402')) return 'DeepSeek 余额不足，请先充值。';
+    if (text.contains('401')) return '${_vendorName()} Key 无效，请到 AI 设置里检查。';
+    if (text.contains('402')) return '${_vendorName()} 余额不足，请先充值。';
     if (text.contains('429')) return '请求过于频繁，请稍后再试。';
     final short = text.length > 180 ? '${text.substring(0, 180)}…' : text;
     return 'AI 请求失败：$short';
   }
 
+  String _vendorName() =>
+      platformSpec(aiModelById(_model)?.platform ?? AiPlatform.deepseek).label;
+
   Future<void> _applyModel(String model) async {
-    if (!kDeepSeekModels.contains(model) || model == _model) return;
+    final spec = aiModelById(model);
+    final key = spec == null ? null : _settings?.keyFor(spec.platform);
+    if (spec == null || key == null || model == _model) return;
     setState(() => _model = model);
-    _session?.useModel(model);
+    _session?.useModel(model, apiKey: key);
     await ref.read(aiSettingsProvider.notifier).setModel(model);
   }
 
@@ -335,7 +341,10 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (sheetContext) => _ModelSheet(selected: _model),
+      builder: (sheetContext) => _ModelSheet(
+        selected: _model,
+        models: _settings?.availableModels ?? const [],
+      ),
     );
     if (picked == null || !mounted) return;
     await _applyModel(picked);
@@ -352,11 +361,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   }
 
   Future<List<FilePart>> _pickImages() async {
-    if (!deepSeekModelAcceptsImages(_model)) {
-      showAppToast(
-        context,
-        message: 'deepseek-v4-pro 不能看图，请先切到 deepseek-flash',
-      );
+    if (!modelAcceptsImages(_model)) {
+      showAppToast(context, message: '$_model 不能看图，请换一个带视觉的模型');
       return const [];
     }
     return pickChatImages(context);
@@ -420,10 +426,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         onSettings: _openSettings,
       );
     } else if (_session == null) {
-      body = _SetupView(
-        onSetup: _openSettings,
-        maskedKey: _settings?.maskedKey,
-      );
+      body = _SetupView(onSetup: _openSettings);
     } else {
       body = _ChatBody(
         session: _session!,
@@ -540,27 +543,26 @@ class _ChatBody extends StatelessWidget {
 
   static String _errorText(Object error) {
     if (error is LlmAuthException) {
-      return 'DeepSeek Key 无效，请到 AI 设置里检查。';
+      return 'API Key 无效，请到 AI 设置里检查。';
     }
     if (error is LlmRateLimitException) {
       return '请求过于频繁，请稍后再试。';
     }
     if (error is LlmException && error.statusCode == 402) {
-      return 'DeepSeek 余额不足，请先充值。';
+      return '账户余额不足，请先充值。';
     }
     final text = error.toString();
-    if (text.contains('401')) return 'DeepSeek Key 无效，请到 AI 设置里检查。';
-    if (text.contains('402')) return 'DeepSeek 余额不足，请先充值。';
+    if (text.contains('401')) return 'API Key 无效，请到 AI 设置里检查。';
+    if (text.contains('402')) return '账户余额不足，请先充值。';
     if (text.contains('429')) return '请求过于频繁，请稍后再试。';
     return 'AI 请求失败，请稍后重试。';
   }
 }
 
 class _SetupView extends StatelessWidget {
-  const _SetupView({required this.onSetup, required this.maskedKey});
+  const _SetupView({required this.onSetup});
 
   final VoidCallback onSetup;
-  final String? maskedKey;
 
   @override
   Widget build(BuildContext context) {
@@ -586,7 +588,7 @@ class _SetupView extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             Text(
-              '先配置 DeepSeek API Key',
+              '先配置 API Key',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
@@ -596,17 +598,10 @@ class _SetupView extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'AI 会读取本地账单来回答问题，也可以帮你记一笔或删账单。'
-              'Key 只保存在本机，AI 请求直接发往 DeepSeek。',
+              '支持 DeepSeek、智谱和 Kimi 的官方平台。Key 只保存在本机，请求直接发往对应平台。',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 14, height: 1.55, color: colors.muted),
             ),
-            if (maskedKey != null && maskedKey != '未配置') ...[
-              const SizedBox(height: 8),
-              Text(
-                '当前 Key：$maskedKey',
-                style: TextStyle(fontSize: 12, color: colors.inactive),
-              ),
-            ],
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -929,9 +924,10 @@ class _ConversationTitle extends StatelessWidget {
 }
 
 class _ModelSheet extends StatelessWidget {
-  const _ModelSheet({required this.selected});
+  const _ModelSheet({required this.selected, required this.models});
 
   final String selected;
+  final List<AiModelSpec> models;
 
   @override
   Widget build(BuildContext context) {
@@ -968,14 +964,26 @@ class _ModelSheet extends StatelessWidget {
                 ),
               ),
             ),
-            for (final model in kDeepSeekModels)
-              ListTile(
-                title: Text(model),
-                trailing: model == selected
-                    ? Icon(FLucideIcons.check, size: 18, color: colors.primary)
-                    : null,
-                onTap: () => Navigator.pop(context, model),
-              ),
+            ListView(
+              shrinkWrap: true,
+              physics: const ClampingScrollPhysics(),
+              children: [
+                for (final model in models)
+                  ListTile(
+                    leading: AiPlatformLogo(model.platform, size: 22),
+                    title: Text(model.id),
+                    visualDensity: VisualDensity.compact,
+                    trailing: model.id == selected
+                        ? Icon(
+                            FLucideIcons.check,
+                            size: 18,
+                            color: colors.primary,
+                          )
+                        : null,
+                    onTap: () => Navigator.pop(context, model.id),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
           ],
         ),
