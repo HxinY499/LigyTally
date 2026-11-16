@@ -173,30 +173,52 @@ void main() {
     );
   });
 
-  test('回答末尾的 bills 标记剥成卡片 id，正文不留标记', () {
-    final parsed = splitBillMarker('找到了，是这两笔。\n<bills>["t1","t2"]</bills>');
-    expect(parsed.text, '找到了，是这两笔。');
-    expect(parsed.billIds, ['t1', 't2']);
+  test('bills 标记在哪儿，卡片就切在哪儿', () {
+    List<String> texts(List<AiAnswerBlock> blocks) => [
+      for (final block in blocks)
+        if (block is AiAnswerTextBlock) block.text,
+    ];
+    List<List<String>> cards(List<AiAnswerBlock> blocks) => [
+      for (final block in blocks)
+        if (block is AiAnswerBillsBlock) block.ids,
+    ];
 
-    // 没有标记时原样返回。
-    final plain = splitBillMarker('这个月餐饮花了 280 元。');
-    expect(plain.text, '这个月餐饮花了 280 元。');
-    expect(plain.billIds, isEmpty);
+    // 标记在中间：前后都是正文，卡片夹在中间。
+    final middle = splitAnswerBlocks(
+      '上午这笔是：\n<bills>["t1"]</bills>\n下午还有一笔。',
+    );
+    expect(texts(middle), ['上午这笔是：', '下午还有一笔。']);
+    expect(cards(middle), [
+      ['t1'],
+    ]);
+
+    // 一组回答里可以有多个标记，各就各位。
+    final multiple = splitAnswerBlocks(
+      '先说支出：\n<bills>["t1","t2"]</bills>\n收入这些：\n<bills>["t3"]</bills>',
+    );
+    expect(texts(multiple), ['先说支出：', '收入这些：']);
+    expect(cards(multiple), [
+      ['t1', 't2'],
+      ['t3'],
+    ]);
+
+    // 没有标记时就是一整段文本。
+    final plain = splitAnswerBlocks('这个月餐饮花了 280 元。');
+    expect(texts(plain), ['这个月餐饮花了 280 元。']);
+    expect(cards(plain), isEmpty);
 
     // 流式中途的半截标记先藏起来，等写完再解析。
-    final streaming = splitBillMarker('找到了，是这两笔。\n<bills>["t1"');
-    expect(streaming.text, '找到了，是这两笔。');
-    expect(streaming.billIds, isEmpty);
+    final streaming = splitAnswerBlocks('找到了，是这两笔。\n<bills>["t1"');
+    expect(texts(streaming), ['找到了，是这两笔。']);
+    expect(cards(streaming), isEmpty);
 
-    // JSON 写坏了：正文剥掉标记，没有卡片，不崩。
-    final broken = splitBillMarker('找到了。\n<bills>[t1,t2]</bills>');
-    expect(broken.text, '找到了。');
-    expect(broken.billIds, isEmpty);
+    // JSON 写坏了：标记剥掉，不出空卡片，不崩。
+    final broken = splitAnswerBlocks('找到了。\n<bills>[t1,t2]</bills>');
+    expect(texts(broken), ['找到了。']);
+    expect(cards(broken), isEmpty);
 
-    // 空 id 和空白正文都容忍。
-    final empty = splitBillMarker('<bills>[]</bills>');
-    expect(empty.text, '');
-    expect(empty.billIds, isEmpty);
+    // 空列表不产生卡片。
+    expect(splitAnswerBlocks('<bills>[]</bills>'), isEmpty);
   });
 
   test('DeepSeek 的 reasoning_content 会变成思考增量，并且排在正文前面', () {

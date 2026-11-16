@@ -32,10 +32,13 @@ class AiTurnBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = splitAssistantTurn(turn);
-    // 回答末尾的 <bills> 标记：剥出来渲染成账单卡片，正文不显示这行。
-    final answer = content.answer == null
-        ? null
-        : splitBillMarker(content.answer!.text);
+    // <bills> 标记出现在正文哪儿，卡片就渲染在哪儿。
+    final blocks = content.answer == null
+        ? const <AiAnswerBlock>[]
+        : splitAnswerBlocks(content.answer!.text);
+    final streaming =
+        working &&
+        content.answerMessage?.status == AiMessageStatus.streaming;
     final theme = AiThemeExtension.of(context);
     return DefaultTextStyle.merge(
       style: theme.textStyle.copyWith(color: theme.assistantTextColor),
@@ -53,18 +56,18 @@ class AiTurnBody extends StatelessWidget {
                 working: working,
                 hasAnswer: content.answer != null,
               ),
-            if (answer != null)
-              _AnswerText(
-                text: answer.text,
-                streaming:
-                    working &&
-                    content.answerMessage?.status == AiMessageStatus.streaming,
-              ),
-            if (answer != null && answer.billIds.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: AiTransactionCards(ids: answer.billIds),
-              ),
+            for (final block in blocks)
+              switch (block) {
+                AiAnswerTextBlock(:final text) => _AnswerText(
+                  text: text,
+                  streaming: streaming,
+                ),
+                AiAnswerBillsBlock(:final ids) => Padding(
+                  key: ValueKey('bills-${ids.join(',')}'),
+                  padding: const EdgeInsets.only(top: 4, bottom: 8),
+                  child: AiTransactionCards(ids: ids),
+                ),
+              },
           ],
         ),
       ),

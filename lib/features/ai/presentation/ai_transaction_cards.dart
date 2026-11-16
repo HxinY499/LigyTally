@@ -2,9 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:forui/forui.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/location/place_fix.dart';
+import '../../../core/theme/app_density.dart';
 import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/ledger_date.dart';
@@ -27,9 +28,6 @@ class AiTransactionCards extends ConsumerStatefulWidget {
 }
 
 class _AiTransactionCardsState extends ConsumerState<AiTransactionCards> {
-  static const _collapsedCount = 5;
-
-  bool _expanded = false;
   List<LedgerItem>? _items;
 
   @override
@@ -79,62 +77,24 @@ class _AiTransactionCardsState extends ConsumerState<AiTransactionCards> {
     final items = _items;
     if (items == null || items.isEmpty) return const SizedBox.shrink();
     final colors = context.colors;
-    final visible = _expanded
-        ? items
-        : items.take(_collapsedCount).toList();
-    final hidden = items.length - visible.length;
-    final collapsible = items.length > _collapsedCount;
     return Material(
       color: colors.surface,
       shape: context.radii.cardShape(),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          for (var index = 0; index < visible.length; index++) ...[
+          for (var index = 0; index < items.length; index++) ...[
             if (index > 0)
               Divider(
                 height: 1,
                 thickness: 1,
-                indent: 14,
-                endIndent: 14,
+                indent: 18,
+                endIndent: 18,
                 color: colors.fill,
               ),
             _CardRow(
-              item: visible[index],
-              onTap: () => unawaited(_openTransaction(visible[index])),
-            ),
-          ],
-          if (collapsible) ...[
-            Divider(
-              height: 1,
-              thickness: 1,
-              indent: 14,
-              endIndent: 14,
-              color: colors.fill,
-            ),
-            InkWell(
-              onTap: () => setState(() => _expanded = !_expanded),
-              highlightColor: colors.pressed,
-              splashColor: colors.ripple,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 9),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      _expanded ? '收起' : '展开其余 $hidden 条',
-                      style: TextStyle(fontSize: 13, color: colors.muted),
-                    ),
-                    Icon(
-                      _expanded
-                          ? FLucideIcons.chevronUp
-                          : FLucideIcons.chevronDown,
-                      size: 14,
-                      color: colors.muted,
-                    ),
-                  ],
-                ),
-              ),
+              item: items[index],
+              onTap: () => unawaited(_openTransaction(items[index])),
             ),
           ],
         ],
@@ -155,28 +115,35 @@ class _CardRow extends StatelessWidget {
     final isExpense = item.transaction.kind == 0;
     final color = isExpense ? colors.expense : colors.income;
     final soft = isExpense ? colors.expenseSoft : colors.incomeSoft;
-    final note = item.transaction.note.trim();
-    final subtitle = note.isEmpty
-        ? _dayLabel(item.transaction.accountingDate)
-        : '${_dayLabel(item.transaction.accountingDate)} · $note';
+    final extra = item.transaction.locationAndNote;
+    final occurredAt = DateTime.fromMillisecondsSinceEpoch(
+      item.transaction.occurredAt,
+    );
     return InkWell(
       onTap: onTap,
       highlightColor: colors.pressed,
       splashColor: colors.ripple,
+      hoverColor: colors.ripple,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        // 和首页账单行同一套尺寸：左右 18 是版面骨架不随密度缩，
+        // 上下跟着密度档走。
+        padding: EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: context.density.space(12),
+        ),
         child: Row(
           children: [
             CategoryIconBadge(
               iconKey: item.category.iconKey,
               color: color,
               background: soft,
-              diameter: CategoryIconBadge.small,
+              diameter: CategoryIconBadge.large,
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     item.category.name,
@@ -190,7 +157,9 @@ class _CardRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    subtitle,
+                    extra.isEmpty
+                        ? formatClock(occurredAt)
+                        : '${formatClock(occurredAt)} · $extra',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 12, color: colors.muted),
@@ -207,13 +176,5 @@ class _CardRow extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static String _dayLabel(String accountingDate) {
-    final parsed = DateTime.tryParse(accountingDate);
-    if (parsed == null) return accountingDate;
-    final now = DateTime.now();
-    if (parsed.year == now.year) return '${parsed.month} 月 ${parsed.day} 日';
-    return '${parsed.year} 年 ${parsed.month} 月 ${parsed.day} 日';
   }
 }

@@ -219,30 +219,68 @@ Map<String, ToolResultPart> toolResultsIn(List<AiMessage> messages) {
   return results;
 }
 
-/// 回答末尾的账单卡片标记：`<bills>["id1","id2"]</bills>`。
+/// 回答正文里的一块：一段 Markdown 文本，或一组账单卡片。
 ///
-/// 模型按系统提示词的约定输出这一行，App 把这些账单渲染成可点击的卡片。
-/// 标记从正文里剥掉；模型没按约定输出时原样显示文本，不会崩。
-({String text, List<String> billIds}) splitBillMarker(String text) {
-  final match = RegExp(
-    r'<bills>\s*(\[[\s\S]*?\])\s*</bills>\s*$',
-  ).firstMatch(text);
-  if (match == null) {
-    // 流式中途：半截标记也别露出来，等它写完再解析。
-    final open = text.indexOf('<bills>');
-    if (open < 0) return (text: text, billIds: const []);
-    return (text: text.substring(0, open).trimRight(), billIds: const []);
+/// 卡片按模型输出标记的位置就地渲染，不在回答末尾统一堆放。
+sealed class AiAnswerBlock {
+  const AiAnswerBlock();
+}
+
+class AiAnswerTextBlock extends AiAnswerBlock {
+  const AiAnswerTextBlock(this.text);
+
+  final String text;
+}
+
+class AiAnswerBillsBlock extends AiAnswerBlock {
+  const AiAnswerBillsBlock(this.ids);
+
+  final List<String> ids;
+}
+
+/// 账单卡片标记：`<bills>["id1","id2"]</bills>`。
+///
+/// 标记写在哪儿，卡片就渲染在哪儿，一段回答里可以出现多次。
+final _billTag = RegExp(r'<bills>\s*(\[[\s\S]*?\])\s*</bills>');
+
+/// 把回答正文切成「文本 / 账单卡片」交替的块序列。
+///
+/// 模型没按约定输出时整段当文本，不会崩，也不会漏字。
+List<AiAnswerBlock> splitAnswerBlocks(String text) {
+  final blocks = <AiAnswerBlock>[];
+  var cursor = 0;
+  for (final match in _billTag.allMatches(text)) {
+    _appendText(blocks, text.substring(cursor, match.start));
+    final ids = _billIds(match.group(1)!);
+    if (ids.isNotEmpty) blocks.add(AiAnswerBillsBlock(ids));
+    cursor = match.end;
   }
-  final ids = <String>[];
+  var rest = text.substring(cursor);
+  // 流式中途半截标记还没写完，先别把它露出来。
+  final open = rest.lastIndexOf('<bills>');
+  if (open >= 0 && !rest.contains('</bills>', open)) {
+    rest = rest.substring(0, open);
+  }
+  _appendText(blocks, rest);
+  return blocks;
+}
+
+List<String> _billIds(String json) {
   try {
-    final decoded = jsonDecode(match.group(1)!);
-    if (decoded is List) {
-      for (final item in decoded) {
-        if (item is String && item.isNotEmpty) ids.add(item);
-      }
-    }
+    final decoded = jsonDecode(json);
+    if (decoded is! List) return const [];
+    return [
+      for (final item in decoded)
+        if (item is String && item.isNotEmpty) item,
+    ];
   } on Object {
-    // JSON 写坏了就当作没有卡片，正文已经剥掉标记。
+    // JSON 写坏了就当作没有卡片，标记本身仍然剥掉。
+    return const [];
   }
-  return (text: text.substring(0, match.start).trimRight(), billIds: ids);
+}
+
+void _appendText(List<AiAnswerBlock> blocks, String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) return;
+  blocks.add(AiAnswerTextBlock(text));
 }
