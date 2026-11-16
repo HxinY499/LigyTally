@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_elements/flutter_ai_elements.dart';
@@ -129,7 +130,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       }
       _session = session;
       _threadId = threadId;
-      _detachStore = attachStore(session.chat, _store, threadId);
+      _detachStore = _attachAll(session.chat, threadId);
       final refreshed = await _store.listThreads();
       if (!mounted || generation != _generation) return;
       setState(() {
@@ -211,7 +212,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       }
       _session = session;
       _threadId = id;
-      _detachStore = attachStore(session.chat, _store, id);
+      _detachStore = _attachAll(session.chat, id);
       final threads = await _store.listThreads();
       if (!mounted || generation != _generation) return;
       setState(() {
@@ -232,8 +233,39 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       showAppToast(context, message: '当前已经是新会话');
       return;
     }
+    // 列表里已有没说过话的空会话时直接复用，避免每点一次就多一个「新会话」。
+    for (final thread in _threads) {
+      if (thread.id == _threadId) continue;
+      final conversation = await _store.load(thread.id);
+      if (!mounted) return;
+      if (conversation == null || conversation.messages.isNotEmpty) continue;
+      await _openThread(thread.id, initial: conversation);
+      return;
+    }
     final id = _store.newThreadId();
     await _openThread(id, initial: AiConversation.empty(id));
+  }
+
+  /// attachStore 在流式期间不保存（等一轮结束才落盘），长思考/长回复中途
+  /// App 被杀就会丢掉刚发出去的消息。这里在用户消息一提交就补一次保存，
+  /// 把丢失窗口缩到「只有 AI 的半截回复」。
+  VoidCallback _attachAll(UseChatController chat, String threadId) {
+    final detachStore = attachStore(chat, _store, threadId);
+    final savedUserIds = <String>{};
+    void earlySave() {
+      final messages = chat.messages;
+      if (messages.isEmpty) return;
+      final last = messages.last;
+      if (last.role != AiRole.user) return;
+      if (!savedUserIds.add(last.id)) return;
+      unawaited(_store.save(threadId, chat.conversation));
+    }
+
+    chat.addListener(earlySave);
+    return () {
+      chat.removeListener(earlySave);
+      detachStore();
+    };
   }
 
   Future<void> _openConversationSheet() async {
@@ -302,7 +334,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       return '${_vendorName()} Key 无效，请到 AI 设置里检查。';
     }
     if (error is LlmRateLimitException) {
-      return '请求过于频繁，请稍后再试。';
+      return rateLimitText(error);
     }
     if (error is LlmException && error.statusCode == 402) {
       return '${_vendorName()} 余额不足，请先充值。';
@@ -546,7 +578,7 @@ class _ChatBody extends StatelessWidget {
       return 'API Key 无效，请到 AI 设置里检查。';
     }
     if (error is LlmRateLimitException) {
-      return '请求过于频繁，请稍后再试。';
+      return rateLimitText(error);
     }
     if (error is LlmException && error.statusCode == 402) {
       return '账户余额不足，请先充值。';
@@ -1045,6 +1077,33 @@ class _ReasoningSheet extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 限流错误的展示文案：带上服务端返回的具体原因，用户才能分清
+/// 「并发超限，稍后再试」和「套餐额度已用完，几点重置」。
+String rateLimitText(LlmRateLimitException error) {
+  final detail = _serverMessage(error.body);
+  if (detail == null) return '请求过于频繁，请稍后再试。';
+  return '请求过于频繁：$detail';
+}
+
+/// body 是 provider 拼的「平台: 原始 JSON」，尽量取出里面的 error.message。
+String? _serverMessage(String body) {
+  final colon = body.indexOf(':');
+  final raw = colon >= 0 ? body.substring(colon + 1).trim() : body;
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return null;
+    final error = decoded['error'];
+    if (error is! Map) return null;
+    final message = error['message'];
+    if (message is! String) return null;
+    final text = message.trim();
+    if (text.isEmpty) return null;
+    return text.length > 120 ? '${text.substring(0, 120)}…' : text;
+  } on Object {
+    return null;
   }
 }
 

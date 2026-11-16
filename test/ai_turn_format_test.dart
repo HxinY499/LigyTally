@@ -173,6 +173,32 @@ void main() {
     );
   });
 
+  test('回答末尾的 bills 标记剥成卡片 id，正文不留标记', () {
+    final parsed = splitBillMarker('找到了，是这两笔。\n<bills>["t1","t2"]</bills>');
+    expect(parsed.text, '找到了，是这两笔。');
+    expect(parsed.billIds, ['t1', 't2']);
+
+    // 没有标记时原样返回。
+    final plain = splitBillMarker('这个月餐饮花了 280 元。');
+    expect(plain.text, '这个月餐饮花了 280 元。');
+    expect(plain.billIds, isEmpty);
+
+    // 流式中途的半截标记先藏起来，等写完再解析。
+    final streaming = splitBillMarker('找到了，是这两笔。\n<bills>["t1"');
+    expect(streaming.text, '找到了，是这两笔。');
+    expect(streaming.billIds, isEmpty);
+
+    // JSON 写坏了：正文剥掉标记，没有卡片，不崩。
+    final broken = splitBillMarker('找到了。\n<bills>[t1,t2]</bills>');
+    expect(broken.text, '找到了。');
+    expect(broken.billIds, isEmpty);
+
+    // 空 id 和空白正文都容忍。
+    final empty = splitBillMarker('<bills>[]</bills>');
+    expect(empty.text, '');
+    expect(empty.billIds, isEmpty);
+  });
+
   test('DeepSeek 的 reasoning_content 会变成思考增量，并且排在正文前面', () {
     final parser = DeepSeekChunkParser();
     final started = parser.parse({

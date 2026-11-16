@@ -60,4 +60,31 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('ai_chat_conversation_v1'), isNull);
   });
+
+  test('会话数据损坏时备份原文，备份不被二次覆盖，删除会话时清掉', () async {
+    SharedPreferences.setMockInitialValues({
+      'ai_chat_thread_v1_broken': '{损坏的会话',
+    });
+    final store = PrefsChatThreadStore();
+
+    expect(await store.load('broken'), isNull);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getString('ai_chat_thread_v1_broken.corrupted'),
+      '{损坏的会话',
+    );
+
+    // 备份只留第一份现场；损坏数据也不该混进会话索引。
+    await prefs.setString('ai_chat_thread_v1_broken', '又一次损坏');
+    expect(await store.load('broken'), isNull);
+    expect(
+      prefs.getString('ai_chat_thread_v1_broken.corrupted'),
+      '{损坏的会话',
+    );
+    expect(await store.listThreads(), isEmpty);
+
+    await store.delete('broken');
+    expect(prefs.getString('ai_chat_thread_v1_broken.corrupted'), isNull);
+  });
 }

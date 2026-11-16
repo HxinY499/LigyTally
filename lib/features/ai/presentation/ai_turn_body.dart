@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../application/ai_turn_format.dart';
 import 'ai_downward_reveal.dart';
 import 'ai_tool_row.dart';
+import 'ai_transaction_cards.dart';
 import 'ai_turn_label.dart';
 
 /// 一轮助手回复。
@@ -31,6 +32,10 @@ class AiTurnBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = splitAssistantTurn(turn);
+    // 回答末尾的 <bills> 标记：剥出来渲染成账单卡片，正文不显示这行。
+    final answer = content.answer == null
+        ? null
+        : splitBillMarker(content.answer!.text);
     final theme = AiThemeExtension.of(context);
     return DefaultTextStyle.merge(
       style: theme.textStyle.copyWith(color: theme.assistantTextColor),
@@ -48,12 +53,17 @@ class AiTurnBody extends StatelessWidget {
                 working: working,
                 hasAnswer: content.answer != null,
               ),
-            if (content.answer != null)
+            if (answer != null)
               _AnswerText(
-                text: content.answer!.text,
+                text: answer.text,
                 streaming:
                     working &&
                     content.answerMessage?.status == AiMessageStatus.streaming,
+              ),
+            if (answer != null && answer.billIds.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: AiTransactionCards(ids: answer.billIds),
               ),
           ],
         ),

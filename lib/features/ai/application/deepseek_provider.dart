@@ -18,6 +18,7 @@ class DeepSeekProvider implements LlmProvider {
     this.defaultModel = 'deepseek-flash',
     this.maxRetries = 2,
     this.timeout = const Duration(seconds: 60),
+    this.errorLabel = 'DeepSeek',
   }) : _baseUrl = baseUrl ?? Uri.parse('https://api.deepseek.com'),
        _ownsClient = client == null,
        _client = client ?? http.Client();
@@ -26,6 +27,10 @@ class DeepSeekProvider implements LlmProvider {
   final String defaultModel;
   final int maxRetries;
   final Duration timeout;
+
+  /// 写进错误详情的平台名，智谱/Kimi 复用本 provider 时错误不再顶着
+  /// 「DeepSeek」的前缀。
+  final String errorLabel;
 
   final Uri _baseUrl;
   final http.Client _client;
@@ -105,11 +110,18 @@ class DeepSeekProvider implements LlmProvider {
         final response = await _client.send(build()).timeout(timeout);
         if (response.statusCode == 200) return response;
         final body = await response.stream.bytesToString();
-        final error = llmExceptionFor(response.statusCode, 'DeepSeek: $body');
+        final error = llmExceptionFor(response.statusCode, '$errorLabel: $body');
         final retryable =
             response.statusCode == 429 || response.statusCode >= 500;
         if (!retryable || attempt == maxRetries) throw error;
         lastError = error;
+        // 429 是账户级限流：服务端可能还在处理上一个请求（思考型模型的
+        // 长尾能拖几十秒），几百毫秒就重试只会继续撞墙。尊重 Retry-After，
+        // 否则按秒级退避；5xx 保持原来的短退避。
+        if (response.statusCode == 429) {
+          await Future<void>.delayed(_rateLimitDelay(response, attempt));
+          continue;
+        }
       } on TimeoutException catch (error) {
         lastError = error;
         if (attempt == maxRetries) rethrow;
@@ -119,7 +131,15 @@ class DeepSeekProvider implements LlmProvider {
       }
       await Future<void>.delayed(Duration(milliseconds: 400 * (1 << attempt)));
     }
-    throw lastError ?? StateError('DeepSeek 连接失败');
+    throw lastError ?? StateError('$errorLabel 连接失败');
+  }
+
+  static Duration _rateLimitDelay(http.StreamedResponse response, int attempt) {
+    final retryAfter = int.tryParse(response.headers['retry-after'] ?? '');
+    if (retryAfter != null && retryAfter > 0) {
+      return Duration(seconds: retryAfter.clamp(1, 15));
+    }
+    return Duration(seconds: 2 * (1 << attempt));
   }
 
   Uri _endpoint() {

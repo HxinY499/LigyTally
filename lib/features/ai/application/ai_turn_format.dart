@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_ai_client/flutter_ai_client.dart';
 
 /// 写进助手消息里的用时。页面读它，发给模型时会丢掉。
@@ -215,4 +217,32 @@ Map<String, ToolResultPart> toolResultsIn(List<AiMessage> messages) {
     }
   }
   return results;
+}
+
+/// 回答末尾的账单卡片标记：`<bills>["id1","id2"]</bills>`。
+///
+/// 模型按系统提示词的约定输出这一行，App 把这些账单渲染成可点击的卡片。
+/// 标记从正文里剥掉；模型没按约定输出时原样显示文本，不会崩。
+({String text, List<String> billIds}) splitBillMarker(String text) {
+  final match = RegExp(
+    r'<bills>\s*(\[[\s\S]*?\])\s*</bills>\s*$',
+  ).firstMatch(text);
+  if (match == null) {
+    // 流式中途：半截标记也别露出来，等它写完再解析。
+    final open = text.indexOf('<bills>');
+    if (open < 0) return (text: text, billIds: const []);
+    return (text: text.substring(0, open).trimRight(), billIds: const []);
+  }
+  final ids = <String>[];
+  try {
+    final decoded = jsonDecode(match.group(1)!);
+    if (decoded is List) {
+      for (final item in decoded) {
+        if (item is String && item.isNotEmpty) ids.add(item);
+      }
+    }
+  } on Object {
+    // JSON 写坏了就当作没有卡片，正文已经剥掉标记。
+  }
+  return (text: text.substring(0, match.start).trimRight(), billIds: ids);
 }

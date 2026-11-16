@@ -85,6 +85,7 @@ class AiChatSession {
         defaultModel: model,
         maxRetries: 2,
         timeout: const Duration(seconds: 60),
+        errorLabel: spec == null ? 'DeepSeek' : platformSpec(spec.platform).label,
       );
       chat.setProvider(next);
       // 正在进行的那一轮还拿着旧 client，页面关掉时再释放。
@@ -123,6 +124,7 @@ class AiChatSession {
       defaultModel: settings.model,
       maxRetries: 2,
       timeout: const Duration(seconds: 60),
+      errorLabel: platformSpec(platform).label,
     );
     final toolService = LedgerToolService(database, ledgerService);
     return AiChatSession._(
@@ -311,6 +313,7 @@ class AiChatSession {
 9. 用户这一轮附上的图片可以直接看。看不清金额、日期或分类时要说明，不要编造。上文如果只写「发过图片」，那张图已经不在上下文里。
 10. 回答前先思考。思考用简短中文，只写判断过程，不要把最终回答写进思考里。
 11. 每次调用工具都必须填 desc。这是直接显示给用户的一句话，用简短中文说明这次在做什么，例如「查询 11 月的收支」。不要写工具名，不要照抄字段名。
+12. 账单卡片标记：用户想在页面上看到某笔或某几笔账单时（例如“找出来给我看看”“是哪几笔”），在回答末尾另起一行输出 <bills>["id1","id2"]</bills>，App 会把它们渲染成可点击的账单卡片，点进去是详情页。id 照抄 search_transactions 返回的 id，只放最相关的几笔，最多 5 笔；这行标记不是正文，不要在正文里引用它。它只是展示手段：用账单数据回答问题时（统计、核对、改删）不需要卡片，不要输出。
 
 可用分类（id | 名称 | 收支类型 | 父级）：
 $categoryLines

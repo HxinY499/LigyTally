@@ -40,6 +40,12 @@ class PrefsChatThreadStore implements ChatThreadStore {
       if (decoded is! Map) return null;
       return AiConversation.fromJson(decoded.cast<String, Object?>());
     } on Object {
+      // 解析失败时调用方会用空会话覆盖这个 key。先把原始数据挪到一旁，
+      // 损坏的会话至少有现场可查，不会悄无声息地丢光。
+      final backupKey = '${_threadKey(id)}.corrupted';
+      if (!prefs.containsKey(backupKey)) {
+        await prefs.setString(backupKey, raw);
+      }
       return null;
     }
   }
@@ -82,6 +88,7 @@ class PrefsChatThreadStore implements ChatThreadStore {
   Future<void> delete(String id) async {
     final prefs = await _prefs;
     await prefs.remove(_threadKey(id));
+    await prefs.remove('${_threadKey(id)}.corrupted');
     final threads = await _readIndex(prefs)
       ..removeWhere((thread) => thread.id == id);
     await _writeIndex(prefs, threads);
@@ -157,6 +164,7 @@ class PrefsChatThreadStore implements ChatThreadStore {
     if (threads.isEmpty) {
       for (final key in prefs.getKeys()) {
         if (!key.startsWith(_prefix)) continue;
+        if (key.endsWith('.corrupted')) continue;
         final id = key.substring(_prefix.length);
         final rawConversation = prefs.getString(key);
         if (rawConversation == null || rawConversation.isEmpty) continue;
