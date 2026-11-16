@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_ai_elements/flutter_ai_elements.dart';
 import 'package:forui/forui.dart';
 
@@ -37,6 +40,9 @@ class AiTurnBody extends StatelessWidget {
     final blocks = content.answer == null
         ? const <AiAnswerBlock>[]
         : splitAnswerBlocks(content.answer!.text);
+    final copyText = content.answer == null
+        ? ''
+        : plainAnswerText(content.answer!.text);
     final streaming =
         working &&
         content.answerMessage?.status == AiMessageStatus.streaming;
@@ -74,6 +80,14 @@ class AiTurnBody extends StatelessWidget {
                   child: AiChartCard(spec: spec),
                 ),
               },
+            if (!working && copyText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [_CopyAnswerButton(text: copyText)],
+                ),
+              ),
           ],
         ),
       ),
@@ -316,5 +330,82 @@ class _AnswerText extends StatelessWidget {
   Widget build(BuildContext context) {
     if (text.trim().isEmpty) return const SizedBox.shrink();
     return const MarkdownTextRenderer().render(text, isStreaming: streaming);
+  }
+}
+
+class _CopyAnswerButton extends StatefulWidget {
+  const _CopyAnswerButton({required this.text});
+
+  final String text;
+
+  @override
+  State<_CopyAnswerButton> createState() => _CopyAnswerButtonState();
+}
+
+class _CopyAnswerButtonState extends State<_CopyAnswerButton> {
+  bool _copied = false;
+  Timer? _resetTimer;
+
+  @override
+  void didUpdateWidget(_CopyAnswerButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text && _copied) {
+      _resetTimer?.cancel();
+      _copied = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _resetTimer?.cancel();
+    super.dispose();
+  }
+
+  void _copy() {
+    unawaited(HapticFeedback.lightImpact());
+    unawaited(Clipboard.setData(ClipboardData(text: widget.text)));
+    _resetTimer?.cancel();
+    setState(() => _copied = true);
+    _resetTimer = Timer(const Duration(milliseconds: 1600), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = _copied ? colors.primary : colors.inactive;
+    return Tooltip(
+      message: _copied ? '已复制' : '复制',
+      child: InkWell(
+        onTap: _copy,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _copied ? FLucideIcons.check : FLucideIcons.copy,
+                size: 15,
+                color: color,
+              ),
+              if (_copied) ...[
+                const SizedBox(width: 4),
+                Text(
+                  '已复制',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    height: 1.2,
+                    color: color,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

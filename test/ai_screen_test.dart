@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -465,6 +466,76 @@ void main() {
     expect(find.text('交通'), findsOneWidget);
     expect(find.text('40%'), findsOneWidget);
     expect(find.textContaining('<chart>'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(Duration.zero);
+  });
+
+  testWidgets('AI 回答底部复制按钮只复制剥除标签后的纯文本', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    String? copiedText;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copiedText = (call.arguments as Map)['text'] as String?;
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    final mediaRoot = Directory.systemTemp.createTempSync('ligy_ai_copy_');
+    addTearDown(() async {
+      await database.close();
+      mediaRoot.deleteSync(recursive: true);
+    });
+    await database.exportCategories();
+    final ledger = LedgerService(database, ImageStorage.atRoot(mediaRoot.path));
+
+    final controller = UseChatController(
+      provider: _ScriptProvider(),
+      initial: AiConversation(
+        id: 'c-copy',
+        messages: [
+          AiMessage.text(id: 'u1', role: AiRole.user, text: '查一下'),
+          AiMessage.text(
+            id: 'a1',
+            role: AiRole.assistant,
+            text: '找到了这笔：\n<bills>["missing-id"]</bills>\n共 ¥28.00。',
+          ),
+        ],
+      ),
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          databaseProvider.overrideWithValue(database),
+          ledgerServiceProvider.overrideWithValue(ledger),
+        ],
+        child: _chatHost(controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('复制'), findsOneWidget);
+    await tester.tap(find.byTooltip('复制'));
+    await tester.pump();
+
+    expect(copiedText, '找到了这笔：\n\n共 ¥28.00。');
+    expect(find.text('已复制'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1700));
+    expect(find.text('已复制'), findsNothing);
+    expect(find.byTooltip('复制'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(Duration.zero);
