@@ -471,7 +471,7 @@ void main() {
     await tester.pump(Duration.zero);
   });
 
-  testWidgets('AI 回答底部复制按钮只复制剥除标签后的纯文本', (tester) async {
+  testWidgets('AI 回答底部复制按钮保留原文包含标签', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -499,6 +499,7 @@ void main() {
     await database.exportCategories();
     final ledger = LedgerService(database, ImageStorage.atRoot(mediaRoot.path));
 
+    const rawAnswer = '找到了这笔：\n<bills>["missing-id"]</bills>\n共 ¥28.00。';
     final controller = UseChatController(
       provider: _ScriptProvider(),
       initial: AiConversation(
@@ -508,7 +509,7 @@ void main() {
           AiMessage.text(
             id: 'a1',
             role: AiRole.assistant,
-            text: '找到了这笔：\n<bills>["missing-id"]</bills>\n共 ¥28.00。',
+            text: rawAnswer,
           ),
         ],
       ),
@@ -530,7 +531,7 @@ void main() {
     await tester.tap(find.byTooltip('复制'));
     await tester.pump();
 
-    expect(copiedText, '找到了这笔：\n\n共 ¥28.00。');
+    expect(copiedText, rawAnswer);
     expect(find.text('已复制'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 1700));

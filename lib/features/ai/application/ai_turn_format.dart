@@ -454,12 +454,3 @@ void _appendText(List<AiAnswerBlock> blocks, String raw) {
   if (text.isEmpty) return;
   blocks.add(AiAnswerTextBlock(text));
 }
-
-/// 提取回答正文里给人看的纯文本，剥除 `<bills>` 与 `<chart>` 等内部标记。
-String plainAnswerText(String text) {
-  final parts = <String>[
-    for (final block in splitAnswerBlocks(text))
-      if (block is AiAnswerTextBlock) block.text,
-  ];
-  return parts.join('\n\n');
-}

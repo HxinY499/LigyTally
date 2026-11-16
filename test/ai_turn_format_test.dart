@@ -264,17 +264,6 @@ void main() {
       '<chart>{"type":"delta","from":"2026-10-01","to":"2026-10-20","compareFrom":"2026-10-10","compareTo":"2026-10-30"}</chart>',
     );
     expect(overlapped, isEmpty);
-
-    expect(
-      plainAnswerText(
-        '本月共支出 ¥100.00。\n'
-        '<chart>{"type":"trend","from":"2026-10-01","to":"2026-10-31"}</chart>\n'
-        '主要大额如下：\n'
-        '<bills>["tx-1","tx-2"]</bills>',
-      ),
-      '本月共支出 ¥100.00。\n\n主要大额如下：',
-    );
-    expect(plainAnswerText('<bills>["tx-1"]</bills>'), isEmpty);
   });
 
   test('DeepSeek 的 reasoning_content 会变成思考增量，并且排在正文前面', () {

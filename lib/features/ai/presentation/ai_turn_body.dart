@@ -40,9 +40,7 @@ class AiTurnBody extends StatelessWidget {
     final blocks = content.answer == null
         ? const <AiAnswerBlock>[]
         : splitAnswerBlocks(content.answer!.text);
-    final copyText = content.answer == null
-        ? ''
-        : plainAnswerText(content.answer!.text);
+    final copyText = content.answer?.text.trim() ?? '';
     final streaming =
         working &&
         content.answerMessage?.status == AiMessageStatus.streaming;
