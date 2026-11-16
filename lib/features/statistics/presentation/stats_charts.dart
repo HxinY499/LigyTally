@@ -452,12 +452,20 @@ class CategoryTrendAreaChart extends StatelessWidget {
 /// 「当期 vs 历史」的主次，换成语义色会和「高亮渐变=当期」这条规则打架。
 /// 算的是哪一边由卡片标题与切换器交代。
 class PeriodBarChart extends StatelessWidget {
-  const PeriodBarChart({super.key, required this.bars, this.kind = 0});
+  const PeriodBarChart({
+    super.key,
+    required this.bars,
+    this.kind = 0,
+    this.highlightLastAsCurrent = true,
+  });
 
   final List<PeriodBar> bars;
 
   /// 0 支出 / 1 收入 / 2 结余（收入 − 支出，可负）。
   final int kind;
+
+  /// 末位柱底轴标签与 tooltip 是否改写为「本期」。历史区间对比时应为 false。
+  final bool highlightLastAsCurrent;
 
   int _valueOf(PeriodBar bar) => switch (kind) {
     1 => bar.incomeCents,
@@ -562,7 +570,7 @@ class PeriodBarChart extends StatelessWidget {
                       children: [
                         TextSpan(
                           text:
-                              '\n${groupIndex == lastIndex ? '本期' : bar.label}',
+                              '\n${groupIndex == lastIndex && highlightLastAsCurrent ? '本期' : bar.label}',
                           style: TextStyle(
                             fontSize: 11,
                             height: 1.5,
@@ -612,7 +620,9 @@ class PeriodBarChart extends StatelessWidget {
                       return Padding(
                         padding: const EdgeInsets.only(top: 10),
                         child: Text(
-                          isLast ? '本期' : bars[index].label,
+                          isLast && highlightLastAsCurrent
+                              ? '本期'
+                              : bars[index].label,
                           style: isLast
                               ? stats.axisLabelActive
                               : stats.axisLabel,

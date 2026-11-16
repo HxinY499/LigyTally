@@ -154,17 +154,29 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     await _initialize();
   }
 
-  Future<bool> _showApproval(ToolApprovalRequest request) async {
-    if (!mounted) return false;
-    final result = request.bill == null
-        ? await showAppConfirmDialog(
-            context,
-            message: request.message,
-            confirmLabel: request.confirmLabel,
-            accent: request.destructive ? null : context.colors.primary,
-          )
-        : await showAiBillConfirmDialog(context, request);
-    return result && mounted;
+  Future<ToolApprovalDecision> _showApproval(
+    ToolApprovalRequest request,
+  ) async {
+    if (!mounted) return const ToolApprovalDecision.cancelled();
+    if (request.bills.isEmpty) {
+      final confirmed = await showAppConfirmDialog(
+        context,
+        message: request.message,
+        confirmLabel: request.confirmLabel,
+        accent: request.destructive ? null : context.colors.primary,
+      );
+      if (!confirmed || !mounted) return const ToolApprovalDecision.cancelled();
+      return const ToolApprovalDecision.approved();
+    }
+    final categories = await ref.read(databaseProvider).exportCategories();
+    if (!mounted) return const ToolApprovalDecision.cancelled();
+    final decision = await showAiBillConfirmDialog(
+      context,
+      request,
+      categories: categories,
+    );
+    if (!mounted) return const ToolApprovalDecision.cancelled();
+    return decision;
   }
 
   Future<void> _openSettings() async {

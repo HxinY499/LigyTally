@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../application/ai_turn_format.dart';
+import 'ai_chart_card.dart';
 import 'ai_downward_reveal.dart';
 import 'ai_tool_row.dart';
 import 'ai_transaction_cards.dart';
@@ -66,6 +67,11 @@ class AiTurnBody extends StatelessWidget {
                   key: ValueKey('bills-${ids.join(',')}'),
                   padding: const EdgeInsets.only(top: 4, bottom: 8),
                   child: AiTransactionCards(ids: ids),
+                ),
+                AiAnswerChartBlock(:final spec) => Padding(
+                  key: ValueKey('chart-${spec.identityKey}'),
+                  padding: const EdgeInsets.only(top: 6, bottom: 10),
+                  child: AiChartCard(spec: spec),
                 ),
               },
           ],

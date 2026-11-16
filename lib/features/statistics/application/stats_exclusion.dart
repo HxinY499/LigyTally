@@ -21,6 +21,19 @@ class StatsExclusion {
 /// 老用户已经排掉的那几类静默复活，不值得。
 const _prefsKey = 'stats_excluded_expense_roots';
 
+/// 直接从本地存储读取统计页已排除的分类 id。
+///
+/// 给 AI 会话在统计页尚未挂载时也能拿到一致的排除名单。
+Future<Set<String>> readStatsExcludedIds() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList(_prefsKey) ?? const <String>[];
+    return Set<String>.unmodifiable(list.where((id) => id.isNotEmpty));
+  } catch (_) {
+    return const {};
+  }
+}
+
 class StatsExclusionController extends Notifier<StatsExclusion> {
   @override
   StatsExclusion build() {

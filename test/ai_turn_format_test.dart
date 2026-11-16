@@ -14,6 +14,9 @@ void main() {
     expect(toolCallDesc({'desc': '   '}), '正在调用');
     expect(toolCategory('search_transactions'), AiToolCategory.search);
     expect(toolCategory('save_transaction'), AiToolCategory.write);
+    expect(toolCategory('save_transactions'), AiToolCategory.write);
+    expect(toolCategory('get_spending_trend'), AiToolCategory.stats);
+    expect(toolCategory('compare_periods'), AiToolCategory.stats);
     expect(toolCategory('delete_transactions'), AiToolCategory.remove);
   });
 
@@ -219,6 +222,48 @@ void main() {
 
     // 空列表不产生卡片。
     expect(splitAnswerBlocks('<bills>[]</bills>'), isEmpty);
+  });
+
+  test('chart 与 bills 标记可混排解析，流式半截与非法区间自动隐藏或剥除', () {
+    final mixed = splitAnswerBlocks(
+      '本月走势如下：\n'
+      '<chart>{"type":"trend","from":"2026-10-01","to":"2026-10-31","kind":"expense","granularity":"day"}</chart>\n'
+      '其中最大的一笔是：\n'
+      '<bills>["tx-99"]</bills>',
+    );
+    expect(mixed, hasLength(4));
+    expect(mixed[0], isA<AiAnswerTextBlock>());
+    expect(mixed[1], isA<AiAnswerChartBlock>());
+    final chart = (mixed[1] as AiAnswerChartBlock).spec;
+    expect(chart.type, AiChartType.trend);
+    expect(chart.granularity, 'day');
+    expect(mixed[2], isA<AiAnswerTextBlock>());
+    expect((mixed[3] as AiAnswerBillsBlock).ids, ['tx-99']);
+
+    // 流式半截 <chart> 或 <cha 不外露
+    final halfChart = splitAnswerBlocks(
+      '看看构成：\n<chart>{"type":"category","from":"2026-10-01"',
+    );
+    expect(halfChart, hasLength(1));
+    expect((halfChart.single as AiAnswerTextBlock).text, '看看构成：');
+
+    final prefixOnly = splitAnswerBlocks('看看构成：\n<cha');
+    expect(prefixOnly, hasLength(1));
+    expect((prefixOnly.single as AiAnswerTextBlock).text, '看看构成：');
+
+    // delta 未传对照期时自动推算等长上一周期；重叠区间则静默丢弃
+    final autoDelta = splitAnswerBlocks(
+      '<chart>{"type":"delta","from":"2026-10-11","to":"2026-10-20"}</chart>',
+    );
+    expect(autoDelta, hasLength(1));
+    final deltaSpec = (autoDelta.single as AiAnswerChartBlock).spec;
+    expect(deltaSpec.compareFrom, DateTime(2026, 10, 1));
+    expect(deltaSpec.compareTo, DateTime(2026, 10, 10));
+
+    final overlapped = splitAnswerBlocks(
+      '<chart>{"type":"delta","from":"2026-10-01","to":"2026-10-20","compareFrom":"2026-10-10","compareTo":"2026-10-30"}</chart>',
+    );
+    expect(overlapped, isEmpty);
   });
 
   test('DeepSeek 的 reasoning_content 会变成思考增量，并且排在正文前面', () {

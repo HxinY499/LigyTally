@@ -390,4 +390,83 @@ void main() {
     expect(find.text('get_cashflow_summary'), findsOneWidget);
     expect(find.textContaining('expenseCents'), findsOneWidget);
   });
+
+  testWidgets('正文中包含 <chart> 标记时实时查库渲染内嵌图表卡', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    final mediaRoot = Directory.systemTemp.createTempSync('ligy_ai_chart_');
+    addTearDown(() async {
+      await database.close();
+      mediaRoot.deleteSync(recursive: true);
+    });
+    await database.exportCategories();
+    final ledger = LedgerService(database, ImageStorage.atRoot(mediaRoot.path));
+
+    await ledger.save(
+      kind: 0,
+      amountCents: 6000,
+      categoryId: 'expense_food_meals',
+      accountingDate: DateTime(2026, 10, 12),
+      occurredAt: DateTime(2026, 10, 12, 12),
+      note: '午饭',
+      pendingImages: const [],
+      existingImages: const [],
+      removedImageIds: const {},
+    );
+    await ledger.save(
+      kind: 0,
+      amountCents: 4000,
+      categoryId: 'expense_transport_taxi',
+      accountingDate: DateTime(2026, 10, 15),
+      occurredAt: DateTime(2026, 10, 15, 19),
+      note: '打车',
+      pendingImages: const [],
+      existingImages: const [],
+      removedImageIds: const {},
+    );
+
+    final controller = UseChatController(
+      provider: _ScriptProvider(),
+      initial: AiConversation(
+        id: 'c-chart',
+        messages: [
+          AiMessage.text(id: 'u1', role: AiRole.user, text: '10月分类占比'),
+          AiMessage.text(
+            id: 'a1',
+            role: AiRole.assistant,
+            text:
+                '10 月共支出 ¥100.00，分类构成如下：\n'
+                '<chart>{"type":"category","from":"2026-10-01","to":"2026-10-31","kind":"expense"}</chart>',
+          ),
+        ],
+      ),
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          databaseProvider.overrideWithValue(database),
+          ledgerServiceProvider.overrideWithValue(ledger),
+        ],
+        child: _chatHost(controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('支出分类构成'), findsOneWidget);
+    expect(find.text('餐饮'), findsOneWidget);
+    expect(find.text('60%'), findsOneWidget);
+    expect(find.text('交通'), findsOneWidget);
+    expect(find.text('40%'), findsOneWidget);
+    expect(find.textContaining('<chart>'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(Duration.zero);
+  });
 }

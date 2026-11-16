@@ -563,6 +563,164 @@ class AppDatabase extends _$AppDatabase {
     ).first;
   }
 
+  /// 某个一级分类下的二级分类汇总（按金额降序）。
+  ///
+  /// 直接挂在一级分类本身上的账单（未选二级分类）会归为「××（未细分）」，
+  /// 保证各子项相加严格等于统计页该一级分类的总额。
+  Stream<List<CategoryTotal>> watchSubcategoryTotals(
+    LedgerDateRange range, {
+    required String rootCategoryId,
+    required int kind,
+    Set<String> excludedCategoryIds = const {},
+  }) {
+    final exclusion = _CategoryExclusion(excludedCategoryIds);
+    return customSelect(
+      '''
+      SELECT c.id AS id,
+             CASE
+               WHEN c.id = ? AND EXISTS (
+                 SELECT 1 FROM categories ch WHERE ch.parent_id = c.id
+               ) THEN c.name || '（未细分）'
+               ELSE c.name
+             END AS name,
+             c.icon_key AS icon_key,
+             SUM(t.amount_cents) AS total,
+             COUNT(*) AS entry_count
+      FROM transactions t
+      JOIN categories c ON c.id = t.category_id
+      WHERE t.accounting_date >= ? AND t.accounting_date < ?
+        AND t.kind = ?
+        AND (c.id = ? OR c.parent_id = ?)
+        ${exclusion.keptWhere}
+      GROUP BY c.id, name, c.icon_key
+      ORDER BY total DESC
+      ''',
+      variables: [
+        Variable.withString(rootCategoryId),
+        Variable.withString(dateKey(range.start)),
+        Variable.withString(dateKey(range.endExclusive)),
+        Variable.withInt(kind),
+        Variable.withString(rootCategoryId),
+        Variable.withString(rootCategoryId),
+        ...exclusion.keptVariables,
+      ],
+      readsFrom: {transactions, categories},
+    ).watch().map(
+      (rows) => [
+        for (final row in rows)
+          CategoryTotal(
+            categoryId: row.read<String>('id'),
+            name: row.read<String>('name'),
+            iconKey: row.read<String>('icon_key'),
+            totalCents: row.read<int>('total'),
+            entryCount: row.read<int>('entry_count'),
+          ),
+      ],
+    );
+  }
+
+  Future<List<CategoryTotal>> subcategoryTotalsIn(
+    LedgerDateRange range, {
+    required String rootCategoryId,
+    required int kind,
+    Set<String> excludedCategoryIds = const {},
+  }) {
+    return watchSubcategoryTotals(
+      range,
+      rootCategoryId: rootCategoryId,
+      kind: kind,
+      excludedCategoryIds: excludedCategoryIds,
+    ).first;
+  }
+
+  /// 按一级分类分组取出区间内实际有用到二级分类的子项明细。
+  ///
+  /// 只有当某个一级分类在本区间确实出现了二级分类账单时才返回它的拆分，
+  /// 全挂在一级分类上的分类返回空（避免产生无意义的「××（未细分）100%」）。
+  Future<Map<String, List<CategoryTotal>>> subcategoriesByRootIn(
+    LedgerDateRange range,
+    int kind, {
+    Set<String> excludedCategoryIds = const {},
+  }) async {
+    final exclusion = _CategoryExclusion(excludedCategoryIds);
+    final rows = await customSelect(
+      '''
+      SELECT COALESCE(c.parent_id, c.id) AS root_id,
+             c.id AS id,
+             CASE
+               WHEN c.parent_id IS NULL THEN c.name || '（未细分）'
+               ELSE c.name
+             END AS name,
+             c.icon_key AS icon_key,
+             CASE WHEN c.parent_id IS NOT NULL THEN 1 ELSE 0 END AS is_child,
+             SUM(t.amount_cents) AS total,
+             COUNT(*) AS entry_count
+      FROM transactions t
+      JOIN categories c ON c.id = t.category_id
+      WHERE t.accounting_date >= ? AND t.accounting_date < ?
+        AND t.kind = ?
+        ${exclusion.keptWhere}
+      GROUP BY root_id, c.id, name, c.icon_key, is_child
+      ORDER BY total DESC
+      ''',
+      variables: [
+        Variable.withString(dateKey(range.start)),
+        Variable.withString(dateKey(range.endExclusive)),
+        Variable.withInt(kind),
+        ...exclusion.keptVariables,
+      ],
+      readsFrom: {transactions, categories},
+    ).get();
+
+    final hasChild = <String>{};
+    final grouped = <String, List<CategoryTotal>>{};
+    for (final row in rows) {
+      final rootId = row.read<String>('root_id');
+      if (row.read<int>('is_child') == 1) hasChild.add(rootId);
+      grouped
+          .putIfAbsent(rootId, () => [])
+          .add(
+            CategoryTotal(
+              categoryId: row.read<String>('id'),
+              name: row.read<String>('name'),
+              iconKey: row.read<String>('icon_key'),
+              totalCents: row.read<int>('total'),
+              entryCount: row.read<int>('entry_count'),
+            ),
+          );
+    }
+    grouped.removeWhere((rootId, _) => !hasChild.contains(rootId));
+    return grouped;
+  }
+
+  Future<List<CategoryDelta>> categoryDeltasIn({
+    required LedgerDateRange current,
+    required LedgerDateRange comparison,
+    required int kind,
+    Set<String> excludedCategoryIds = const {},
+  }) {
+    return watchCategoryDeltas(
+      current: current,
+      comparison: comparison,
+      kind: kind,
+      excludedCategoryIds: excludedCategoryIds,
+    ).first;
+  }
+
+  Future<List<TrendPoint>> trendIn(
+    LedgerDateRange range, {
+    required bool groupByMonth,
+    String? categoryId,
+    Set<String> excludedCategoryIds = const {},
+  }) {
+    return watchTrend(
+      range,
+      groupByMonth: groupByMonth,
+      categoryId: categoryId,
+      excludedCategoryIds: excludedCategoryIds,
+    ).first;
+  }
+
   /// 某个一级分类在区间内的账单明细，按发生时间倒序。
   ///
   /// 归属口径与 [watchCategoryTotals] 一致：交易挂在二级分类上时也算进它的
@@ -768,15 +926,18 @@ class AppDatabase extends _$AppDatabase {
   Stream<List<TrendPoint>> watchTrend(
     LedgerDateRange range, {
     required bool groupByMonth,
+    String? categoryId,
     Set<String> excludedCategoryIds = const {},
   }) {
     final exclusion = _CategoryExclusion(excludedCategoryIds);
-    final bucket = exclusion.isEmpty
+    final scoped = categoryId != null && categoryId.isNotEmpty;
+    final needsJoin = scoped || !exclusion.isEmpty;
+    final bucket = !needsJoin
         ? (groupByMonth ? "substr(accounting_date, 1, 7)" : 'accounting_date')
         : (groupByMonth
               ? "substr(t.accounting_date, 1, 7)"
               : 't.accounting_date');
-    final sql = exclusion.isEmpty
+    final sql = !needsJoin
         ? '''
       SELECT $bucket AS bucket,
         COALESCE(SUM(CASE WHEN kind = 1 THEN amount_cents ELSE 0 END), 0) AS income,
@@ -793,6 +954,7 @@ class AppDatabase extends _$AppDatabase {
       FROM transactions t
       JOIN categories c ON c.id = t.category_id
       WHERE t.accounting_date >= ? AND t.accounting_date < ?
+        ${scoped ? 'AND (t.category_id = ? OR c.parent_id = ?)' : ''}
         ${exclusion.keptWhere}
       GROUP BY bucket
       ORDER BY bucket ASC
@@ -802,11 +964,13 @@ class AppDatabase extends _$AppDatabase {
       variables: [
         Variable.withString(dateKey(range.start)),
         Variable.withString(dateKey(range.endExclusive)),
+        if (scoped) ...[
+          Variable.withString(categoryId),
+          Variable.withString(categoryId),
+        ],
         ...exclusion.keptVariables,
       ],
-      readsFrom: exclusion.isEmpty
-          ? {transactions}
-          : {transactions, categories},
+      readsFrom: !needsJoin ? {transactions} : {transactions, categories},
     ).watch().map(
       (rows) => rows
           .map(

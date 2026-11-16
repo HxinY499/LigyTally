@@ -70,6 +70,7 @@ class _AiTransactionCardsState extends ConsumerState<AiTransactionCards> {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(builder: (_) => TransactionEditor(existing: item)),
     );
+    if (mounted) await _load();
   }
 
   @override

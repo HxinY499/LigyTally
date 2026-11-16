@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter_ai_client/flutter_ai_client.dart';
 
@@ -9,9 +10,12 @@ const kTurnTimingDataType = 'turn-timing';
 enum AiToolCategory { stats, search, write, edit, remove, other }
 
 AiToolCategory toolCategory(String toolName) => switch (toolName) {
-  'get_cashflow_summary' || 'get_category_breakdown' => AiToolCategory.stats,
+  'get_cashflow_summary' ||
+  'get_category_breakdown' ||
+  'get_spending_trend' ||
+  'compare_periods' => AiToolCategory.stats,
   'search_transactions' => AiToolCategory.search,
-  'save_transaction' => AiToolCategory.write,
+  'save_transaction' || 'save_transactions' => AiToolCategory.write,
   'update_transaction' => AiToolCategory.edit,
   'delete_transactions' => AiToolCategory.remove,
   _ => AiToolCategory.other,
@@ -219,9 +223,55 @@ Map<String, ToolResultPart> toolResultsIn(List<AiMessage> messages) {
   return results;
 }
 
-/// 回答正文里的一块：一段 Markdown 文本，或一组账单卡片。
+/// AI 消息内嵌图表的类型。
+enum AiChartType { trend, category, delta }
+
+/// `<chart>{...}</chart>` 解析后的查询意图。
 ///
-/// 卡片按模型输出标记的位置就地渲染，不在回答末尾统一堆放。
+/// 只携带查询坐标与口径，数据由前端直连本地数据库实时聚合，避免模型拼写长串数字。
+class AiChartSpec {
+  const AiChartSpec({
+    required this.type,
+    required this.from,
+    required this.to,
+    this.compareFrom,
+    this.compareTo,
+    this.kind = 0,
+    this.granularity,
+    this.categoryId,
+    this.useStatsExclusion = false,
+    this.excludedCategoryIds = const {},
+    this.title,
+  });
+
+  final AiChartType type;
+  final DateTime from;
+  final DateTime to;
+  final DateTime? compareFrom;
+  final DateTime? compareTo;
+
+  /// 0 支出，1 收入，2 结余（结余仅按月柱状图支持）。
+  final int kind;
+
+  /// `day` / `month` / null（自动）。
+  final String? granularity;
+
+  /// 趋势图的分类过滤，或分类构成图的一级分类下钻。
+  final String? categoryId;
+
+  final bool useStatsExclusion;
+  final Set<String> excludedCategoryIds;
+  final String? title;
+
+  String get identityKey =>
+      '${type.name}|${from.toIso8601String()}|${to.toIso8601String()}|'
+      '${compareFrom?.toIso8601String() ?? ''}|'
+      '${compareTo?.toIso8601String() ?? ''}|'
+      '$kind|${granularity ?? ''}|${categoryId ?? ''}|'
+      '$useStatsExclusion|${excludedCategoryIds.join(',')}';
+}
+
+/// 回答正文里的一块：Markdown 文本、账单卡片或实时统计图表。
 sealed class AiAnswerBlock {
   const AiAnswerBlock();
 }
@@ -238,31 +288,60 @@ class AiAnswerBillsBlock extends AiAnswerBlock {
   final List<String> ids;
 }
 
-/// 账单卡片标记：`<bills>["id1","id2"]</bills>`。
-///
-/// 标记写在哪儿，卡片就渲染在哪儿，一段回答里可以出现多次。
-final _billTag = RegExp(r'<bills>\s*(\[[\s\S]*?\])\s*</bills>');
+class AiAnswerChartBlock extends AiAnswerBlock {
+  const AiAnswerChartBlock(this.spec);
 
-/// 把回答正文切成「文本 / 账单卡片」交替的块序列。
+  final AiChartSpec spec;
+}
+
+/// 正文内嵌块标记：`<bills>[...]</bills>` 与 `<chart>{...}</chart>`。
+final _inlineTag = RegExp(r'<(bills|chart)>\s*([\s\S]*?)\s*</\1>');
+
+/// 流式末尾刚吐出一半的标签头（如 `<bil` / `<cha`），避免裸露一帧尖括号。
+final _trailingTagPrefix = RegExp(r'<(?:bi?l?l?s?|ch?a?r?t?)$');
+
+/// 把回答正文切成「文本 / 账单卡片 / 统计图表」交替的块序列。
 ///
-/// 模型没按约定输出时整段当文本，不会崩，也不会漏字。
+/// 标记写在哪儿，对应组件就渲染在哪儿；模型输出损坏时静默剥除标记，不崩溃。
 List<AiAnswerBlock> splitAnswerBlocks(String text) {
   final blocks = <AiAnswerBlock>[];
   var cursor = 0;
-  for (final match in _billTag.allMatches(text)) {
+  for (final match in _inlineTag.allMatches(text)) {
     _appendText(blocks, text.substring(cursor, match.start));
-    final ids = _billIds(match.group(1)!);
-    if (ids.isNotEmpty) blocks.add(AiAnswerBillsBlock(ids));
+    final tag = match.group(1)!;
+    final payload = match.group(2)!;
+    if (tag == 'bills') {
+      final ids = _billIds(payload);
+      if (ids.isNotEmpty) blocks.add(AiAnswerBillsBlock(ids));
+    } else if (tag == 'chart') {
+      final spec = _parseChartSpec(payload);
+      if (spec != null) blocks.add(AiAnswerChartBlock(spec));
+    }
     cursor = match.end;
   }
   var rest = text.substring(cursor);
   // 流式中途半截标记还没写完，先别把它露出来。
-  final open = rest.lastIndexOf('<bills>');
-  if (open >= 0 && !rest.contains('</bills>', open)) {
-    rest = rest.substring(0, open);
+  final cut = _unclosedTagOffset(rest);
+  if (cut >= 0) {
+    rest = rest.substring(0, cut);
   }
   _appendText(blocks, rest);
   return blocks;
+}
+
+int _unclosedTagOffset(String rest) {
+  var cut = -1;
+  final openBills = rest.lastIndexOf('<bills>');
+  if (openBills >= 0 && !rest.contains('</bills>', openBills)) {
+    cut = openBills;
+  }
+  final openChart = rest.lastIndexOf('<chart>');
+  if (openChart >= 0 && !rest.contains('</chart>', openChart)) {
+    cut = cut < 0 ? openChart : math.min(cut, openChart);
+  }
+  if (cut >= 0) return cut;
+  final prefixMatch = _trailingTagPrefix.firstMatch(rest);
+  return prefixMatch?.start ?? -1;
 }
 
 List<String> _billIds(String json) {
@@ -274,9 +353,100 @@ List<String> _billIds(String json) {
         if (item is String && item.isNotEmpty) item,
     ];
   } on Object {
-    // JSON 写坏了就当作没有卡片，标记本身仍然剥掉。
     return const [];
   }
+}
+
+AiChartSpec? _parseChartSpec(String json) {
+  try {
+    final decoded = jsonDecode(json);
+    if (decoded is! Map) return null;
+    final rawType = decoded['type']?.toString().trim();
+    final AiChartType? type = switch (rawType) {
+      'trend' => AiChartType.trend,
+      'category' || 'breakdown' => AiChartType.category,
+      'delta' || 'comparison' || 'compare' => AiChartType.delta,
+      _ => null,
+    };
+    if (type == null) return null;
+
+    final from = _tryParseYmd(decoded['from']?.toString());
+    final to = _tryParseYmd(decoded['to']?.toString());
+    if (from == null || to == null || to.isBefore(from)) return null;
+    final dayCount = to.difference(from).inDays + 1;
+    if (dayCount > 3660) return null;
+
+    DateTime? compareFrom = _tryParseYmd(decoded['compareFrom']?.toString());
+    DateTime? compareTo = _tryParseYmd(decoded['compareTo']?.toString());
+    if (type == AiChartType.delta) {
+      if (compareFrom == null || compareTo == null) {
+        final shift = Duration(days: dayCount);
+        compareFrom = from.subtract(shift);
+        compareTo = to.subtract(shift);
+      } else if (compareTo.isBefore(compareFrom)) {
+        return null;
+      }
+      final currentEndEx = to.add(const Duration(days: 1));
+      final compareEndEx = compareTo.add(const Duration(days: 1));
+      if (from.isBefore(compareEndEx) && compareFrom.isBefore(currentEndEx)) {
+        return null;
+      }
+    }
+
+    final kind = switch (decoded['kind']?.toString().trim()) {
+      'income' => 1,
+      'net' => 2,
+      _ => 0,
+    };
+    final rawGranularity = decoded['granularity']?.toString().trim();
+    final granularity = (rawGranularity == 'day' || rawGranularity == 'month')
+        ? rawGranularity
+        : null;
+    final rawCat = (decoded['categoryId'] ?? decoded['parentCategoryId'])
+        ?.toString()
+        .trim();
+    final categoryId = (rawCat == null || rawCat.isEmpty) ? null : rawCat;
+    final useStatsExclusion = decoded['useStatsExclusion'] == true;
+    final rawExcluded = decoded['excludedCategoryIds'];
+    final excludedCategoryIds = <String>{
+      if (rawExcluded is List)
+        for (final item in rawExcluded)
+          if (item != null && item.toString().trim().isNotEmpty)
+            item.toString().trim(),
+    };
+    final rawTitle = decoded['title']?.toString().trim();
+    final title = (rawTitle == null || rawTitle.isEmpty) ? null : rawTitle;
+
+    return AiChartSpec(
+      type: type,
+      from: from,
+      to: to,
+      compareFrom: compareFrom,
+      compareTo: compareTo,
+      kind: kind,
+      granularity: granularity,
+      categoryId: categoryId,
+      useStatsExclusion: useStatsExclusion,
+      excludedCategoryIds: excludedCategoryIds,
+      title: title,
+    );
+  } on Object {
+    return null;
+  }
+}
+
+DateTime? _tryParseYmd(String? raw) {
+  if (raw == null) return null;
+  final text = raw.trim();
+  if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(text)) return null;
+  final parts = text.split('-').map(int.parse).toList();
+  final parsed = DateTime(parts[0], parts[1], parts[2]);
+  if (parsed.year != parts[0] ||
+      parsed.month != parts[1] ||
+      parsed.day != parts[2]) {
+    return null;
+  }
+  return parsed;
 }
 
 void _appendText(List<AiAnswerBlock> blocks, String raw) {
