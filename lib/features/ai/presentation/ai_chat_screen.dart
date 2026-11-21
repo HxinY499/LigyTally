@@ -15,6 +15,7 @@ import '../application/ai_chat_session.dart';
 import '../application/ai_settings.dart';
 import '../data/ai_chat_store.dart';
 import 'ai_bill_confirm_dialog.dart';
+import 'ai_category_confirm_content.dart';
 import 'ai_chat_images.dart';
 import 'ai_chat_pane.dart';
 import 'ai_platform_logo.dart';
@@ -164,6 +165,9 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         message: request.message,
         confirmLabel: request.confirmLabel,
         accent: request.destructive ? null : context.colors.primary,
+        content: request.categories.isEmpty
+            ? null
+            : AiCategoryConfirmContent(request: request),
       );
       if (!confirmed || !mounted) return const ToolApprovalDecision.cancelled();
       return const ToolApprovalDecision.approved();

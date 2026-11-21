@@ -1,11 +1,10 @@
 import '../../../core/database/app_database.dart';
 import '../../../core/utils/ledger_date.dart';
 
-/// AI 对账单做写操作之前，交给 UI 的一次人工确认。
+/// AI 对账单或分类做写操作之前，交给 UI 的一次人工确认。
 ///
-/// 模型只负责提出草稿；用户可在弹窗里直接微调金额、分类、日期、备注，
-/// 或在批量记账清单里取消勾选部分条目，最终落库与回传给模型的结果均以
-/// [ToolApprovalDecision] 为准。
+/// 模型只负责提出草稿；账单支持在弹窗里直接微调金额、分类、日期、备注
+/// 或取消勾选部分条目，最终落库与回传给模型的结果均以 [ToolApprovalDecision] 为准。
 class ToolApprovalRequest {
   ToolApprovalRequest({
     required this.toolName,
@@ -15,6 +14,7 @@ class ToolApprovalRequest {
     this.title,
     ToolApprovalBill? bill,
     List<ToolApprovalBill>? bills,
+    this.categories = const [],
     this.originalItem,
     this.changes = const [],
     this.footnote,
@@ -30,8 +30,11 @@ class ToolApprovalRequest {
   /// 弹窗标题。
   final String? title;
 
-  /// 待确认的账单草稿（单笔为 1 项，批量记账为多项，删除为空）。
+  /// 待确认的账单草稿（单笔为 1 项，批量记账为多项，非账单草稿为空）。
   final List<ToolApprovalBill> bills;
+
+  /// 待确认的分类预览项（新建、修改或删除分类时用于渲染图标与归属）。
+  final List<ToolApprovalCategoryItem> categories;
 
   /// 单笔新增/修改时的快捷访问。
   ToolApprovalBill? get bill => bills.length == 1 ? bills.single : null;
@@ -41,11 +44,33 @@ class ToolApprovalRequest {
   /// 修改账单时的原始记录，供弹窗就地微调后实时重算变动列表。
   final LedgerItem? originalItem;
 
-  /// 改账时初始变动的字段。旧值在前，新值在后。
+  /// 修改操作初始变动的字段。旧值在前，新值在后。
   final List<ToolApprovalChange> changes;
 
-  /// 卡片下方的淡字，例如图片和位置会保留。
+  /// 卡片下方的淡字，例如图片保留或子分类连带停用提示。
   final String? footnote;
+}
+
+/// 分类写操作确认框里的一行预览项。
+class ToolApprovalCategoryItem {
+  const ToolApprovalCategoryItem({
+    required this.kind,
+    required this.name,
+    required this.iconKey,
+    this.subtitle,
+    this.isActive = true,
+    this.indent = false,
+  });
+
+  /// 0 支出，1 收入。
+  final int kind;
+  final String name;
+  final String iconKey;
+  final String? subtitle;
+  final bool isActive;
+
+  /// 同批新建「一级 + 二级」时，二级分类缩进展示层级关系。
+  final bool indent;
 }
 
 /// 确认框里可就地微调的一笔账单草稿。

@@ -13,7 +13,9 @@ import 'package:ligy_tally/core/media/image_storage.dart';
 import 'package:ligy_tally/core/theme/app_theme.dart';
 import 'package:ligy_tally/features/ai/application/ai_settings.dart';
 import 'package:ligy_tally/features/ai/application/ai_turn_format.dart';
+import 'package:ligy_tally/features/ai/application/ai_approval.dart';
 import 'package:ligy_tally/features/ai/data/deepseek_key_store.dart';
+import 'package:ligy_tally/features/ai/presentation/ai_category_confirm_content.dart';
 import 'package:ligy_tally/features/ai/presentation/ai_chat_pane.dart';
 import 'package:ligy_tally/features/ai/presentation/ai_chat_screen.dart';
 import 'package:ligy_tally/features/ai/presentation/ai_settings_screen.dart';
@@ -540,5 +542,71 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(Duration.zero);
+  });
+
+  testWidgets('分类写操作确认弹窗清晰展示分类图标、归属、字段变动与附注', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    bool? confirmed;
+    final request = ToolApprovalRequest(
+      toolName: 'update_category',
+      title: '修改分类',
+      confirmLabel: '确认修改',
+      message: '修改分类',
+      categories: const [
+        ToolApprovalCategoryItem(
+          kind: 0,
+          name: '一日三餐',
+          iconKey: 'fine_dining',
+          subtitle: '归属「餐饮」· 支出子分类',
+        ),
+      ],
+      changes: const [
+        ToolApprovalChange(label: '名称', before: '三餐', after: '一日三餐'),
+        ToolApprovalChange(label: '图标', before: 'meal', after: 'fine_dining'),
+      ],
+      footnote: '停用后记账时不再显示，历史账单不受影响。',
+    );
+
+    await tester.pumpWidget(
+      _host(
+        Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () async {
+                  confirmed = await showAppConfirmDialog(
+                    context,
+                    message: request.message,
+                    confirmLabel: request.confirmLabel,
+                    accent: context.colors.primary,
+                    content: AiCategoryConfirmContent(request: request),
+                  );
+                },
+                child: const Text('打开弹窗'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开弹窗'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('修改分类'), findsOneWidget);
+    expect(find.text('一日三餐'), findsWidgets);
+    expect(find.text('归属「餐饮」· 支出子分类'), findsOneWidget);
+    expect(find.text('三餐'), findsOneWidget);
+    expect(find.text('fine_dining'), findsOneWidget);
+    expect(find.text('停用后记账时不再显示，历史账单不受影响。'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('确认修改'));
+    await tester.pumpAndSettle();
+    expect(confirmed, isTrue);
   });
 }

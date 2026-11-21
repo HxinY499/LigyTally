@@ -378,32 +378,72 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  Future<CategoryDeleteResult> deleteCategory(String id) {
+  Future<({Map<String, int> transactions, Map<String, int> templates})>
+  categoryUsageCounts() async {
+    final txRows = await customSelect(
+      'SELECT category_id, COUNT(*) AS cnt FROM transactions GROUP BY category_id',
+      readsFrom: {transactions},
+    ).get();
+    final tplRows = await customSelect(
+      'SELECT category_id, COUNT(*) AS cnt FROM tally_templates GROUP BY category_id',
+      readsFrom: {tallyTemplates},
+    ).get();
+    return (
+      transactions: {
+        for (final row in txRows)
+          row.read<String>('category_id'): row.read<int>('cnt'),
+      },
+      templates: {
+        for (final row in tplRows)
+          row.read<String>('category_id'): row.read<int>('cnt'),
+      },
+    );
+  }
+
+  Future<CategoryDeleteResult> deleteCategory(String id) =>
+      deleteCategories({id});
+
+  Future<CategoryDeleteResult> deleteCategories(Set<String> targetIds) {
+    if (targetIds.isEmpty) return Future.value(CategoryDeleteResult.deleted);
     return transaction(() async {
-      final category = await (select(
+      final targets = await (select(
         categories,
-      )..where((row) => row.id.equals(id))).getSingle();
-      if (category.level == 1 && category.isActive) {
+      )..where((row) => row.id.isIn(targetIds))).get();
+      if (targets.length != targetIds.length) {
+        throw StateError('部分分类已不存在');
+      }
+      for (final kind in const [0, 1]) {
+        final removingActiveRoots = targets
+            .where((c) => c.kind == kind && c.level == 1 && c.isActive)
+            .length;
+        if (removingActiveRoots == 0) continue;
         final rootCount = categories.id.count();
         final activeRoots =
             await (selectOnly(categories)
                   ..addColumns([rootCount])
                   ..where(
-                    categories.kind.equals(category.kind) &
+                    categories.kind.equals(kind) &
                         categories.level.equals(1) &
                         categories.isActive.equals(true),
                   ))
                 .map((row) => row.read(rootCount) ?? 0)
                 .getSingle();
-        if (activeRoots <= 1) return CategoryDeleteResult.lastRoot;
+        if (activeRoots - removingActiveRoots < 1) {
+          return CategoryDeleteResult.lastRoot;
+        }
       }
-      final childIds =
-          await (selectOnly(categories)
-                ..addColumns([categories.id])
-                ..where(categories.parentId.equals(id)))
-              .map((row) => row.read(categories.id)!)
-              .get();
-      final ids = {id, ...childIds};
+      final parentIds = [
+        for (final c in targets)
+          if (c.level == 1) c.id,
+      ];
+      final childIds = parentIds.isEmpty
+          ? const <String>[]
+          : await (selectOnly(categories)
+                  ..addColumns([categories.id])
+                  ..where(categories.parentId.isIn(parentIds)))
+                .map((row) => row.read(categories.id)!)
+                .get();
+      final ids = {...targetIds, ...childIds};
       final count = transactions.id.count();
       final usage =
           await (selectOnly(transactions)

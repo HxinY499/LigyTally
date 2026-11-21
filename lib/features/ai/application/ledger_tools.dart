@@ -1,7 +1,9 @@
 import 'package:flutter_ai_tools/flutter_ai_tools.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/location/place_fix.dart';
+import '../../../core/utils/category_icons.dart';
 import '../../../core/utils/ledger_date.dart';
 import '../../ledger/application/ledger_service.dart';
 import 'ai_approval.dart';
@@ -37,6 +39,18 @@ class LedgerToolService {
           .withUserDesc(),
       _deleteTool()
           .withExecutor((args) => deleteTransactions(args))
+          .withUserDesc(),
+      _listCategoriesTool()
+          .withExecutor((args) => listCategories(args))
+          .withUserDesc(),
+      _createCategoriesTool()
+          .withExecutor((args) => createCategories(args))
+          .withUserDesc(),
+      _updateCategoryTool()
+          .withExecutor((args) => updateCategory(args))
+          .withUserDesc(),
+      _deleteCategoriesTool()
+          .withExecutor((args) => deleteCategories(args))
           .withUserDesc(),
     ]);
   }
@@ -346,6 +360,156 @@ class LedgerToolService {
     execute: null,
   );
 
+  static final String _iconGroupsHint = [
+    for (final group in categoryIconGroups)
+      '${group.label}:${group.keys.join(',')}',
+  ].join('；');
+
+  static ToolSpec _listCategoriesTool() => const ToolSpec(
+    name: 'list_categories',
+    description:
+        '查询本地分类树（一级分类及其二级子分类），含 id、图标 iconKey、启用状态、'
+        '关联账单笔数、关联记账模板数以及是否允许物理删除（canDelete）。'
+        '查看完整分类、查找已停用分类或修改/删除分类前调用。',
+    parametersSchema: {
+      'type': 'object',
+      'properties': {
+        'kind': {
+          'type': 'string',
+          'enum': ['expense', 'income', 'all'],
+          'description': '筛选支出、收入或全部，默认 all',
+        },
+        'includeInactive': {
+          'type': 'boolean',
+          'description': '是否包含已停用的分类，默认 true',
+        },
+      },
+      'additionalProperties': false,
+    },
+    execute: null,
+  );
+
+  static ToolSpec _createCategoriesTool() => ToolSpec(
+    name: 'create_categories',
+    description:
+        '新建一个或多个分类（最多两级，单次合计最多 20 个）。'
+        '建一级分类时不传 parentId（可同时在 children 里附带其二级子分类）；'
+        '在已有一级分类下建二级分类时传 parentId（此时不可带 children）。'
+        '分类名 1～12 字，同层级不可重名。App 会弹框请用户确认，返回成功前不要声称已创建。',
+    parametersSchema: {
+      'type': 'object',
+      'properties': {
+        'items': {
+          'type': 'array',
+          'minItems': 1,
+          'maxItems': 20,
+          'items': {
+            'type': 'object',
+            'properties': {
+              'kind': {
+                'type': 'string',
+                'enum': ['expense', 'income'],
+              },
+              'name': {
+                'type': 'string',
+                'minLength': 1,
+                'maxLength': 12,
+                'description': '分类名称，1～12 个字符',
+              },
+              'iconKey': {
+                'type': 'string',
+                'description': '内置图标 key，默认 other。可选——$_iconGroupsHint',
+              },
+              'parentId': {
+                'type': 'string',
+                'description': '已有的一级分类 id；建二级分类时传，建一级分类时不传',
+              },
+              'children': {
+                'type': 'array',
+                'maxItems': 20,
+                'description': '新建一级分类时顺带创建的二级子分类；传了 parentId 时不可用',
+                'items': {
+                  'type': 'object',
+                  'properties': {
+                    'name': {
+                      'type': 'string',
+                      'minLength': 1,
+                      'maxLength': 12,
+                    },
+                    'iconKey': {
+                      'type': 'string',
+                      'description': '内置图标 key，可选值同上，默认 other',
+                    },
+                  },
+                  'required': ['name'],
+                  'additionalProperties': false,
+                },
+              },
+            },
+            'required': ['kind', 'name'],
+            'additionalProperties': false,
+          },
+        },
+      },
+      'required': ['items'],
+      'additionalProperties': false,
+    },
+    execute: null,
+  );
+
+  static ToolSpec _updateCategoryTool() => const ToolSpec(
+    name: 'update_category',
+    description:
+        '修改已有分类的名称、图标或启用/停用状态（isActive）。'
+        '不可更改收支类型或所属父级；停用一级分类会连带停用其子分类，启用二级分类会连带启用已停用的父分类；'
+        '收入和支出各自至少要保留一个可用的一级分类。App 会弹框请用户确认，返回成功前不要声称已修改。',
+    parametersSchema: {
+      'type': 'object',
+      'properties': {
+        'id': {'type': 'string', 'description': '要修改的分类 id'},
+        'name': {
+          'type': 'string',
+          'minLength': 1,
+          'maxLength': 12,
+          'description': '新名称，1～12 个字符，同层级不可重名',
+        },
+        'iconKey': {
+          'type': 'string',
+          'description': '新内置图标 key（可选值见 create_categories），不传则保留原图标',
+        },
+        'isActive': {
+          'type': 'boolean',
+          'description': 'true 启用（记账可选），false 停用（软删除，保留历史账单）',
+        },
+      },
+      'required': ['id'],
+      'additionalProperties': false,
+    },
+    execute: null,
+  );
+
+  static ToolSpec _deleteCategoriesTool() => const ToolSpec(
+    name: 'delete_categories',
+    description:
+        '物理删除未被任何历史账单引用的分类（一级分类会连同其二级子分类一并删除），最多 20 个。'
+        '已被历史账单使用的分类不可删除，应改用 update_category 设为 isActive=false 停用；'
+        '收入和支出各自至少保留一个可用一级分类。App 会弹框请用户确认后才真正删除。',
+    parametersSchema: {
+      'type': 'object',
+      'properties': {
+        'ids': {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'minItems': 1,
+          'maxItems': 20,
+        },
+      },
+      'required': ['ids'],
+      'additionalProperties': false,
+    },
+    execute: null,
+  );
+
   /// 给待确认的写操作生成人话摘要与可微调草稿；读工具返回 null。
   Future<ToolApprovalRequest?> describe(ToolCallPart call) async {
     switch (call.toolName) {
@@ -403,6 +567,19 @@ class LedgerToolService {
               '${items.length > 8 ? '\n…还有 ${items.length - 8} 笔' : ''}\n'
               '删除后不可恢复。',
         );
+      case 'create_categories':
+        final nodes = await readCreateCategories(
+          call.args,
+          toolCallId: call.toolCallId,
+        );
+        return buildCreateCategoriesApprovalRequest(nodes);
+      case 'update_category':
+        final plan = await _readUpdateCategory(call.args);
+        if (plan.changes.isEmpty) return null;
+        return plan.toApprovalRequest();
+      case 'delete_categories':
+        final plan = await _readDeleteCategories(call.args);
+        return plan.toApprovalRequest();
       default:
         return null;
     }
@@ -1159,6 +1336,778 @@ class LedgerToolService {
     };
   }
 
+  /// 查询完整分类树（含停用状态、图标 key、账单与记账模板引用计数）。
+  Future<Map<String, Object?>> listCategories(Map<String, Object?> args) async {
+    final kindRaw = _optionalString(args, 'kind') ?? 'all';
+    final wantedKind = kindRaw == 'all' ? null : _kindCode(kindRaw);
+    final includeInactive = _optionalBool(args, 'includeInactive') ?? true;
+
+    final all = await database.exportCategories();
+    final usage = await database.categoryUsageCounts();
+
+    final activeRootsByKind = <int, int>{
+      0: all.where((c) => c.kind == 0 && c.level == 1 && c.isActive).length,
+      1: all.where((c) => c.kind == 1 && c.level == 1 && c.isActive).length,
+    };
+
+    final childrenByParent = <String, List<CategoryEntry>>{};
+    for (final c in all) {
+      final pid = c.parentId;
+      if (pid != null) {
+        childrenByParent.putIfAbsent(pid, () => []).add(c);
+      }
+    }
+    for (final list in childrenByParent.values) {
+      list.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    }
+
+    final scoped = all
+        .where((c) => wantedKind == null || c.kind == wantedKind)
+        .toList();
+    final activeCount = scoped.where((c) => c.isActive).length;
+    final inactiveCount = scoped.length - activeCount;
+
+    final parents = scoped.where((c) => c.level == 1).toList()
+      ..sort((a, b) {
+        final k = a.kind.compareTo(b.kind);
+        return k != 0 ? k : a.sortOrder.compareTo(b.sortOrder);
+      });
+
+    final tree = <Map<String, Object?>>[];
+    for (final parent in parents) {
+      if (!includeInactive && !parent.isActive) continue;
+      final allChildren = childrenByParent[parent.id] ?? const [];
+      final selfTx = usage.transactions[parent.id] ?? 0;
+      final selfTpl = usage.templates[parent.id] ?? 0;
+      var totalTx = selfTx;
+      var totalTpl = selfTpl;
+      for (final child in allChildren) {
+        totalTx += usage.transactions[child.id] ?? 0;
+        totalTpl += usage.templates[child.id] ?? 0;
+      }
+      final visibleChildren = includeInactive
+          ? allChildren
+          : allChildren.where((c) => c.isActive).toList();
+      final canDeleteParent =
+          totalTx == 0 &&
+          !(parent.isActive && (activeRootsByKind[parent.kind] ?? 0) <= 1);
+
+      tree.add({
+        'id': parent.id,
+        'kind': parent.kind == 0 ? 'expense' : 'income',
+        'name': parent.name,
+        'iconKey': parent.iconKey,
+        'isActive': parent.isActive,
+        'transactionCount': selfTx,
+        if (allChildren.isNotEmpty) 'totalTransactionCount': totalTx,
+        'templateCount': totalTpl,
+        'canDelete': canDeleteParent,
+        'children': [
+          for (final child in visibleChildren)
+            () {
+              final childTx = usage.transactions[child.id] ?? 0;
+              final childTpl = usage.templates[child.id] ?? 0;
+              return {
+                'id': child.id,
+                'parentId': parent.id,
+                'name': child.name,
+                'iconKey': child.iconKey,
+                'isActive': child.isActive,
+                'transactionCount': childTx,
+                'templateCount': childTpl,
+                'canDelete': childTx == 0,
+              };
+            }(),
+        ],
+      });
+    }
+
+    return {
+      'kind': kindRaw,
+      'includeInactive': includeInactive,
+      'activeCount': activeCount,
+      'inactiveCount': inactiveCount,
+      'categories': tree,
+    };
+  }
+
+  /// 解析并校验 `create_categories` 参数，生成待确认的分类节点列表。
+  Future<List<CategoryCreateNode>> readCreateCategories(
+    Map<String, Object?> args, {
+    String? toolCallId,
+    Set<String>? sharedPlannedNames,
+  }) async {
+    final rawItems = args['items'];
+    if (rawItems is! List || rawItems.isEmpty) {
+      throw ArgumentError('items 必须是非空数组');
+    }
+    if (rawItems.length > 20) {
+      throw ArgumentError('一次最多创建 20 个分类');
+    }
+
+    final existingAll = await database.exportCategories();
+    final byId = {for (final c in existingAll) c.id: c};
+    final planned = sharedPlannedNames ?? <String>{};
+    final cleanCallId = (toolCallId ?? '').trim();
+    const uuid = Uuid();
+    var seq = 0;
+    var totalCount = 0;
+    final nodes = <CategoryCreateNode>[];
+
+    String nextId() {
+      final current = seq++;
+      if (cleanCallId.isEmpty) return uuid.v4();
+      return 'cat-$cleanCallId-$current';
+    }
+
+    CategoryEntry? findExistingSibling(int kind, String? parentId, String name) {
+      for (final c in existingAll) {
+        if (c.kind == kind && c.parentId == parentId && c.name == name) {
+          return c;
+        }
+      }
+      return null;
+    }
+
+    for (final raw in rawItems) {
+      if (raw is! Map) {
+        throw ArgumentError('items 每一项必须是对象');
+      }
+      final map = raw.cast<String, Object?>();
+      final kind = _kindCode(_requiredString(map, 'kind'));
+      final name = _validateCategoryName(_requiredString(map, 'name'));
+      final iconKey = _resolveBuiltinIconKey(
+        _optionalString(map, 'iconKey'),
+        fallback: 'other',
+      );
+      final rawParentId = _optionalString(map, 'parentId')?.trim();
+      final parentId = (rawParentId == null || rawParentId.isEmpty)
+          ? null
+          : rawParentId;
+      final rawChildren = map['children'];
+
+      if (parentId != null) {
+        if (rawChildren is List && rawChildren.isNotEmpty) {
+          throw ArgumentError('最多支持两级分类，二级分类「$name」下不能再带 children');
+        }
+        final parent = byId[parentId];
+        if (parent == null) {
+          throw ArgumentError('父分类 id 不存在：$parentId');
+        }
+        if (parent.level != 1) {
+          throw ArgumentError('「${parent.name}」是二级分类，不能作为父分类');
+        }
+        if (parent.kind != kind) {
+          throw ArgumentError('父分类「${parent.name}」的收支类型与 kind 不一致');
+        }
+        if (!parent.isActive) {
+          throw ArgumentError('父分类「${parent.name}」当前已停用，请先启用它再添加子分类');
+        }
+        final dup = findExistingSibling(kind, parent.id, name);
+        if (dup != null) {
+          if (!dup.isActive) {
+            throw ArgumentError(
+              '「${parent.name}」下已有同名分类「$name」（当前已停用，id: ${dup.id}），请改用 update_category 启用它',
+            );
+          }
+          throw ArgumentError('「${parent.name}」下已有「$name」（id: ${dup.id}）');
+        }
+        if (!planned.add('$kind:${parent.id}:$name')) {
+          throw ArgumentError('待创建列表中「${parent.name} / $name」重复');
+        }
+        totalCount += 1;
+        if (totalCount > 20) {
+          throw ArgumentError('一次最多创建 20 个分类');
+        }
+        nodes.add(
+          CategoryCreateNode(
+            id: nextId(),
+            kind: kind,
+            name: name,
+            iconKey: iconKey,
+            parentId: parent.id,
+            parentName: parent.name,
+            sourceCallId: cleanCallId.isEmpty ? null : cleanCallId,
+          ),
+        );
+        continue;
+      }
+
+      final dup = findExistingSibling(kind, null, name);
+      if (dup != null) {
+        if (!dup.isActive) {
+          throw ArgumentError(
+            '已有同名${_kindLabel(kind)}一级分类「$name」（当前已停用，id: ${dup.id}），请改用 update_category 启用它',
+          );
+        }
+        throw ArgumentError(
+          '已有${_kindLabel(kind)}一级分类「$name」（id: ${dup.id}）',
+        );
+      }
+      if (!planned.add('$kind::$name')) {
+        throw ArgumentError('待创建列表中一级分类「$name」重复');
+      }
+
+      final children = <CategoryCreateChild>[];
+      if (rawChildren != null) {
+        if (rawChildren is! List) {
+          throw ArgumentError('children 必须是数组');
+        }
+        final childNames = <String>{};
+        for (final rawChild in rawChildren) {
+          if (rawChild is! Map) {
+            throw ArgumentError('children 每一项必须是对象');
+          }
+          final childMap = rawChild.cast<String, Object?>();
+          final childName = _validateCategoryName(
+            _requiredString(childMap, 'name'),
+          );
+          if (!childNames.add(childName)) {
+            throw ArgumentError('「$name」下的子分类「$childName」重复');
+          }
+          final childIcon = _resolveBuiltinIconKey(
+            _optionalString(childMap, 'iconKey'),
+            fallback: 'other',
+          );
+          children.add(
+            CategoryCreateChild(
+              id: nextId(),
+              name: childName,
+              iconKey: childIcon,
+            ),
+          );
+        }
+      }
+
+      totalCount += 1 + children.length;
+      if (totalCount > 20) {
+        throw ArgumentError('一次最多创建 20 个分类');
+      }
+
+      nodes.add(
+        CategoryCreateNode(
+          id: nextId(),
+          kind: kind,
+          name: name,
+          iconKey: iconKey,
+          children: children,
+          sourceCallId: cleanCallId.isEmpty ? null : cleanCallId,
+        ),
+      );
+    }
+
+    return nodes;
+  }
+
+  /// 为待创建的分类节点构造可视化确认请求。
+  ToolApprovalRequest buildCreateCategoriesApprovalRequest(
+    List<CategoryCreateNode> nodes, {
+    String toolName = 'create_categories',
+  }) {
+    final preview = <ToolApprovalCategoryItem>[];
+    final lines = <String>[];
+    var totalCount = 0;
+
+    for (final node in nodes) {
+      totalCount += 1 + node.children.length;
+      final kindText = _kindLabel(node.kind);
+      if (node.parentId != null) {
+        preview.add(
+          ToolApprovalCategoryItem(
+            kind: node.kind,
+            name: node.name,
+            iconKey: node.iconKey,
+            subtitle: '归属「${node.parentName}」· $kindText子分类',
+          ),
+        );
+        lines.add('$kindText · ${node.parentName} / ${node.name}');
+      } else {
+        preview.add(
+          ToolApprovalCategoryItem(
+            kind: node.kind,
+            name: node.name,
+            iconKey: node.iconKey,
+            subtitle: node.children.isEmpty
+                ? '$kindText一级分类'
+                : '$kindText一级分类 · 含 ${node.children.length} 个子分类',
+          ),
+        );
+        lines.add('$kindText一级分类 · ${node.name}');
+        for (final child in node.children) {
+          preview.add(
+            ToolApprovalCategoryItem(
+              kind: node.kind,
+              name: child.name,
+              iconKey: child.iconKey,
+              subtitle: '归属「${node.name}」',
+              indent: true,
+            ),
+          );
+          lines.add('  └ ${child.name}');
+        }
+      }
+    }
+
+    return ToolApprovalRequest(
+      toolName: toolName,
+      title: totalCount == 1 ? '新建分类' : '新建 $totalCount 个分类',
+      confirmLabel: totalCount == 1 ? '确认创建' : '确认创建 $totalCount 个',
+      categories: preview,
+      message: 'AI 想创建分类：\n${lines.take(10).join('\n')}',
+    );
+  }
+
+  Future<Map<String, Object?>> createCategories(
+    Map<String, Object?> args, {
+    String? toolCallId,
+  }) async {
+    final nodes = await readCreateCategories(args, toolCallId: toolCallId);
+    return commitCreatedCategories(nodes);
+  }
+
+  /// 在单个数据库事务中写入经用户确认的分类节点（支持重试幂等）。
+  Future<Map<String, Object?>> commitCreatedCategories(
+    List<CategoryCreateNode> nodes,
+  ) async {
+    final createdRows = <Map<String, Object?>>[];
+    await database.transaction(() async {
+      final existingIds = {
+        for (final c in await database.exportCategories()) c.id,
+      };
+      for (final node in nodes) {
+        if (!existingIds.contains(node.id)) {
+          await database.addCategory(
+            id: node.id,
+            kind: node.kind,
+            name: node.name,
+            iconKey: node.iconKey,
+            parentId: node.parentId,
+          );
+          existingIds.add(node.id);
+        }
+        final createdChildren = <Map<String, Object?>>[];
+        for (final child in node.children) {
+          if (!existingIds.contains(child.id)) {
+            await database.addCategory(
+              id: child.id,
+              kind: node.kind,
+              name: child.name,
+              iconKey: child.iconKey,
+              parentId: node.id,
+            );
+            existingIds.add(child.id);
+          }
+          createdChildren.add({
+            'id': child.id,
+            'kind': node.kind == 0 ? 'expense' : 'income',
+            'name': child.name,
+            'iconKey': child.iconKey,
+            'level': 2,
+            'parentId': node.id,
+            'parentName': node.name,
+          });
+        }
+        createdRows.add({
+          'id': node.id,
+          'kind': node.kind == 0 ? 'expense' : 'income',
+          'name': node.name,
+          'iconKey': node.iconKey,
+          'level': node.parentId == null ? 1 : 2,
+          if (node.parentId != null) 'parentId': node.parentId,
+          if (node.parentName != null) 'parentName': node.parentName,
+          if (createdChildren.isNotEmpty) 'children': createdChildren,
+        });
+      }
+    });
+
+    final totalCreated = nodes.fold<int>(
+      0,
+      (sum, node) => sum + 1 + node.children.length,
+    );
+    return {
+      'ok': true,
+      'createdCount': totalCreated,
+      if (createdRows.length == 1) ...createdRows.single,
+      'categories': createdRows,
+    };
+  }
+
+  Future<Map<String, Object?>> updateCategory(Map<String, Object?> args) async {
+    final plan = await _readUpdateCategory(args);
+    if (plan.changes.isEmpty) {
+      return {
+        'ok': true,
+        'changed': false,
+        'id': plan.existing.id,
+        'kind': plan.existing.kind == 0 ? 'expense' : 'income',
+        'name': plan.existing.name,
+        'iconKey': plan.existing.iconKey,
+        'level': plan.existing.level,
+        if (plan.existing.parentId != null) 'parentId': plan.existing.parentId,
+        'isActive': plan.existing.isActive,
+      };
+    }
+
+    if (plan.name != plan.existing.name ||
+        plan.iconKey != plan.existing.iconKey) {
+      await database.updateCategory(
+        id: plan.existing.id,
+        name: plan.name,
+        iconKey: plan.iconKey,
+      );
+    }
+    if (plan.isActive != plan.existing.isActive) {
+      final res = await database.setCategoryActive(
+        plan.existing.id,
+        plan.isActive,
+      );
+      if (res == CategoryToggleResult.lastRoot) {
+        throw StateError(
+          '${_kindLabel(plan.existing.kind)}至少要保留一个可用的一级分类，不能停用「${plan.name}」',
+        );
+      }
+    }
+    if (isCustomCategoryIcon(plan.existing.iconKey) &&
+        plan.iconKey != plan.existing.iconKey) {
+      await _pruneOrphanCategoryIcons();
+    }
+
+    return {
+      'ok': true,
+      'changed': true,
+      'id': plan.existing.id,
+      'kind': plan.existing.kind == 0 ? 'expense' : 'income',
+      'name': plan.name,
+      'iconKey': plan.iconKey,
+      'level': plan.existing.level,
+      if (plan.existing.parentId != null) 'parentId': plan.existing.parentId,
+      'isActive': plan.isActive,
+      if (plan.cascadeDeactivatedCount > 0)
+        'cascadeDeactivatedCount': plan.cascadeDeactivatedCount,
+      if (plan.reactivatedParentName != null)
+        'reactivatedParentName': plan.reactivatedParentName,
+    };
+  }
+
+  Future<Map<String, Object?>> deleteCategories(
+    Map<String, Object?> args,
+  ) async {
+    final plan = await _readDeleteCategories(args);
+    final res = await database.deleteCategories(plan.targetIds);
+    switch (res) {
+      case CategoryDeleteResult.deleted:
+        break;
+      case CategoryDeleteResult.inUse:
+        throw StateError(
+          '分类已被历史账单使用，不能删除，请改用 update_category 将 isActive 设为 false 停用',
+        );
+      case CategoryDeleteResult.lastRoot:
+        throw StateError('收入和支出至少各要保留一个可用的一级分类');
+    }
+    if (plan.hasCustomIcon) {
+      await _pruneOrphanCategoryIcons();
+    }
+    return {
+      'ok': true,
+      'deletedCount': plan.affectedCategories.length,
+      'categories': [
+        for (final c in plan.affectedCategories)
+          {
+            'id': c.id,
+            'kind': c.kind == 0 ? 'expense' : 'income',
+            'name': c.name,
+            'level': c.level,
+            if (c.parentId != null) 'parentId': c.parentId,
+          },
+      ],
+    };
+  }
+
+  Future<_CategoryUpdatePlan> _readUpdateCategory(
+    Map<String, Object?> args,
+  ) async {
+    final id = _requiredString(args, 'id');
+    const patchKeys = ['name', 'iconKey', 'isActive'];
+    if (!patchKeys.any(args.containsKey)) {
+      throw ArgumentError('至少要传入 name、iconKey 或 isActive 之一');
+    }
+
+    final all = await database.exportCategories();
+    final byId = {for (final c in all) c.id: c};
+    final existing = byId[id];
+    if (existing == null) {
+      throw ArgumentError('分类 id 不存在：$id，请先调用 list_categories 核对');
+    }
+
+    final nextName = args.containsKey('name')
+        ? _validateCategoryName(_requiredString(args, 'name'))
+        : existing.name;
+    if (nextName != existing.name) {
+      final duplicated = all.any(
+        (c) =>
+            c.id != existing.id &&
+            c.kind == existing.kind &&
+            c.parentId == existing.parentId &&
+            c.name == nextName,
+      );
+      if (duplicated) {
+        throw ArgumentError(
+          existing.parentId == null
+              ? '已经有叫「$nextName」的${_kindLabel(existing.kind)}一级分类了'
+              : '同一父分类下已有「$nextName」',
+        );
+      }
+    }
+
+    final rawIcon = _optionalString(args, 'iconKey');
+    final nextIconKey = (args.containsKey('iconKey') && rawIcon != null)
+        ? _resolveBuiltinIconKey(rawIcon, fallback: existing.iconKey)
+        : existing.iconKey;
+    final nextActive = args.containsKey('isActive')
+        ? (_optionalBool(args, 'isActive') ?? existing.isActive)
+        : existing.isActive;
+
+    var cascadeDeactivatedCount = 0;
+    String? reactivatedParentName;
+    if (nextActive != existing.isActive) {
+      if (!nextActive && existing.level == 1) {
+        final activeRoots = all
+            .where((c) => c.kind == existing.kind && c.level == 1 && c.isActive)
+            .length;
+        if (activeRoots <= 1) {
+          throw StateError(
+            '${_kindLabel(existing.kind)}至少要保留一个可用的一级分类，不能停用「${existing.name}」',
+          );
+        }
+        cascadeDeactivatedCount = all
+            .where((c) => c.parentId == existing.id && c.isActive)
+            .length;
+      } else if (nextActive &&
+          existing.level == 2 &&
+          existing.parentId != null) {
+        final parent = byId[existing.parentId!];
+        if (parent != null && !parent.isActive) {
+          reactivatedParentName = parent.name;
+        }
+      }
+    }
+
+    final changes = <ToolApprovalChange>[];
+    if (nextName != existing.name) {
+      changes.add(
+        ToolApprovalChange(label: '名称', before: existing.name, after: nextName),
+      );
+    }
+    if (nextIconKey != existing.iconKey) {
+      changes.add(
+        ToolApprovalChange(
+          label: '图标',
+          before: isCustomCategoryIcon(existing.iconKey)
+              ? '自定义图片'
+              : existing.iconKey,
+          after: nextIconKey,
+        ),
+      );
+    }
+    if (nextActive != existing.isActive) {
+      changes.add(
+        ToolApprovalChange(
+          label: '状态',
+          before: existing.isActive ? '启用' : '已停用',
+          after: nextActive ? '启用' : '已停用',
+        ),
+      );
+    }
+
+    final parentName = existing.parentId == null
+        ? null
+        : byId[existing.parentId!]?.name;
+    return _CategoryUpdatePlan(
+      existing: existing,
+      parentName: parentName,
+      name: nextName,
+      iconKey: nextIconKey,
+      isActive: nextActive,
+      changes: changes,
+      cascadeDeactivatedCount: cascadeDeactivatedCount,
+      reactivatedParentName: reactivatedParentName,
+    );
+  }
+
+  Future<_CategoryDeletePlan> _readDeleteCategories(
+    Map<String, Object?> args,
+  ) async {
+    final raw = args['ids'];
+    if (raw is! List || raw.isEmpty) {
+      throw ArgumentError('ids 必须是非空数组');
+    }
+    final orderedIds = <String>[];
+    final targetIds = <String>{};
+    for (final entry in raw) {
+      final id = entry?.toString().trim() ?? '';
+      if (id.isNotEmpty && targetIds.add(id)) {
+        orderedIds.add(id);
+      }
+    }
+    if (targetIds.isEmpty) {
+      throw ArgumentError('ids 不能为空');
+    }
+    if (targetIds.length > 20) {
+      throw ArgumentError('一次最多删除 20 个分类');
+    }
+
+    final all = await database.exportCategories();
+    final byId = {for (final c in all) c.id: c};
+    final missing = [
+      for (final id in orderedIds)
+        if (!byId.containsKey(id)) id,
+    ];
+    if (missing.isNotEmpty) {
+      throw StateError(
+        '分类不存在：${missing.join(', ')}，请先调用 list_categories 核对',
+      );
+    }
+
+    final usage = await database.categoryUsageCounts();
+    final childrenByParent = <String, List<CategoryEntry>>{};
+    for (final c in all) {
+      if (c.parentId != null) {
+        childrenByParent.putIfAbsent(c.parentId!, () => []).add(c);
+      }
+    }
+
+    final busyLabels = <String>[];
+    final affectedIds = <String>{};
+    for (final id in orderedIds) {
+      final target = byId[id]!;
+      affectedIds.add(target.id);
+      final children = childrenByParent[target.id] ?? const [];
+      var txCount = usage.transactions[target.id] ?? 0;
+      for (final child in children) {
+        affectedIds.add(child.id);
+        txCount += usage.transactions[child.id] ?? 0;
+      }
+      if (txCount > 0) {
+        busyLabels.add('「${target.name}」（$txCount 笔账单）');
+      }
+    }
+    if (busyLabels.isNotEmpty) {
+      throw StateError(
+        '以下分类已被历史账单使用，不能删除：${busyLabels.join('、')}。'
+        '请改用 update_category 将 isActive 设为 false 停用',
+      );
+    }
+
+    for (final kind in const [0, 1]) {
+      final activeRoots = all
+          .where((c) => c.kind == kind && c.level == 1 && c.isActive)
+          .length;
+      final removingActiveRoots = affectedIds
+          .where((id) {
+            final c = byId[id]!;
+            return c.kind == kind && c.level == 1 && c.isActive;
+          })
+          .length;
+      if (removingActiveRoots > 0 && activeRoots - removingActiveRoots < 1) {
+        throw StateError(
+          '${_kindLabel(kind)}至少要保留一个可用的一级分类，不能全部删除',
+        );
+      }
+    }
+
+    final affectedCategories = [
+      for (final c in all)
+        if (affectedIds.contains(c.id)) c,
+    ];
+    var templateCount = 0;
+    for (final id in affectedIds) {
+      templateCount += usage.templates[id] ?? 0;
+    }
+
+    final preview = <ToolApprovalCategoryItem>[];
+    final lines = <String>[];
+    for (final id in orderedIds) {
+      final c = byId[id]!;
+      // 父分类已在删除列表中时，不重复铺它的子项。
+      if (c.parentId != null && targetIds.contains(c.parentId)) continue;
+      final kindText = _kindLabel(c.kind);
+      if (c.level == 1) {
+        final childCount = (childrenByParent[c.id] ?? const []).length;
+        preview.add(
+          ToolApprovalCategoryItem(
+            kind: c.kind,
+            name: c.name,
+            iconKey: c.iconKey,
+            isActive: c.isActive,
+            subtitle: childCount == 0
+                ? '$kindText一级分类'
+                : '$kindText一级分类 · 连同删除 $childCount 个子分类',
+          ),
+        );
+        lines.add(
+          '$kindText · ${c.name}'
+          '${childCount == 0 ? '' : '（含 $childCount 个子分类）'}',
+        );
+      } else {
+        final parentName = byId[c.parentId!]?.name ?? '';
+        preview.add(
+          ToolApprovalCategoryItem(
+            kind: c.kind,
+            name: c.name,
+            iconKey: c.iconKey,
+            isActive: c.isActive,
+            subtitle: parentName.isEmpty
+                ? '$kindText子分类'
+                : '归属「$parentName」· $kindText子分类',
+          ),
+        );
+        lines.add('$kindText · $parentName / ${c.name}');
+      }
+    }
+
+    return _CategoryDeletePlan(
+      targetIds: targetIds,
+      affectedCategories: affectedCategories,
+      preview: preview,
+      summaryLines: lines,
+      templateCount: templateCount,
+      hasCustomIcon: affectedCategories.any(
+        (c) => isCustomCategoryIcon(c.iconKey),
+      ),
+    );
+  }
+
+  Future<void> _pruneOrphanCategoryIcons() async {
+    try {
+      final live = await database.exportCategories();
+      await ledgerService.imageStorage.pruneCategoryIcons(
+        customIconIdsOf(live.map((row) => row.iconKey)),
+      );
+    } catch (_) {}
+  }
+
+  String _validateCategoryName(String raw) {
+    final name = raw.trim();
+    if (name.isEmpty) {
+      throw ArgumentError('分类名称不能为空');
+    }
+    if (name.length > 12) {
+      throw ArgumentError('分类名称最多 12 个字符：$name');
+    }
+    return name;
+  }
+
+  String _resolveBuiltinIconKey(String? raw, {required String fallback}) {
+    if (raw == null || raw.trim().isEmpty) return fallback;
+    final key = raw.trim();
+    if (isCustomCategoryIcon(key) || !categoryIcons.containsKey(key)) {
+      throw ArgumentError(
+        '不支持的 iconKey：$key，请从内置分类图标清单中选择（如 ${categoryIconChoices.take(8).join(', ')} 等）',
+      );
+    }
+    return key;
+  }
+
   ({
     int kind,
     int amountCents,
@@ -1564,6 +2513,135 @@ class _TxnUpdate {
   final DateTime occurredAt;
   final String note;
   final List<ToolApprovalChange> changes;
+}
+
+/// 待创建的一个一级或二级分类节点（一级分类可携带 [children]）。
+class CategoryCreateNode {
+  const CategoryCreateNode({
+    required this.id,
+    required this.kind,
+    required this.name,
+    required this.iconKey,
+    this.parentId,
+    this.parentName,
+    this.children = const [],
+    this.sourceCallId,
+  });
+
+  final String id;
+  final int kind;
+  final String name;
+  final String iconKey;
+  final String? parentId;
+  final String? parentName;
+  final List<CategoryCreateChild> children;
+  final String? sourceCallId;
+}
+
+class CategoryCreateChild {
+  const CategoryCreateChild({
+    required this.id,
+    required this.name,
+    required this.iconKey,
+  });
+
+  final String id;
+  final String name;
+  final String iconKey;
+}
+
+class _CategoryUpdatePlan {
+  const _CategoryUpdatePlan({
+    required this.existing,
+    required this.parentName,
+    required this.name,
+    required this.iconKey,
+    required this.isActive,
+    required this.changes,
+    required this.cascadeDeactivatedCount,
+    required this.reactivatedParentName,
+  });
+
+  final CategoryEntry existing;
+  final String? parentName;
+  final String name;
+  final String iconKey;
+  final bool isActive;
+  final List<ToolApprovalChange> changes;
+  final int cascadeDeactivatedCount;
+  final String? reactivatedParentName;
+
+  ToolApprovalRequest toApprovalRequest() {
+    final kindText = existing.kind == 1 ? '收入' : '支出';
+    final subtitle = existing.level == 1
+        ? '$kindText一级分类'
+        : (parentName == null
+              ? '$kindText子分类'
+              : '归属「$parentName」· $kindText子分类');
+    final notes = <String>[
+      if (cascadeDeactivatedCount > 0)
+        '其下 $cascadeDeactivatedCount 个子分类也会一并停用，历史账单不受影响。',
+      if (!isActive && existing.isActive && cascadeDeactivatedCount == 0)
+        '停用后记账时不再显示，历史账单不受影响。',
+      if (reactivatedParentName != null)
+        '已停用的父分类「$reactivatedParentName」也会一并启用。',
+    ];
+    final footnote = notes.isEmpty ? null : notes.join('\n');
+    return ToolApprovalRequest(
+      toolName: 'update_category',
+      title: '修改分类',
+      confirmLabel: '确认修改',
+      categories: [
+        ToolApprovalCategoryItem(
+          kind: existing.kind,
+          name: name,
+          iconKey: iconKey,
+          isActive: isActive,
+          subtitle: subtitle,
+        ),
+      ],
+      changes: changes,
+      footnote: footnote,
+      message:
+          'AI 想修改分类「${existing.name}」：\n'
+          '${changes.map((c) => '${c.label} ${c.before} → ${c.after}').join('\n')}'
+          '${footnote == null ? '' : '\n$footnote'}',
+    );
+  }
+}
+
+class _CategoryDeletePlan {
+  const _CategoryDeletePlan({
+    required this.targetIds,
+    required this.affectedCategories,
+    required this.preview,
+    required this.summaryLines,
+    required this.templateCount,
+    required this.hasCustomIcon,
+  });
+
+  final Set<String> targetIds;
+  final List<CategoryEntry> affectedCategories;
+  final List<ToolApprovalCategoryItem> preview;
+  final List<String> summaryLines;
+  final int templateCount;
+  final bool hasCustomIcon;
+
+  ToolApprovalRequest toApprovalRequest() {
+    final total = affectedCategories.length;
+    final footnote = templateCount > 0
+        ? '关联的 $templateCount 个记账模板也会一并删除，删除后不可恢复。'
+        : '删除后不可恢复。';
+    return ToolApprovalRequest(
+      toolName: 'delete_categories',
+      title: preview.length == 1 ? '删除分类' : '删除 ${preview.length} 项分类',
+      confirmLabel: total == 1 ? '确认删除' : '确认删除 $total 个',
+      destructive: true,
+      categories: preview,
+      footnote: footnote,
+      message: 'AI 想删除分类：\n${summaryLines.join('\n')}\n$footnote',
+    );
+  }
 }
 
 extension on ToolSpec {

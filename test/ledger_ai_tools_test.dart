@@ -7,8 +7,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:ligy_tally/core/database/app_database.dart';
 import 'package:ligy_tally/core/location/place_fix.dart';
 import 'package:ligy_tally/core/media/image_storage.dart';
+import 'package:ligy_tally/core/utils/category_icons.dart';
+import 'package:ligy_tally/features/ai/application/ai_approval.dart';
+import 'package:ligy_tally/features/ai/application/ai_chat_session.dart';
+import 'package:ligy_tally/features/ai/application/ai_settings.dart';
 import 'package:ligy_tally/features/ai/application/ledger_tools.dart';
 import 'package:ligy_tally/features/ledger/application/ledger_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   late AppDatabase database;
@@ -468,6 +473,358 @@ void main() {
       }),
       throwsArgumentError,
     );
+  });
+
+  group('分类增删查改工具', () {
+    test('list_categories 返回层级树、引用计数、停用过滤与 canDelete', () async {
+      await _saveFood(tools);
+      await tools.ledgerService.saveTemplate(
+        kind: 0,
+        amountCents: 250000,
+        categoryId: 'expense_housing_rent',
+        note: '房租模板',
+      );
+      await database.setCategoryActive('expense_pet', false);
+
+      final full = await tools.listCategories({'kind': 'expense'});
+      expect(full['inactiveCount'], greaterThan(0));
+      final roots = full['categories']! as List<Object?>;
+      final food = roots
+          .cast<Map<String, Object?>>()
+          .singleWhere((c) => c['id'] == 'expense_food');
+      expect(food['totalTransactionCount'], 1);
+      expect(food['canDelete'], isFalse);
+
+      final housing = roots
+          .cast<Map<String, Object?>>()
+          .singleWhere((c) => c['id'] == 'expense_housing');
+      expect(housing['templateCount'], 1);
+      expect(housing['canDelete'], isTrue);
+
+      final pet = roots
+          .cast<Map<String, Object?>>()
+          .singleWhere((c) => c['id'] == 'expense_pet');
+      expect(pet['isActive'], isFalse);
+
+      final activeOnly = await tools.listCategories({
+        'kind': 'expense',
+        'includeInactive': false,
+      });
+      final activeIds = (activeOnly['categories']! as List<Object?>)
+          .cast<Map<String, Object?>>()
+          .map((c) => c['id'])
+          .toSet();
+      expect(activeIds, isNot(contains('expense_pet')));
+    });
+
+    test('create_categories 支持一级带二级原子创建、二级挂载、幂等与各项边界拦截', () async {
+      final nodes = await tools.readCreateCategories(
+        {
+          'items': [
+            {
+              'kind': 'expense',
+              'name': '养车',
+              'iconKey': 'car',
+              'children': [
+                {'name': '加油', 'iconKey': 'fuel'},
+                {'name': '停车', 'iconKey': 'parking'},
+              ],
+            },
+            {
+              'kind': 'expense',
+              'name': '奶茶',
+              'iconKey': 'milk_tea',
+              'parentId': 'expense_food',
+            },
+          ],
+        },
+        toolCallId: 'call-cat-1',
+      );
+      final req = tools.buildCreateCategoriesApprovalRequest(nodes);
+      expect(req.title, '新建 4 个分类');
+      expect(req.categories, hasLength(4));
+
+      final created = await tools.commitCreatedCategories(nodes);
+      expect(created['createdCount'], 4);
+      // 相同节点重跑幂等，不会因主键冲突报错或重复插入
+      final retried = await tools.commitCreatedCategories(nodes);
+      expect(retried['createdCount'], 4);
+
+      final all = await database.exportCategories();
+      final car = all.singleWhere((c) => c.name == '养车');
+      expect(car.level, 1);
+      expect(car.iconKey, 'car');
+      final fuel = all.singleWhere((c) => c.name == '加油');
+      expect(fuel.parentId, car.id);
+      expect(fuel.level, 2);
+      final milkTea = all.singleWhere((c) => c.name == '奶茶');
+      expect(milkTea.parentId, 'expense_food');
+
+      // 新分类立刻可用于记账
+      final saved = await tools.saveTransactions({
+        'items': [
+          {
+            'kind': 'expense',
+            'amountCents': 1800,
+            'categoryId': milkTea.id,
+            'accountingDate': '2026-10-20',
+            'note': '伯牙绝弦',
+          },
+        ],
+      });
+      expect(saved['categoryName'], '奶茶');
+
+      // 拦截：禁止三级分类、禁止非法/custom 图标、禁止超长名称
+      await expectLater(
+        tools.createCategories({
+          'items': [
+            {
+              'kind': 'expense',
+              'name': '三级非法',
+              'parentId': milkTea.id,
+            },
+          ],
+        }),
+        throwsArgumentError,
+      );
+      await expectLater(
+        tools.createCategories({
+          'items': [
+            {
+              'kind': 'expense',
+              'name': '伪造自定义图',
+              'iconKey': 'custom:11111111-2222-3333-4444-555555555555',
+            },
+          ],
+        }),
+        throwsArgumentError,
+      );
+      await expectLater(
+        tools.createCategories({
+          'items': [
+            {
+              'kind': 'expense',
+              'name': '一二三四五六七八九十一二三',
+            },
+          ],
+        }),
+        throwsArgumentError,
+      );
+
+      // 停用「宠物」后尝试新建同名一级分类，错误提示应带出已停用分类 id 引导启用
+      await database.setCategoryActive('expense_pet', false);
+      await expectLater(
+        tools.createCategories({
+          'items': [
+            {'kind': 'expense', 'name': '宠物'},
+          ],
+        }),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message.toString(),
+            'message',
+            allOf(contains('已停用'), contains('expense_pet')),
+          ),
+        ),
+      );
+      // 禁止往已停用的父分类下加子分类
+      await expectLater(
+        tools.createCategories({
+          'items': [
+            {
+              'kind': 'expense',
+              'name': '猫砂',
+              'parentId': 'expense_pet',
+            },
+          ],
+        }),
+        throwsArgumentError,
+      );
+    });
+
+    test('update_category 支持改名、换图标、级联启停、防清空根分类与孤儿图标回收', () async {
+      // 无变化时不生成确认请求
+      final noOp = await tools.describe(
+        const ToolCallPart(
+          toolCallId: 'c-noop',
+          toolName: 'update_category',
+          args: {'id': 'expense_food_meals', 'name': '三餐'},
+          state: ToolCallState.inputAvailable,
+        ),
+      );
+      expect(noOp, isNull);
+
+      // 停用一级分类「宠物」：预览提示连带停用子分类
+      final disableReq = await tools.describe(
+        const ToolCallPart(
+          toolCallId: 'c-disable',
+          toolName: 'update_category',
+          args: {'id': 'expense_pet', 'isActive': false},
+          state: ToolCallState.inputAvailable,
+        ),
+      );
+      expect(disableReq, isNotNull);
+      expect(disableReq!.footnote, contains('子分类也会一并停用'));
+      final disabled = await tools.updateCategory({
+        'id': 'expense_pet',
+        'isActive': false,
+      });
+      expect(disabled['isActive'], isFalse);
+      expect(disabled['cascadeDeactivatedCount'], 3);
+
+      // 重新启用子分类「宠物食品」：连带把父分类「宠物」一起启用
+      final reEnable = await tools.updateCategory({
+        'id': 'expense_pet_food',
+        'isActive': true,
+      });
+      expect(reEnable['isActive'], isTrue);
+      expect(reEnable['reactivatedParentName'], '宠物');
+      final petAfter = (await database.exportCategories()).singleWhere(
+        (c) => c.id == 'expense_pet',
+      );
+      expect(petAfter.isActive, isTrue);
+
+      // 自定义图片图标：只改名时保留自定义图标；换内置图标时回收孤儿图片文件
+      const customId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+      await tools.ledgerService.imageStorage.writeCategoryIcon(
+        iconId: customId,
+        bytes: [1, 2, 3, 4],
+      );
+      final iconFile = await tools.ledgerService.imageStorage.resolve(
+        categoryIconRelativePath(customId),
+      );
+      expect(iconFile.existsSync(), isTrue);
+      await database.addCategory(
+        id: 'custom_cat',
+        kind: 0,
+        name: '自选图',
+        iconKey: customCategoryIconKey(customId),
+      );
+
+      final renamedOnly = await tools.updateCategory({
+        'id': 'custom_cat',
+        'name': '改名保留图',
+      });
+      expect(renamedOnly['iconKey'], customCategoryIconKey(customId));
+      expect(iconFile.existsSync(), isTrue);
+
+      await tools.updateCategory({
+        'id': 'custom_cat',
+        'iconKey': 'gift',
+      });
+      expect(iconFile.existsSync(), isFalse);
+
+      // 收入侧只留最后一个可用一级分类时，停用必须被拦住
+      final incomeRoots = (await database.exportCategories())
+          .where((c) => c.kind == 1 && c.level == 1)
+          .toList();
+      for (final root in incomeRoots.take(incomeRoots.length - 1)) {
+        await database.setCategoryActive(root.id, false);
+      }
+      await expectLater(
+        tools.updateCategory({
+          'id': incomeRoots.last.id,
+          'isActive': false,
+        }),
+        throwsStateError,
+      );
+    });
+
+    test('delete_categories 拦截账单引用与清空根分类，提示模板级联并清理删除子树', () async {
+      await _saveFood(tools);
+      // 「餐饮」下的「三餐」有账单，删父分类或删该子分类都必须在弹窗前直接拦截
+      await expectLater(
+        tools.describe(
+          const ToolCallPart(
+            toolCallId: 'del-busy-root',
+            toolName: 'delete_categories',
+            args: {
+              'ids': ['expense_food'],
+            },
+            state: ToolCallState.inputAvailable,
+          ),
+        ),
+        throwsStateError,
+      );
+      await expectLater(
+        tools.deleteCategories({
+          'ids': ['expense_food_meals'],
+        }),
+        throwsStateError,
+      );
+
+      // 禁止一次性把收入侧全部一级分类删空
+      final incomeRootIds = (await database.exportCategories())
+          .where((c) => c.kind == 1 && c.level == 1)
+          .map((c) => c.id)
+          .toList();
+      await expectLater(
+        tools.deleteCategories({'ids': incomeRootIds}),
+        throwsStateError,
+      );
+
+      // 「宠物」无账单但挂了一个模板：确认请求注明模板级联删除，执行后父子与模板一并移除
+      await tools.ledgerService.saveTemplate(
+        kind: 0,
+        amountCents: 9900,
+        categoryId: 'expense_pet_food',
+        note: '买猫粮',
+      );
+      final delReq = await tools.describe(
+        const ToolCallPart(
+          toolCallId: 'del-pet',
+          toolName: 'delete_categories',
+          args: {
+            'ids': ['expense_pet'],
+          },
+          state: ToolCallState.inputAvailable,
+        ),
+      );
+      expect(delReq, isNotNull);
+      expect(delReq!.destructive, isTrue);
+      expect(delReq.footnote, contains('1 个记账模板'));
+
+      final delRes = await tools.deleteCategories({
+        'ids': ['expense_pet'],
+      });
+      expect(delRes['deletedCount'], 4); // 宠物 + 3 个子分类
+      final remainingIds = (await database.exportCategories())
+          .map((c) => c.id)
+          .toSet();
+      expect(remainingIds, isNot(contains('expense_pet')));
+      expect(remainingIds, isNot(contains('expense_pet_food')));
+      expect(await database.exportTemplates(), isEmpty);
+    });
+
+    test('会话内分类变更后 refreshSystemPrompt 实时同步可用分类列表', () async {
+      SharedPreferences.setMockInitialValues({});
+      final session = await AiChatSession.create(
+        database: database,
+        ledgerService: tools.ledgerService,
+        settings: const AiSettings(
+          keys: {AiPlatform.deepseek: 'sk-test'},
+          model: kDeepSeekDefaultModel,
+          reasoning: AiReasoningEffort.high,
+        ),
+        initial: null,
+        approval: ToolApprovalCoordinator(),
+      );
+      addTearDown(session.dispose);
+
+      expect(session.systemPrompt, isNot(contains('露营装备')));
+      expect(session.systemPrompt, contains('expense_pet | 宠物'));
+
+      await tools.createCategories({
+        'items': [
+          {'kind': 'expense', 'name': '露营装备', 'iconKey': 'camping'},
+        ],
+      });
+      await tools.updateCategory({'id': 'expense_pet', 'isActive': false});
+      await session.refreshSystemPrompt();
+
+      expect(session.systemPrompt, contains('露营装备'));
+      expect(session.systemPrompt, isNot(contains('expense_pet | 宠物')));
+    });
   });
 }
 

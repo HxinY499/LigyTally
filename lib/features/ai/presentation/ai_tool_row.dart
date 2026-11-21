@@ -97,6 +97,7 @@ class _AiToolRowState extends State<AiToolRow> {
     AiToolCategory.write => FLucideIcons.receipt,
     AiToolCategory.edit => FLucideIcons.pencil,
     AiToolCategory.remove => FLucideIcons.trash2,
+    AiToolCategory.category => FLucideIcons.layoutGrid,
     AiToolCategory.other => FLucideIcons.sparkles,
   };
 }

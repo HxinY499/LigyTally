@@ -7,7 +7,7 @@ import 'package:flutter_ai_client/flutter_ai_client.dart';
 const kTurnTimingDataType = 'turn-timing';
 
 /// 工具按用途分成几类，每一类共用一个图标。
-enum AiToolCategory { stats, search, write, edit, remove, other }
+enum AiToolCategory { stats, search, write, edit, remove, category, other }
 
 AiToolCategory toolCategory(String toolName) => switch (toolName) {
   'get_cashflow_summary' ||
@@ -16,8 +16,9 @@ AiToolCategory toolCategory(String toolName) => switch (toolName) {
   'compare_periods' => AiToolCategory.stats,
   'search_transactions' => AiToolCategory.search,
   'save_transaction' || 'save_transactions' => AiToolCategory.write,
-  'update_transaction' => AiToolCategory.edit,
-  'delete_transactions' => AiToolCategory.remove,
+  'update_transaction' || 'update_category' => AiToolCategory.edit,
+  'delete_transactions' || 'delete_categories' => AiToolCategory.remove,
+  'list_categories' || 'create_categories' => AiToolCategory.category,
   _ => AiToolCategory.other,
 };
 
